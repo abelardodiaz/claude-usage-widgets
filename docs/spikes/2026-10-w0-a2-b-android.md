@@ -160,3 +160,26 @@ con `evaluateJavascript`. `allowBackup=false` y `usesCleartextTraffic=false` en 
 
 Queda abierto, para cerrar en cuanto haya sesión: el riesgo anti-bots de la vía nativa (A2.3),
 que es lo único que podría obligar a enrutar todas las consultas por el WebView.
+
+---
+
+## Para la spec (W3)
+
+Lo que este spike obliga a cambiar o fijar en la especificación de Android:
+
+1. **Login solo por correo, con código.** El botón "Continuar con Google" se retira de la pantalla
+   de Android: dentro de un `WebView` Google bloquea el acceso 48 horas. La pantalla debe ofrecer
+   únicamente el acceso por correo y explicarlo antes de que el usuario se tope con el muro.
+2. **Ventana de 10 minutos.** El enlace del correo vence a los 10 minutos. La pantalla debe
+   decirlo, y conviene que el campo del código esté a la vista desde el principio.
+3. **Límite de reenvíos.** claude.ai deja de enviar correos tras varios intentos seguidos. La UI
+   no debe invitar a pulsar "reenviar" en bucle; mejor un contador y un mensaje claro.
+4. **`previewLayout` obligatorio** en el `appwidget-provider`. Sin él, el diálogo de anclaje
+   muestra "No se pudo agregar el widget" en la vista previa aunque el anclaje funcione.
+5. **`android:exported="false"` en el `AppWidgetProvider`.** Verificado: el sistema entrega
+   `APPWIDGET_UPDATE` y el `PendingIntent` del toque llega igual. No exportar el receptor.
+6. **`zipalign` no hace falta** en el `build.sh` de W3/F2, y no existe en Termux. `aapt2 link`
+   deja `resources.arsc` como `Stored` y añadir `classes.dex` al final con `zip` no mueve su
+   desplazamiento, así que conserva la alineación a 4 bytes de `targetSdk >= 30`.
+7. **El contenido del widget debe llenar la celda.** El widget del spike dejó el texto arriba a la
+   izquierda y media celda vacía: se ve sin terminar. Centrar o repartir el contenido.
