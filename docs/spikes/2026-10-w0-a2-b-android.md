@@ -1,13 +1,13 @@
 # Spike A2 + B — Android (WebView de claude.ai y AppWidget)
 
 - **Fecha:** 2026-10-02
-- **Dispositivo:** Samsung SM-S948B, Android 17 (SDK 37), parche 2026-09-05.
+- **Dispositivo:** Android 17 (SDK 37), Samsung / One UI.
 - **Toolchain:** Termux. `aapt2` 2.20-android-16.0.0_r4, `javac`/OpenJDK 21.0.12, `d8` 9.2.4-dev,
   `apksigner` 0.9, `android.jar` de `~/android/platforms/android-34`. Sin Gradle, sin androidx.
 - **Código:** `android/spikes/w0/` (desechable; no es la base de W3).
-- **Resultado:** **GO para la parte Android.** Los ocho criterios pasan. El riesgo que podía
-  tumbar el diseño —un reto anti-bots fuera del navegador— **no existe**: la consulta nativa
-  responde `200`. El login sí cambia: por correo, no por Google.
+- **Resultado:** **GO para la parte Android.** Los ocho criterios pasan. En las condiciones de
+  esta prueba la consulta nativa responde `200` sin reto anti-bots, lo que hace viable consultar
+  sin WebView; no es una garantía (ver A2.3). El login sí cambia: por correo, no por Google.
 
 ## Resumen por criterio
 
@@ -15,7 +15,7 @@
 |---|---|---|
 | A2.1 WebView carga `claude.ai/login` | **PASA** (con hallazgo) | Carga y permite iniciar sesión, pero **el botón de Google no sirve** |
 | A2.2 Cookie no nula | **PASA** | 18 cookies con `sessionKey` tras el acceso por correo |
-| A2.3 Consulta nativa | **PASA** | `HTTP=200` en los dos endpoints; **sin reto anti-bots** |
+| A2.3 Consulta nativa | **PASA** | `HTTP=200` en los dos endpoints; sin reto observado |
 | A2.4 Consulta por `evaluateJavascript` | **PASA** | `200` también; mismas claves que la vía nativa |
 | A2.5 Persistencia de la sesión | **PASA** | Sobrevive a `force-stop` y a `install -r` |
 | A2.6 Nombres de claves y cabeceras | **PASA** | 2 organizaciones; nombres y cabeceras abajo |
@@ -69,7 +69,7 @@ Cinco toques seguidos, cinco actualizaciones; el texto del widget leído con `ui
 siguió al reloj del sistema (13:09:39 → 13:09:45 → 13:09:51).
 
 **Hallazgo que ahorra trabajo en W3:** `android:exported="false"` en el `AppWidgetProvider`
-funciona. El sistema entrega igual `APPWIDGET_UPDATE` (broadcast dirigido) y el `PendingIntent`
+funciona (verificado en One UI; no se probó en otros lanzadores). El sistema entrega igual `APPWIDGET_UPDATE` (broadcast dirigido) y el `PendingIntent`
 propio del toque también llega, porque corre con la identidad de la app. **No hay que exportar
 el receptor**, lo que encaja con la regla 5 de `SECURITY.md`.
 
@@ -83,11 +83,14 @@ funciona igual, pero W3 debe declarar `previewLayout` para no asustar al usuario
 y `setDomStorageEnabled(true)`. User-Agent que anuncia:
 
 ```
-Mozilla/5.0 (Linux; Android 17; SM-S948B Build/CP2A.260605.016; wv)
+Mozilla/5.0 (Linux; Android 17; <modelo> Build/<build>; wv)
 AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/153.0.8010.36 Mobile Safari/537.36
 ```
 
 ### El botón "Continuar con Google" NO es viable en un WebView
+
+(Modelo y build tapados: repo público. Lo que importa es el token **`wv`**, que es como Google
+reconoce un WebView.)
 
 Se intentó el login con Google. La contraseña fue aceptada, pero acto seguido Google respondió:
 
@@ -142,7 +145,7 @@ debe tratarse con el mismo cuidado que la cookie de sesión.
 Las dos cookies de Cloudflare (`__cf_bm`, `_cfuvid`) existen desde antes del login: hay gestión
 de bots delante, pero no bloquea (ver A2.3).
 
-## A2.3 — Consulta nativa: PASA, y cierra el riesgo 1 del spike A1
+## A2.3 — Consulta nativa: PASA (sin reto observado)
 
 `HttpURLConnection` con la cookie de sesión y el mismo User-Agent del WebView:
 
@@ -151,9 +154,28 @@ A2.3 nativo /organizations: HTTP=200 ctype=application/json server=cloudflare
 A2.3 nativo /usage:         HTTP=200 ctype=application/json server=cloudflare
 ```
 
-**No hay reto anti-bots.** Era el riesgo que podía obligar a enrutar todas las consultas por un
-WebView; queda descartado. W3 puede consultar con `HttpURLConnection` desde un `JobScheduler`,
-sin WebView y sin abrir la app.
+### Hasta dónde llega esta evidencia
+
+**No se observó reto anti-bots en 2 peticiones nativas y 6 por el WebView**, todas `200`, en unos
+tres minutos, desde **un** dispositivo, **una** IP doméstica y **una** sesión recién emitida, con
+el jarro de cookies completo que acababa de dejar el login.
+
+Eso **no demuestra** que no haya reto. Cloudflare puntúa huella TLS, ritmo de peticiones y
+reputación de IP, ninguna de las cuales se estresó aquí. Además las peticiones imitaban al
+navegador: `httpGet` manda exactamente
+
+```
+Cookie: <todas las cookies de claude.ai>
+User-Agent: <el mismo del WebView>
+Accept: application/json, text/plain, */*
+Accept-Language: es-MX,es;q=0.9,en;q=0.8
+Referer: https://claude.ai/
+```
+
+Lo que sí se puede afirmar: **la vía nativa es viable y debe ser la principal**. W3 consulta con
+`HttpURLConnection` desde un `JobScheduler`, sin WebView y sin abrir la app, **y maneja el caso
+de que un día sí haya reto** (ver "Para la spec"). La vía del WebView queda como **plan B
+documentado**, no descartada.
 
 Claves de primer nivel de `/usage` (solo nombres):
 
@@ -204,9 +226,12 @@ y el `fetch` solo se ejecutó 18 ms después de que el sistema descongelara el p
 Activity volvía al frente. La bandera `visible` seguía en `false` nada más porque el mensaje
 pendiente iba por delante de `onResume` en la cola del hilo principal.
 
-**Conclusión:** este spike **no logró una sola consulta por WebView estando el proceso realmente
-congelado**. Para W3 eso significa que un `JobScheduler` no debe apoyarse en el WebView. No
-importa: A2.3 demuestra que no hace falta.
+**Alcance de la prueba:** se usó `Handler.postDelayed`, **no un `JobScheduler`**. Un job real sí
+despierta el proceso, así que esto **no demuestra** que el WebView falle bajo `JobScheduler`; lo
+que demuestra es que el proceso se congela y que una consulta por WebView programada a mano no
+corre. No se investigó más porque **A2.3 funciona**: W3 usa la vía nativa y la cuestión se vuelve
+teórica. Si algún día hiciera falta el plan B del WebView, habría que medirlo otra vez con un
+`JobScheduler` de verdad.
 
 ## A2.5 — Persistencia de la sesión: PASA
 
@@ -217,8 +242,9 @@ A2.5 arranque: cookies=18 sessionKey=true nombres=[...]
 ```
 
 La sesión sobrevive a cerrar la app del todo, y también sobrevivió a un `adb install -r` del APK
-(antes del login se vieron las 13 cookies previas intactas tras reinstalar). `CookieManager.flush()`
-en `onPause` es lo que lo garantiza.
+(antes del login se vieron las 13 cookies previas intactas tras reinstalar). El spike llama a
+`CookieManager.flush()` en `onPause` **por precaución**; no se probó sin él, así que no consta si
+era necesario.
 
 **Fecha de vencimiento: no es visible.** `CookieManager.getCookie()` devuelve solo pares
 `nombre=valor`, sin atributos. Leer la base `Cookies` del WebView exigiría `android:debuggable`,
@@ -241,10 +267,14 @@ rate_limit_upsell, raven_type, settings, subscription_management, subscription_p
 uuid, visibility_status
 ```
 
-Para la regla de selección de W3 sirven `uuid`, `name`, `capabilities`, `rate_limit_tier` y
-`parent_organization_uuid` (distingue una organización hija de una personal). La consulta usó
-`[0].uuid` y respondió `200` a la primera, así que la propuesta del spike A1 —"la primera cuyo
-uso responda 200"— funciona; con dos organizaciones hace falta el selector manual en ajustes.
+La consulta usó `[0].uuid` y respondió `200` a la primera. **Eso es todo lo que se probó.**
+
+La regla de selección **queda abierta para W3**: con dos organizaciones las dos pueden responder
+`200` con cuotas distintas, así que "la primera cuyo uso responda 200" —la propuesta del spike
+A1— **no está demostrada** y podría mostrar la cuota equivocada. Candidatos a evaluar:
+`lastActiveOrg` (la cookie ya dice cuál usa la web), `capabilities`, `rate_limit_tier` y
+`parent_organization_uuid` para distinguir una organización hija de una personal. En cualquier
+caso, el selector manual en ajustes no es opcional.
 
 Cabeceras de respuesta, **vía nativa**:
 
@@ -274,16 +304,17 @@ con `evaluateJavascript`. `allowBackup=false` y `usesCleartextTraffic=false` en 
 
 ## Decisión
 
-**GO sin reservas** para W3. Los ocho criterios pasan y el riesgo que podía tumbar el diseño
-—el reto anti-bots de la vía nativa— no existe.
+**GO** para W3. Los ocho criterios pasan y la vía nativa es viable: no se observó reto
+anti-bots en las condiciones de esta prueba. No es una garantía —una sola sesión, un dispositivo,
+pocas peticiones— así que W3 debe manejar el reto por si aparece, con el WebView como plan B.
 
 Tres cambios respecto a la spec:
 
 1. El login de Android es **por correo con código**, no por Google. La spec decía "Activity
    WebView" sin precisar el método; hay que precisarlo.
 2. Las consultas periódicas van por **`HttpURLConnection` desde un `JobScheduler`**, no por el
-   WebView: el proceso se congela en segundo plano y el WebView no responde. El WebView queda
-   solo para el login.
+   WebView: el proceso se congela en segundo plano y una consulta por WebView programada a mano
+   no corre. El WebView queda para el login y como plan B si apareciera un reto.
 3. El `AppWidgetProvider` va con `exported="false"` y **con `previewLayout`**.
 
 ---
@@ -292,9 +323,10 @@ Tres cambios respecto a la spec:
 
 Lo que este spike obliga a cambiar o fijar en la especificación de Android:
 
-1. **Login solo por correo, con código.** El botón "Continuar con Google" se retira de la pantalla
-   de Android: dentro de un `WebView` Google bloquea el acceso 48 horas. La pantalla debe ofrecer
-   únicamente el acceso por correo y explicarlo antes de que el usuario se tope con el muro.
+1. **Login solo por correo, con código.** La app **no controla** la página de claude.ai, así que
+   no puede quitar el botón de Google. Lo que sí puede: una pantalla propia **antes** del WebView
+   que diga que en Android solo funciona el acceso por correo y por qué (dentro de un `WebView`
+   Google bloquea el acceso 48 horas).
 2. **Ventana de 10 minutos.** El enlace del correo vence a los 10 minutos. La pantalla debe
    decirlo, y conviene que el campo del código esté a la vista desde el principio.
 3. **Límite de reenvíos.** claude.ai deja de enviar correos tras varios intentos seguidos. La UI
@@ -309,8 +341,24 @@ Lo que este spike obliga a cambiar o fijar en la especificación de Android:
 7. **Las consultas periódicas no pueden usar el WebView.** El proceso se congela en segundo
    plano (Freecess en Samsung) y `evaluateJavascript` no corre. Van por `HttpURLConnection`
    desde el `JobScheduler`, que es justo lo que A2.3 demuestra que funciona.
-8. **`lastActiveOrg` puede ahorrar una llamada** a `/api/organizations`, pero su valor es un
+8. **Manejar el reto aunque hoy no aparezca.** La consulta nativa debe tratar `403`, la cabecera
+   `cf-mitigated` y una respuesta `text/html` donde se esperaba JSON como "hay reto": backoff
+   exponencial, no reintentar en bucle, y avisar al usuario de volver a iniciar sesión si persiste.
+   El plan B es rehacer la consulta dentro del WebView.
+9. **`lastActiveOrg` puede ahorrar una llamada** a `/api/organizations`, pero su valor es un
    UUID: mismo trato que la cookie de sesión.
-9. **Hay 2 organizaciones en esta cuenta**, así que el selector manual en ajustes no es opcional.
-10. **El contenido del widget debe llenar la celda.** El widget del spike dejó el texto arriba a la
+10. **La regla de selección de organización queda abierta.** Hay 2 en esta cuenta; el selector
+    manual en ajustes no es opcional.
+11. **El contenido del widget debe llenar la celda.**
+
+### Lo que W3 NO debe copiar del spike
+
+El spike es permisivo a propósito, para poder observar. El producto no:
+
+- **No imprimir cuerpos de respuesta.** El spike registra los primeros 160 caracteres cuando algo
+  falla; W3 debe registrar solo código HTTP, `content-type` y longitud.
+- **Mandar el mínimo de cookies.** El spike reenvía el jarro entero de claude.ai. W3 debe mandar
+  solo `sessionKey` y, si la regla de organización acaba usándola, `lastActiveOrg`.
+- **`setAcceptThirdPartyCookies(false)`.** El spike lo pone en `true` porque tanteaba el login de
+  Google; descartado ése, W3 no lo necesita. El widget del spike dejó el texto arriba a la
    izquierda y media celda vacía: se ve sin terminar. Centrar o repartir el contenido.
