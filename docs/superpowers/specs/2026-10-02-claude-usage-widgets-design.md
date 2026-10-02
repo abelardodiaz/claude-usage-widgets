@@ -158,9 +158,10 @@ del usuario. Reglas no negociables, revisadas en cada oleada:
 
 ## 7. Pruebas
 
-- **Contrato:** `spec/fixtures/*.json` (respuestas reales anonimizadas + series de muestras) y
-  `spec/expected/*.json`. Rust (`cargo test`) y Java (`android/core`, en JVM de escritorio) deben
-  producir exactamente los esperados. Corre en CI en cada PR.
+- **Contrato:** `spec/fixtures/{parse,history,projection}/*.json`, cada uno con su `input`
+  (respuestas reales anonimizadas o series de muestras) y su `expected` calculado a mano.
+  Rust (`cargo test`) y Java (`android/core`, en JVM de escritorio) deben producir exactamente
+  los esperados. Corre en CI en cada PR.
 - **Escritorio:** pruebas unitarias en Rust de fuentes y cálculo; prueba manual guiada en
   Windows y Linux por release.
 - **Android:** el Claude Code del teléfono instala y recorre la app con su método de navegación
