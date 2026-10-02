@@ -1,0 +1,15 @@
+# Memos entre sesiones de Claude Code: privados, no van al repo publico
+docs/incoming/*
+docs/procesados/*
+!docs/incoming/.gitkeep
+!docs/procesados/.gitkeep
+
+__pycache__/
+*.pyc
+.venv/
+node_modules/
+target/
+dist/
+*.keystore
+*.jks
+.env
