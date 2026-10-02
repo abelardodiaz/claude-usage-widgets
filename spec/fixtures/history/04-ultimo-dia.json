@@ -1,0 +1,19 @@
+{
+  "description": "Ultimo dia de la ventana: days_left < 1 se acota a 1",
+  "input": {
+    "tz": "-06:00",
+    "now": "2026-10-02T12:00:00-06:00",
+    "weekly": { "percent": 74, "resets_at": "2026-10-02T18:00:00-06:00" },
+    "samples": [
+      { "t": "2026-10-01T20:00:00-06:00", "percent": 65, "resets_at": "2026-10-02T18:00:00-06:00" },
+      { "t": "2026-10-02T08:00:00-06:00", "percent": 70, "resets_at": "2026-10-02T18:00:00-06:00" },
+      { "t": "2026-10-02T12:00:00-06:00", "percent": 74, "resets_at": "2026-10-02T18:00:00-06:00" }
+    ]
+  },
+  "expected": {
+    "per_day": { "2026-10-01": 1.666667, "2026-10-02": 7.333333 },
+    "today_used": 7.333333,
+    "quota_today": 33.333333,
+    "partial": false
+  }
+}

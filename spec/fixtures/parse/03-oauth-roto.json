@@ -1,0 +1,9 @@
+{
+  "description": "La forma cambio: seven_day sin utilization numerica. Debe fallar, no inventar 0%",
+  "source": "claude_code",
+  "input": {
+    "five_hour": { "utilization": 10.0, "resets_at": "2026-10-02T13:00:00-06:00" },
+    "seven_day": { "used": "74%" }
+  },
+  "expected": { "error": "unrecognized_format" }
+}

@@ -1,0 +1,17 @@
+{
+  "description": "Primera muestra de la historia: hoy es parcial",
+  "input": {
+    "tz": "-06:00",
+    "now": "2026-10-06T09:00:00-06:00",
+    "weekly": { "percent": 50, "resets_at": "2026-10-09T18:00:00-06:00" },
+    "samples": [
+      { "t": "2026-10-06T09:00:00-06:00", "percent": 50, "resets_at": "2026-10-09T18:00:00-06:00" }
+    ]
+  },
+  "expected": {
+    "per_day": {},
+    "today_used": 0,
+    "quota_today": 13.333333,
+    "partial": true
+  }
+}

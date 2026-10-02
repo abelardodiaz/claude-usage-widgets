@@ -1,0 +1,6 @@
+{
+  "description": "Sesion ya en 100%",
+  "input": { "kind": "session", "now": "2026-10-02T12:00:00-06:00", "percent": 100,
+             "resets_at": "2026-10-02T15:00:00-06:00", "samples": [] },
+  "expected": { "hits_at": "2026-10-02T12:00:00-06:00", "before_reset": true, "basis": "window" }
+}
