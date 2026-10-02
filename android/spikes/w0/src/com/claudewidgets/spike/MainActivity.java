@@ -56,6 +56,8 @@ public class MainActivity extends Activity {
     private TextView logView;
     private ScrollView logScroll;
     private final Handler handler = new Handler(Looper.getMainLooper());
+    /** Si la Activity esta en primer plano cuando se lanza la consulta (A2.4bg). */
+    private boolean visible = false;
 
     @Override
     protected void onCreate(Bundle state) {
@@ -87,7 +89,16 @@ public class MainActivity extends Activity {
         });
         ((Button) findViewById(R.id.btn_cookie)).setOnClickListener(v -> probeCookie("A2.2"));
         ((Button) findViewById(R.id.btn_native)).setOnClickListener(v -> probeNative());
-        ((Button) findViewById(R.id.btn_webview)).setOnClickListener(v -> probeWebView());
+        Button btnWebView = findViewById(R.id.btn_webview);
+        btnWebView.setOnClickListener(v -> probeWebView("A2.4"));
+        // Pulsacion larga: la misma consulta, pero 12 s despues, para poder mandar la app a
+        // segundo plano antes. Responde si un JobScheduler del widget podria usar el WebView
+        // sin abrir la app (duda que PC plantea para W3).
+        btnWebView.setOnLongClickListener(v -> {
+            log("A2.4bg programado: manda la app a segundo plano, dispara en 12 s");
+            handler.postDelayed(() -> probeWebView("A2.4bg"), 12000);
+            return true;
+        });
         ((Button) findViewById(R.id.btn_widget)).setOnClickListener(v -> requestPin());
 
         log("arranque: Android " + Build.VERSION.RELEASE + " (SDK " + Build.VERSION.SDK_INT + ")");
@@ -98,8 +109,15 @@ public class MainActivity extends Activity {
     }
 
     @Override
+    protected void onResume() {
+        super.onResume();
+        visible = true;
+    }
+
+    @Override
     protected void onPause() {
         super.onPause();
+        visible = false;
         // Sin flush la cookie puede quedarse solo en memoria y A2.5 daria un falso negativo.
         CookieManager.getInstance().flush();
     }
@@ -220,7 +238,7 @@ public class MainActivity extends Activity {
      * global y Java la sondea: asi no hace falta addJavascriptInterface, que esta
      * prohibido por SECURITY.md.
      */
-    private void probeWebView() {
+    private void probeWebView(final String tag) {
         String js =
             "(function(){window.__spike='';var out={};"
           + "function sum(r,t){var o=null;try{o=JSON.parse(t)}catch(e){}"
@@ -237,22 +255,23 @@ public class MainActivity extends Activity {
           + ".then(function(r2){return r2.text().then(function(t2){"
           + "out.usage=sum(r2,t2)[0];window.__spike=JSON.stringify(out)})})})})"
           + ".catch(function(e){out.error=String(e);window.__spike=JSON.stringify(out)});})()";
-        log("A2.4 lanzando fetch dentro del WebView (origen actual: " + hostOf(web.getUrl()) + ")");
+        log(tag + " lanzando fetch dentro del WebView (origen actual: " + hostOf(web.getUrl())
+                + ", activity visible: " + visible + ")");
         web.evaluateJavascript(js, null);
-        pollWebView(0);
+        pollWebView(tag, 0);
     }
 
-    private void pollWebView(final int tries) {
+    private void pollWebView(final String tag, final int tries) {
         if (tries > 80) {
-            log("A2.4 FALLA: sin respuesta tras 24 s");
+            log(tag + " FALLA: sin respuesta tras 24 s");
             return;
         }
         web.evaluateJavascript("window.__spike||''", value -> {
             String s = unquote(value);
             if (s.isEmpty()) {
-                handler.postDelayed(() -> pollWebView(tries + 1), 300);
+                handler.postDelayed(() -> pollWebView(tag, tries + 1), 300);
             } else {
-                log("A2.4 webview: " + scrub(s));
+                log(tag + " webview: " + scrub(s));
             }
         });
     }
