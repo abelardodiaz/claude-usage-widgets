@@ -13,3 +13,7 @@ dist/
 *.keystore
 *.jks
 .env
+
+# Rol local de cada sesion de Claude Code (no va al repo publico)
+CLAUDE.local.md
+docs/outbox/*
