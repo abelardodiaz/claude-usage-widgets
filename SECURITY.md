@@ -16,7 +16,7 @@ escritorio). Estas reglas no son negociables y cada fase se revisa contra ellas.
 4. Escritorio (Tauri): CSP estricta, sin APIs de `shell` ni `fs` expuestas a la UI. La UI solo
    recibe el modelo normalizado de uso, nunca credenciales.
 5. Android: el WebView se usa solo para iniciar sesión; sin `addJavascriptInterface`,
-   `usesCleartextTraffic=false`, `allowBackup=false`.
+   `usesCleartextTraffic=false`, `allowBackup=false`, sin permisos de red local.
 6. Releases firmados, con checksums SHA-256 publicados. Dependencias fijadas en lockfiles y
    vigiladas por Dependabot.
 7. La única fuente oficial de instaladores es la página de Releases de este repositorio.
