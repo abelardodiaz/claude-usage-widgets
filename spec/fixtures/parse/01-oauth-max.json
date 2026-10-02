@@ -1,5 +1,5 @@
 {
-  "description": "Respuesta OAuth real (plan Max) con limite por modelo, desglose y claves desconocidas",
+  "description": "Respuesta OAuth real con limite por modelo, desglose y claves desconocidas",
   "source": "claude_code",
   "input": {
     "five_hour": {

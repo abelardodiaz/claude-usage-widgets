@@ -1,7 +1,7 @@
 # Spike A1 — Endpoint de uso en claude.ai
 
 - **Fecha:** 2026-10-02
-- **Método:** Claude in Chrome sobre una sesión real de claude.ai (plan Max), página
+- **Método:** Claude in Chrome sobre una sesión real de claude.ai, página
   `https://claude.ai/settings/usage`. Se observaron las peticiones de red y se reprodujeron con
   `fetch(..., {credentials: 'include'})` desde la propia página. Ninguna cookie se leyó ni se imprimió.
 - **Resultado:** **PASA.** Existe un endpoint usable y su respuesta tiene la misma forma que la de OAuth.
@@ -46,6 +46,10 @@ Fixture: `spec/fixtures/parse/05-claude-ai.json` (anonimizada: sin UUID de organ
    elegir cuál consultar. Propuesta para W3: la primera cuyo uso responda `200` con
    `five_hour`/`seven_day` válidos, con selector manual en ajustes si hay más de una.
 3. **Duración de la sesión.** Se mide en A2.5.
+4. **Datos que A2 debe anotar** (solo nombres, nunca valores): las claves de cada elemento de
+   `GET /api/organizations` (para la regla de selección de W3, que **no** es parte de R1b: R1b solo
+   parsea una respuesta ya obtenida) y las cabeceras de respuesta relacionadas con anti-bots
+   (`server`, `cf-*`) en la vía nativa y en la del WebView.
 
 ## Decisión
 
