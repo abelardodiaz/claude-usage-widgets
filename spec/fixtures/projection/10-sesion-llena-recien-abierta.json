@@ -1,0 +1,15 @@
+{
+  "description": "100% con la ventana recien abierta: gana percent >= 100 sobre elapsed < 60 s",
+  "input": {
+    "kind": "session",
+    "now": "2026-10-02T10:00:30-06:00",
+    "percent": 100,
+    "resets_at": "2026-10-02T15:00:00-06:00",
+    "samples": []
+  },
+  "expected": {
+    "hits_at": "2026-10-02T10:00:30-06:00",
+    "before_reset": true,
+    "basis": "window"
+  }
+}

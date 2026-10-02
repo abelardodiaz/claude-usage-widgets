@@ -1,0 +1,15 @@
+{
+  "description": "Sesion con now posterior al reinicio (dato rancio): no se proyecta",
+  "input": {
+    "kind": "session",
+    "now": "2026-10-02T15:30:00-06:00",
+    "percent": 50,
+    "resets_at": "2026-10-02T15:00:00-06:00",
+    "samples": []
+  },
+  "expected": {
+    "hits_at": null,
+    "before_reset": null,
+    "basis": null
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/abelardodiaz/claude-usage-widgets/spec/usage-model.schema.json",
+  "title": "Usage",
+  "type": "object",
+  "required": ["session", "weekly", "scoped", "breakdown", "source"],
+  "additionalProperties": false,
+  "properties": {
+    "fetched_at": { "type": "string", "format": "date-time" },
+    "source": { "enum": ["claude_code", "claude_ai"] },
+    "session": { "$ref": "#/$defs/window" },
+    "weekly": { "$ref": "#/$defs/window" },
+    "scoped": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["label", "percent", "resets_at"],
+        "additionalProperties": false,
+        "properties": {
+          "label": { "type": "string", "minLength": 1 },
+          "percent": { "type": "number" },
+          "resets_at": { "type": ["string", "null"], "format": "date-time" }
+        }
+      }
+    },
+    "breakdown": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["key", "label", "percent"],
+        "additionalProperties": false,
+        "properties": {
+          "key": { "type": "string" },
+          "label": { "type": "string" },
+          "percent": { "type": "number" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "window": {
+      "type": "object",
+      "required": ["percent", "resets_at"],
+      "additionalProperties": false,
+      "properties": {
+        "percent": { "type": "number" },
+        "resets_at": { "type": ["string", "null"], "format": "date-time" }
+      }
+    }
+  }
+}

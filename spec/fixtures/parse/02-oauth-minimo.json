@@ -1,0 +1,15 @@
+{
+  "description": "Solo sesion y semana: sin limits ni desglose; resets nulos permitidos",
+  "source": "claude_code",
+  "input": {
+    "five_hour": { "utilization": 0.0, "resets_at": null },
+    "seven_day": { "utilization": 12.5, "resets_at": "2026-10-09T18:00:00-06:00" }
+  },
+  "expected": {
+    "source": "claude_code",
+    "session": { "percent": 0.0, "resets_at": null },
+    "weekly": { "percent": 12.5, "resets_at": "2026-10-09T18:00:00-06:00" },
+    "scoped": [],
+    "breakdown": []
+  }
+}

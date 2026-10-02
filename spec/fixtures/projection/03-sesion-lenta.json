@@ -1,0 +1,6 @@
+{
+  "description": "Sesion: el 100% caeria despues del reinicio",
+  "input": { "kind": "session", "now": "2026-10-02T12:00:00-06:00", "percent": 10,
+             "resets_at": "2026-10-02T15:00:00-06:00", "samples": [] },
+  "expected": { "hits_at": "2026-10-03T06:00:00-06:00", "before_reset": false, "basis": "window" }
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Semana sin resets_at: no se proyecta",
+  "input": {
+    "kind": "weekly",
+    "now": "2026-10-06T12:00:00-06:00",
+    "percent": 44,
+    "resets_at": null,
+    "samples": [
+      {
+        "t": "2026-10-05T12:00:00-06:00",
+        "percent": 20,
+        "resets_at": null
+      }
+    ]
+  },
+  "expected": {
+    "hits_at": null,
+    "before_reset": null,
+    "basis": null
+  }
+}
