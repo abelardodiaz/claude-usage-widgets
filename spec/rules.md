@@ -40,7 +40,16 @@ Entrada: JSON de `GET https://api.anthropic.com/api/oauth/usage`.
   Si `rows` falta o no es arreglo → `[]`.
 - Claves desconocidas se ignoran.
 
-(El parseo de `claude_ai` se define en la Tarea 3.3, tras el spike A1.)
+## R1b. Parseo de claude.ai (`source = claude_ai`)
+
+Entrada: JSON de `GET https://claude.ai/api/organizations/{org_uuid}/usage`, autenticado solo con
+la cookie de sesión de claude.ai (ver `docs/spikes/2026-10-w0-a1-claude-ai.md`).
+
+La respuesta tiene **la misma forma** que la de OAuth: se aplica R1 completa, con
+`source = "claude_ai"`. Diferencias observadas que R0 y R1 ya cubren:
+- Los instantes vienen en UTC (`+00:00`); se comparan como instantes, nunca como texto.
+- `display_name` del desglose viene en el idioma de la cuenta (p. ej. `Otros`). La UI usa `key`
+  para colores e íconos y `label` solo para mostrar.
 
 ## R2. Misma ventana
 
