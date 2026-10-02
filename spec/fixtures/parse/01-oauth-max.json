@@ -2,37 +2,118 @@
   "description": "Respuesta OAuth real (plan Max) con limite por modelo, desglose y claves desconocidas",
   "source": "claude_code",
   "input": {
-    "five_hour": { "utilization": 6.0, "resets_at": "2026-10-02T13:19:59.614725-06:00", "limit_dollars": null },
-    "seven_day": { "utilization": 74.0, "resets_at": "2026-10-02T17:59:59.614747-06:00", "limit_dollars": null },
+    "five_hour": {
+      "utilization": 6.0,
+      "resets_at": "2026-10-02T13:19:59.614725-06:00",
+      "limit_dollars": null
+    },
+    "seven_day": {
+      "utilization": 74.0,
+      "resets_at": "2026-10-02T17:59:59.614747-06:00",
+      "limit_dollars": null
+    },
     "seven_day_opus": null,
-    "iguana_necktie": { "utilization": 0.0, "resets_at": "2026-11-05T01:59:00-06:00", "limit_dollars": 250 },
-    "extra_usage": { "is_enabled": false },
+    "iguana_necktie": {
+      "utilization": 0.0,
+      "resets_at": "2026-11-05T01:59:00-06:00",
+      "limit_dollars": null
+    },
+    "extra_usage": {
+      "is_enabled": false
+    },
     "limits": [
-      { "kind": "session", "group": "session", "percent": 6, "resets_at": "2026-10-02T13:19:59.614725-06:00", "scope": null },
-      { "kind": "weekly_all", "group": "weekly", "percent": 74, "resets_at": "2026-10-02T17:59:59.614747-06:00", "scope": null },
-      { "kind": "weekly_scoped", "group": "weekly", "percent": 26, "resets_at": "2026-10-02T17:59:59.614945-06:00",
-        "scope": { "model": { "id": null, "display_name": "Fable" }, "surface": null } }
+      {
+        "kind": "session",
+        "group": "session",
+        "percent": 6,
+        "resets_at": "2026-10-02T13:19:59.614725-06:00",
+        "scope": null
+      },
+      {
+        "kind": "weekly_all",
+        "group": "weekly",
+        "percent": 74,
+        "resets_at": "2026-10-02T17:59:59.614747-06:00",
+        "scope": null
+      },
+      {
+        "kind": "weekly_scoped",
+        "group": "weekly",
+        "percent": 26,
+        "resets_at": "2026-10-02T17:59:59.614945-06:00",
+        "scope": {
+          "model": {
+            "id": null,
+            "display_name": "Fable"
+          },
+          "surface": null
+        }
+      }
     ],
     "seven_day_breakdown": {
       "as_of": "2026-10-02T12:01:22.647357-06:00",
       "rows": [
-        { "key": "claude_code", "display_name": "Claude Code", "percent": 100 },
-        { "key": "chat", "display_name": "Chats", "percent": 0 },
-        { "key": "cowork", "display_name": "Cowork", "percent": 0 },
-        { "key": "other", "display_name": "Other", "percent": 0 }
+        {
+          "key": "claude_code",
+          "display_name": "Claude Code",
+          "percent": 100
+        },
+        {
+          "key": "chat",
+          "display_name": "Chats",
+          "percent": 0
+        },
+        {
+          "key": "cowork",
+          "display_name": "Cowork",
+          "percent": 0
+        },
+        {
+          "key": "other",
+          "display_name": "Other",
+          "percent": 0
+        }
       ]
     }
   },
   "expected": {
     "source": "claude_code",
-    "session": { "percent": 6.0, "resets_at": "2026-10-02T13:19:59.614725-06:00" },
-    "weekly": { "percent": 74.0, "resets_at": "2026-10-02T17:59:59.614747-06:00" },
-    "scoped": [ { "label": "Fable", "percent": 26, "resets_at": "2026-10-02T17:59:59.614945-06:00" } ],
+    "session": {
+      "percent": 6.0,
+      "resets_at": "2026-10-02T13:19:59.614725-06:00"
+    },
+    "weekly": {
+      "percent": 74.0,
+      "resets_at": "2026-10-02T17:59:59.614747-06:00"
+    },
+    "scoped": [
+      {
+        "label": "Fable",
+        "percent": 26,
+        "resets_at": "2026-10-02T17:59:59.614945-06:00"
+      }
+    ],
     "breakdown": [
-      { "key": "claude_code", "label": "Claude Code", "percent": 100 },
-      { "key": "chat", "label": "Chats", "percent": 0 },
-      { "key": "cowork", "label": "Cowork", "percent": 0 },
-      { "key": "other", "label": "Other", "percent": 0 }
+      {
+        "key": "claude_code",
+        "label": "Claude Code",
+        "percent": 100
+      },
+      {
+        "key": "chat",
+        "label": "Chats",
+        "percent": 0
+      },
+      {
+        "key": "cowork",
+        "label": "Cowork",
+        "percent": 0
+      },
+      {
+        "key": "other",
+        "label": "Other",
+        "percent": 0
+      }
     ]
   }
 }

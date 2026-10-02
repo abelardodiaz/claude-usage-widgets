@@ -2,6 +2,26 @@
 
 Toda implementación (Rust en desktop/, Java en android/core/) debe pasar los fixtures de
 `spec/fixtures/`. Si este documento y un fixture discrepan, gana el fixture y se corrige el doc.
+Las reglas con pasos numerados se evalúan **en ese orden**: la primera que aplica decide.
+
+## R0. Convenciones
+
+- Instantes: RFC 3339 con desplazamiento. Se comparan como instantes (misma hora UTC = iguales),
+  no como texto. Tolerancia en fixtures: 1 s.
+- Números: sin redondeo interno; los fixtures muestran hasta 6 decimales. Tolerancia: 0.001.
+- "h" y "días" en restas de instantes (5 h, 7 días, 24 h, 1 h) son duraciones fijas de
+  3600 s y 86 400 s. `days_left` = segundos / 86 400.
+- "Día local" y "medianoche local" se calculan en la zona del dispositivo (IANA, con horario de
+  verano). En un fixture, en la zona `tz` de la entrada. Un día con cambio de horario dura 23 o
+  25 h y el reparto de R3 sigue siendo proporcional al tiempo real. Si la medianoche no existe en
+  esa zona, se usa el primer instante del día. Las claves de `per_day` son `YYYY-MM-DD` locales.
+- "Hoy" = fecha local de `now`.
+- Las comparaciones `<`, `≤`, `≥` son literales: `t ≥ now − 24 h` incluye la muestra tomada
+  exactamente 24 h antes (lo fija `projection/05`).
+- Muestras con `t > now` se ignoran. `samples` ya incluye la muestra actual; no se agrega
+  `(now, weekly.percent)` implícitamente.
+- `percent` se conserva tal cual viene (puede ser > 100 o < 0; no es error). R3 usa el valor
+  crudo; R5 y R6 cubren `≥ 100` y `≤ 0`; R7 y las barras acotan a [0, 100] solo para dibujar.
 
 ## R1. Parseo de la respuesta OAuth (`source = claude_code`)
 
@@ -11,11 +31,13 @@ Entrada: JSON de `GET https://api.anthropic.com/api/oauth/usage`.
 - `weekly` ← `seven_day`: igual.
 - Si `five_hour` o `seven_day` falta, no es objeto, o su `utilization` no es número →
   error `unrecognized_format` (nunca se inventa un 0 %).
+- `resets_at` ausente, nulo, no cadena o no parseable como RFC 3339 → `null`.
 - `scoped` ← cada elemento de `limits[]` cuyo `kind` NO sea `session` ni `weekly_all` y cuyo
   `percent` sea número. `label` = `scope.model.display_name`, si no `scope.surface.display_name`,
-  si no `kind`. Si `limits` falta o no es arreglo → `[]`.
-- `breakdown` ← `seven_day_breakdown.rows[]`: `key`, `label = display_name`, `percent`.
-  Si falta → `[]`.
+  si no `kind`; una cadena vacía cuenta como ausente. Si `limits` falta o no es arreglo → `[]`.
+- `breakdown` ← `seven_day_breakdown.rows[]`: `key`, `label = display_name` (si no, `key`),
+  `percent`. Se omite la fila cuyo `key` no sea cadena o cuyo `percent` no sea número.
+  Si `rows` falta o no es arreglo → `[]`.
 - Claves desconocidas se ignoran.
 
 (El parseo de `claude_ai` se define en la Tarea 3.3, tras el spike A1.)
@@ -27,43 +49,55 @@ difieren menos de 3600 s.
 
 ## R3. Consumo entre muestras consecutivas
 
-Muestras ordenadas por tiempo `a`, `b`:
-- misma ventana: `delta = b.percent − a.percent`
-- otra ventana (hubo reinicio): `delta = b.percent`, y el intervalo empieza en
-  `max(a.t, b.resets_at − 7 días)`
-- `delta ≤ 0` → no aporta nada.
-- El `delta` se reparte entre los días locales **proporcional al tiempo** del intervalo
-  `[inicio, b.t]` que cae en cada día. Si el intervalo tiene duración 0, todo va al día de `b.t`.
+1. Se descartan las muestras con `t > now`. Las restantes se ordenan por `t` ascendente (orden
+   estable). Si varias comparten el mismo `t`, se conserva solo la última en el orden de entrada.
+2. Para cada par consecutivo `a`, `b`:
+   - misma ventana (R2): `delta = b.percent − a.percent`, `inicio = a.t`.
+   - otra ventana (hubo reinicio): `delta = b.percent`, `inicio = max(a.t, b.resets_at − 7 días)`.
+     Si `inicio > b.t`, se toma `inicio = b.t`.
+   - `delta ≤ 0` → el par no aporta nada.
+3. El `delta` se reparte entre los días locales **proporcional al tiempo** del intervalo
+   `[inicio, b.t]` que cae en cada día. Si el intervalo dura 0, todo va al día de `b.t`.
 
 ## R4. Hoy
 
-- `per_day[d]` = suma de lo repartido al día `d`.
+- `per_day[d]` = suma de lo repartido al día `d`. Solo contiene días con aporte > 0; al comparar,
+  una entrada con 0 equivale a ausente.
 - `today_used` = `per_day[hoy]` (0 si no hay).
-- `base` = `max(weekly.percent − today_used, 0)`.
-- `days_left` = `(weekly.resets_at − medianoche local de hoy)` en días (fraccionario).
-- `quota_today` = `(100 − base) / max(days_left, 1)`.
-- `partial` = no existe ninguna muestra anterior a la medianoche local de hoy.
+- `partial` = no existe ninguna muestra con `t < medianoche local de hoy` (estricto: una muestra
+  exactamente a las 00:00 no cuenta como anterior).
+- Si `weekly.resets_at` es nulo → `quota_today = null`.
+- Si no: `base = max(weekly.percent − today_used, 0)`,
+  `days_left = (weekly.resets_at − medianoche local de hoy)` en días (fraccionario),
+  `quota_today = (100 − base) / max(days_left, 1)`.
 
 ## R5. Proyección de la sesión (ventana de 5 h)
 
-- `start = resets_at − 5 h`, `elapsed = now − start`.
-- `percent ≤ 0` o `elapsed < 60 s` → `hits_at = null`, `before_reset = null`, `basis = null`.
-- `percent ≥ 100` → `hits_at = now`, `before_reset = true`, `basis = "window"`.
-- Si no: `rate = percent / elapsed`, `hits_at = now + (100 − percent) / rate`,
-  `before_reset = hits_at < resets_at`, `basis = "window"`.
+1. `resets_at` nulo → `hits_at = null`, `before_reset = null`, `basis = null`.
+2. `percent ≥ 100` → `hits_at = now`, `before_reset = true`, `basis = "window"`.
+3. `start = resets_at − 5 h`, `elapsed = now − start`. Si `percent ≤ 0`, `elapsed < 60 s` o
+   `now ≥ resets_at` → `hits_at = null`, `before_reset = null`, `basis = null`.
+4. Si no: `rate = percent / elapsed`, `hits_at = now + (100 − percent) / rate`,
+   `before_reset = hits_at < resets_at`, `basis = "window"`.
 
 ## R6. Proyección de la semana
 
-- Muestras candidatas: las de la misma ventana que `weekly` (R2) con `t ≥ now − 24 h`.
-- `ref` = la más antigua de las candidatas. Si existe y `now − ref.t ≥ 1 h`:
-  `rate = (percent − ref.percent) / (now − ref.t)`, `basis = "24h"`.
-  - `rate ≤ 0` → `hits_at = null`, `before_reset = null`, `basis = "24h"`.
-- Si no: igual que R5 pero con ventana de 7 días (`start = resets_at − 7 d`), `basis = "window"`.
-- `percent ≥ 100` → `hits_at = now`, `before_reset = true` (con la `basis` que corresponda).
-- `hits_at = now + (100 − percent) / rate`, `before_reset = hits_at < resets_at`.
+1. `weekly.resets_at` nulo → `hits_at = null`, `before_reset = null`, `basis = null`.
+2. Candidatas: muestras de la misma ventana que `weekly` (R2) con `now − 24 h ≤ t ≤ now`.
+   `ref` = la de menor `t`. Hay *ritmo 24h* si existe `ref` y `now − ref.t ≥ 1 h`.
+3. `percent ≥ 100` → `hits_at = now`, `before_reset = true`, `basis = "24h"` si hay ritmo 24h,
+   si no `"window"`.
+4. Con ritmo 24h: `rate = (percent − ref.percent) / (now − ref.t)`, `basis = "24h"`.
+   Si `rate ≤ 0` → `hits_at = null`, `before_reset = null` (`basis` sigue siendo `"24h"`).
+5. Sin ritmo 24h: `start = resets_at − 7 días`, `elapsed = now − start`. Si `percent ≤ 0`,
+   `elapsed < 60 s` o `now ≥ resets_at` → `hits_at = null`, `before_reset = null`, `basis = null`.
+   Si no: `rate = percent / elapsed`, `basis = "window"`.
+6. `hits_at = now + (100 − percent) / rate`, `before_reset = hits_at < resets_at`.
 
 ## R7. Colores
 
 - Barras de sesión, semana y limitados: verde `< 60`, ámbar `< 85`, rojo `≥ 85`.
-- Barra de hoy, por `today_used / quota_today`: verde `< 0.7`, ámbar `< 1`, rojo `≥ 1`.
-- Marca de ritmo parejo en la barra semanal: `1 − (resets_at − now) / 7 días`, acotada a [0, 1].
+- Barra de hoy, por `today_used / quota_today`: verde `< 0.7`, ámbar `< 1`, rojo `≥ 1`;
+  gris si `quota_today` es nulo o 0.
+- Marca de ritmo parejo en la barra semanal: `1 − (resets_at − now) / 7 días`, acotada a [0, 1];
+  sin marca si `resets_at` es nulo.

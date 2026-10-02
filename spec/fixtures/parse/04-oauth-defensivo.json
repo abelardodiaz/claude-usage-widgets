@@ -1,0 +1,99 @@
+{
+  "description": "Parseo defensivo: fechas invalidas a null, percent > 100 se conserva, label vacio cae al siguiente, filas invalidas se omiten",
+  "source": "claude_code",
+  "input": {
+    "five_hour": {
+      "utilization": 20,
+      "resets_at": "manana"
+    },
+    "seven_day": {
+      "utilization": 101.5,
+      "resets_at": 12345
+    },
+    "limits": [
+      {
+        "kind": "weekly_scoped",
+        "percent": 30,
+        "resets_at": "2026-10-09T18:00:00-06:00",
+        "scope": {
+          "model": {
+            "display_name": ""
+          },
+          "surface": {
+            "display_name": "Claude Code"
+          }
+        }
+      },
+      {
+        "kind": "weekly_scoped",
+        "percent": "30%",
+        "resets_at": "2026-10-09T18:00:00-06:00",
+        "scope": null
+      },
+      {
+        "kind": "monthly",
+        "percent": 5,
+        "resets_at": null,
+        "scope": null
+      }
+    ],
+    "seven_day_breakdown": {
+      "rows": [
+        {
+          "key": "chat",
+          "display_name": "Chats",
+          "percent": 40
+        },
+        {
+          "key": 7,
+          "display_name": "Raro",
+          "percent": 10
+        },
+        {
+          "key": "cowork",
+          "display_name": "Cowork",
+          "percent": "x"
+        },
+        {
+          "key": "other",
+          "percent": 60
+        }
+      ]
+    }
+  },
+  "expected": {
+    "source": "claude_code",
+    "session": {
+      "percent": 20,
+      "resets_at": null
+    },
+    "weekly": {
+      "percent": 101.5,
+      "resets_at": null
+    },
+    "scoped": [
+      {
+        "label": "Claude Code",
+        "percent": 30,
+        "resets_at": "2026-10-09T18:00:00-06:00"
+      },
+      {
+        "label": "monthly",
+        "percent": 5,
+        "resets_at": null
+      }
+    ],
+    "breakdown": [
+      {
+        "key": "chat",
+        "label": "Chats",
+        "percent": 40
+      },
+      {
+        "key": "other",
+        "label": "other",
+        "percent": 60
+      }
+    ]
+  }
+}

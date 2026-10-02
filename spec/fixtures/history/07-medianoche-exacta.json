@@ -1,0 +1,31 @@
+{
+  "description": "Una muestra exactamente a las 00:00 no cuenta como anterior a hoy: parcial",
+  "input": {
+    "tz": "-06:00",
+    "now": "2026-10-06T06:00:00-06:00",
+    "weekly": {
+      "percent": 16,
+      "resets_at": "2026-10-09T18:00:00-06:00"
+    },
+    "samples": [
+      {
+        "t": "2026-10-06T00:00:00-06:00",
+        "percent": 10,
+        "resets_at": "2026-10-09T18:00:00-06:00"
+      },
+      {
+        "t": "2026-10-06T06:00:00-06:00",
+        "percent": 16,
+        "resets_at": "2026-10-09T18:00:00-06:00"
+      }
+    ]
+  },
+  "expected": {
+    "per_day": {
+      "2026-10-06": 6
+    },
+    "today_used": 6,
+    "quota_today": 24,
+    "partial": true
+  }
+}

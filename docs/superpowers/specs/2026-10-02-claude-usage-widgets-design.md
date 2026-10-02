@@ -72,7 +72,7 @@ claves desconocidas ignoradas, `null` tolerado) y un cambio de forma se reporta 
 ```
 Usage {
   fetched_at: datetime
-  session:  Window { percent: 0..100, resets_at: datetime|null }
+  session:  Window { percent: number (normalmente 0..100), resets_at: datetime|null }
   weekly:   Window
   scoped:   [ { label: string, percent, resets_at } ]   // p.ej. límite semanal por modelo
   breakdown:[ { key: string, label: string, percent } ] // reparto de lo usado en la semana

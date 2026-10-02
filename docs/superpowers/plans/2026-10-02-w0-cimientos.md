@@ -199,6 +199,11 @@ git commit -m "ci: dependabot para actions"
 
 ## F2 — Contrato (PC) · rama `w0/f2-contrato`
 
+> **Nota de cierre:** la revisión Fable de F2 endureció `spec/rules.md` (R0 de convenciones,
+> orden explícito de comprobaciones, nulos, desorden y duplicados), agregó 9 fixtures (23 en total)
+> y fijó dependencias por hash y acciones por SHA. **La versión vigente es la del repo**, no los
+> bloques de abajo, que quedan como registro de lo planeado.
+
 Zona horaria de todos los fixtures: `-06:00` fija. "Día" = fecha local en esa zona.
 Comparación numérica con tolerancia `0.001`; fechas como instantes con tolerancia de 1 s.
 
