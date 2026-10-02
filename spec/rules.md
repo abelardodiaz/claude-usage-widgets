@@ -32,7 +32,7 @@ Entrada: JSON de `GET https://api.anthropic.com/api/oauth/usage`.
 - Si `five_hour` o `seven_day` falta, no es objeto, o su `utilization` no es número →
   error `unrecognized_format` (nunca se inventa un 0 %).
 - `resets_at` ausente, nulo, no cadena o no parseable como RFC 3339 → `null`.
-- `scoped` ← cada elemento de `limits[]` cuyo `kind` NO sea `session` ni `weekly_all` y cuyo
+- `scoped` ← cada elemento de `limits[]` cuyo `kind` sea cadena no vacía distinta de `session` y `weekly_all` y cuyo
   `percent` sea número. `label` = `scope.model.display_name`, si no `scope.surface.display_name`,
   si no `kind`; una cadena vacía cuenta como ausente. Si `limits` falta o no es arreglo → `[]`.
 - `breakdown` ← `seven_day_breakdown.rows[]`: `key`, `label = display_name` (si no, `key`),
@@ -44,8 +44,8 @@ Entrada: JSON de `GET https://api.anthropic.com/api/oauth/usage`.
 
 ## R2. Misma ventana
 
-Dos muestras están en la misma ventana semanal si alguno de sus `resets_at` es nulo o si
-difieren menos de 3600 s.
+Dos muestras `a` y `b` están en la misma ventana semanal si alguno de sus `resets_at` es nulo
+o si `|a.resets_at − b.resets_at| < 3600 s`.
 
 ## R3. Consumo entre muestras consecutivas
 
@@ -82,8 +82,10 @@ difieren menos de 3600 s.
 
 ## R6. Proyección de la semana
 
-1. `weekly.resets_at` nulo → `hits_at = null`, `before_reset = null`, `basis = null`.
-2. Candidatas: muestras de la misma ventana que `weekly` (R2) con `now − 24 h ≤ t ≤ now`.
+1. `weekly.resets_at` nulo, o `now ≥ resets_at` (dato rancio) → `hits_at = null`,
+   `before_reset = null`, `basis = null`.
+2. Se parte de las muestras ya depuradas por el paso 1 de R3 (sin `t > now`, sin `t` duplicado).
+   Candidatas: muestras de la misma ventana que `weekly` (R2) con `now − 24 h ≤ t ≤ now`.
    `ref` = la de menor `t`. Hay *ritmo 24h* si existe `ref` y `now − ref.t ≥ 1 h`.
 3. `percent ≥ 100` → `hits_at = now`, `before_reset = true`, `basis = "24h"` si hay ritmo 24h,
    si no `"window"`.

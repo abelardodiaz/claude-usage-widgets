@@ -1,0 +1,14 @@
+{
+  "description": "Semana con ritmo 24h pero now posterior al reinicio (dato rancio): no se proyecta",
+  "input": {
+    "kind": "weekly",
+    "now": "2026-10-09T19:00:00-06:00",
+    "percent": 90,
+    "resets_at": "2026-10-09T18:00:00-06:00",
+    "samples": [
+      { "t": "2026-10-09T08:00:00-06:00", "percent": 80, "resets_at": "2026-10-09T18:00:00-06:00" },
+      { "t": "2026-10-09T19:00:00-06:00", "percent": 90, "resets_at": "2026-10-09T18:00:00-06:00" }
+    ]
+  },
+  "expected": { "hits_at": null, "before_reset": null, "basis": null }
+}
