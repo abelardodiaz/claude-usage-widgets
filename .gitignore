@@ -17,3 +17,11 @@ dist/
 # Rol local de cada sesion de Claude Code (no va al repo publico)
 CLAUDE.local.md
 docs/outbox/*
+
+# Salida de los builds de Android hechos a mano (sin Gradle)
+android/**/build/
+*.apk
+*.dex
+
+# Area de trabajo de superpowers (bitacora de ejecucion de planes)
+.superpowers/

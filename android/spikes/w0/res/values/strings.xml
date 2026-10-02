@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Spike W0</string>
+    <string name="widget_label">Spike W0 hola</string>
+    <string name="widget_description">Widget de prueba: muestra la hora de su ultima actualizacion.</string>
+    <string name="btn_login">Login</string>
+    <string name="btn_cookie">Cookie</string>
+    <string name="btn_native">Nativo</string>
+    <string name="btn_webview">WebView</string>
+    <string name="btn_widget">Widget</string>
+    <string name="widget_title">Spike W0</string>
+    <string name="widget_waiting">sin actualizar</string>
+</resources>
