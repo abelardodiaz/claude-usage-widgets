@@ -1,5 +1,5 @@
 {
-  "description": "R3: si el inicio de la ventana nueva queda despues de b.t se acota a b.t y todo va al dia de b",
+  "description": "R3: si el inicio de la ventana nueva queda despues de b.t se acota a b.t y todo va al dia de b (ocurre cuando la API reporta un resets_at a mas de 7 d de la muestra)",
   "input": {
     "tz": "-06:00",
     "now": "2026-10-03T12:00:00-06:00",
