@@ -1,0 +1,1 @@
+{"description": "Hoy: cociente 1 exacto ya es rojo", "input": {"bar": "today", "today_used": 10, "quota_today": 10}, "expected": {"color": "red"}}

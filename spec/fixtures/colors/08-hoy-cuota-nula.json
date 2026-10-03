@@ -1,0 +1,1 @@
+{"description": "Hoy: sin cuota calculable (resets_at nulo o rancio) es gris", "input": {"bar": "today", "today_used": 10, "quota_today": null}, "expected": {"color": "gray"}}
