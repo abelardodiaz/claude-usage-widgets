@@ -9,20 +9,31 @@ permissions:
 jobs:
   apk:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: temurin
           java-version: "17"
-      # El runner trae el SDK de Android preinstalado; se fija la version para que el APK
-      # del CI y el del telefono se construyan contra el mismo android.jar.
+      # Se instalan y VERIFICAN platform 34 y build-tools 34.0.0, para que el APK del CI y el
+      # del telefono se construyan contra el mismo android.jar sin depender de la imagen.
       - name: Instalar las herramientas de compilacion
         run: |
           set -euo pipefail
-          # `yes |` muere con 141 (SIGPIPE) cuando sdkmanager deja de leer, y con pipefail eso
-          # tumba el paso aunque la instalacion haya ido bien.
-          yes 2>/dev/null | sdkmanager --install "platforms;android-34" "build-tools;34.0.0" "cmdline-tools;latest" >/dev/null || true
+          # sdkmanager no esta en el PATH del runner: se busca dentro del SDK.
+          SDKM=$(ls "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager | head -1)
+          test -x "$SDKM"
+          # `yes` muere con 141 (SIGPIPE) cuando sdkmanager deja de leer; se mira el codigo
+          # de sdkmanager (PIPESTATUS[1]), no el del pipeline, para no tapar un fallo real.
+          set +o pipefail
+          yes 2>/dev/null | "$SDKM" --install "platforms;android-34" "build-tools;34.0.0" "cmdline-tools;latest" >/dev/null
+          rc=${PIPESTATUS[1]}
+          set -o pipefail
+          [ "$rc" -eq 0 ] || { echo "ERROR: sdkmanager salio con $rc"; exit 1; }
+          test -f "$ANDROID_HOME/platforms/android-34/android.jar"
+          test -x "$ANDROID_HOME/build-tools/34.0.0/aapt2"
+          test -x "$ANDROID_HOME/cmdline-tools/latest/bin/lint"
           echo "$ANDROID_HOME/build-tools/34.0.0" >> "$GITHUB_PATH"
           echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
       - name: Construir el APK
@@ -31,16 +42,42 @@ jobs:
         run: |
           set -euo pipefail
           ANDROID_JAR="$ANDROID_HOME/platforms/android-34/android.jar" bash android/app/build.sh
-      - name: Comprobar que resources.arsc no quedo comprimido
+      - name: Comprobar que resources.arsc va sin comprimir y alineado a 4 bytes
         run: |
           set -euo pipefail
-          unzip -lv android/app/build/claude-usage.apk | grep resources.arsc | grep -q Stored
+          python3 - android/app/build/claude-usage.apk <<'EOF'
+          import sys, zipfile
+          z = zipfile.ZipFile(sys.argv[1]); i = z.getinfo("resources.arsc")
+          with open(sys.argv[1], "rb") as f:
+              f.seek(i.header_offset + 26)
+              n, m = int.from_bytes(f.read(2), "little"), int.from_bytes(f.read(2), "little")
+          off = i.header_offset + 30 + n + m
+          assert i.compress_type == zipfile.ZIP_STORED, "resources.arsc comprimido"
+          assert off % 4 == 0, f"resources.arsc desalineado: offset {off}"
+          print(f"resources.arsc Stored, offset {off} alineado a 4")
+          EOF
       # La UNICA comprobacion de que el codigo respeta minSdk 29. No la hace javac: con
       # android.jar en el classpath, las APIs java.* disponibles son las de la API 34, y ni
       # `--release 8` lo evita. Y tampoco hay un dispositivo API 29 donde probarlo.
-      - name: lint NewApi (minSdk 29)
+      - name: lint NewApi (minSdk 29), con canario
         run: |
           set -euo pipefail
+          lint --version
+          # Canario: una copia con una API 31 inyectada DEBE fallar. Si lint no la detecta, la
+          # comprobacion no mira nada (fuentes movidas, manifiesto perdido...) y el job falla.
+          cp -r android/app "$RUNNER_TEMP/canario"
+          sed -i 's|super.onCreate(state);|super.onCreate(state); android.os.VibratorManager vm = getSystemService(android.os.VibratorManager.class);|' \
+            "$RUNNER_TEMP/canario/src/com/claulimitswidgets/android/LoginActivity.java"
+          grep -q VibratorManager "$RUNNER_TEMP/canario/src/com/claulimitswidgets/android/LoginActivity.java"
+          if lint --check NewApi --exitcode --sdk-home "$ANDROID_HOME" \
+               --libraries "$ANDROID_HOME/platforms/android-34/android.jar" \
+               "$RUNNER_TEMP/canario" >"$RUNNER_TEMP/canario.txt" 2>&1; then
+            echo "ERROR: lint no detecto la API 31 del canario; la comprobacion no sirve"
+            cat "$RUNNER_TEMP/canario.txt"; exit 1
+          fi
+          grep -q '\[NewApi\]' "$RUNNER_TEMP/canario.txt"
+          echo "Canario cazado:"; grep '\[NewApi\]' "$RUNNER_TEMP/canario.txt"
+          # Ahora el codigo real
           lint --check NewApi --exitcode \
             --sdk-home "$ANDROID_HOME" \
             --classpath android/app/build/classes \
