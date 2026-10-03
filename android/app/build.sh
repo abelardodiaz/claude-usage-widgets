@@ -25,10 +25,21 @@ TARGET_SDK=34
 OUT=build
 APK="$OUT/claude-usage.apk"
 
-for t in aapt2 javac d8 apksigner keytool zip; do
+for t in aapt2 javac d8 apksigner keytool zip python3; do
   command -v "$t" >/dev/null 2>&1 || { echo "ERROR: falta la herramienta '$t'"; exit 1; }
 done
 [ -f "$ANDROID_JAR" ] || { echo "ERROR: no existe ANDROID_JAR=$ANDROID_JAR"; exit 1; }
+
+# El manifiesto tiene su propio <uses-sdk> porque lint lo lee de ahi. Si los dos sitios
+# divergen, aapt2 y lint usan el del manifiesto y d8 y apksigner el de aqui, sin avisar.
+for pair in "minSdkVersion:$MIN_SDK" "targetSdkVersion:$TARGET_SDK"; do
+  attr="${pair%%:*}"; want="${pair##*:}"
+  got="$(grep -oE "android:$attr=\"[0-9]+\"" AndroidManifest.xml | grep -oE '[0-9]+' || true)"
+  if [ "$got" != "$want" ]; then
+    echo "ERROR: AndroidManifest.xml dice $attr=$got y build.sh usa $want"
+    exit 1
+  fi
+done
 
 rm -rf "$OUT"
 mkdir -p "$OUT/compiled" "$OUT/gen" "$OUT/classes" "$OUT/dex"
@@ -41,6 +52,11 @@ aapt2 compile --dir res -o "$OUT/compiled/res.zip"
 # "Unable to find instrumentation info".
 MANIFEST="AndroidManifest.xml"
 if [ "${TEST:-0}" = "1" ]; then
+  # TEST=1 es de F3 en adelante. Hasta entonces nada de esto existe, y con `set -e` un
+  # `find test` sobre un directorio ausente tumbaria el script con un error que no explica nada.
+  [ -d test ] || { echo "ERROR: TEST=1 necesita android/app/test (llega en F3)"; exit 1; }
+  grep -q "AppInstrumentation" test/com/claulimitswidgets/android/*.java 2>/dev/null \
+    || { echo "ERROR: TEST=1 necesita AppInstrumentation (llega en F3)"; exit 1; }
   echo "== extra: manifiesto con instrumentacion =="
   python3 - "$HERE/AndroidManifest.xml" "$OUT/manifest-test.xml" <<'PYEOF'
 import sys
@@ -77,7 +93,7 @@ aapt2 link \
 # telefono. La app no necesita esa restriccion porque compila contra android.jar, que ya
 # describe lo que hay.
 echo "== 3/6 javac (nucleo, --release 8) =="
-find "$CORE/src" -name '*.java' | sort > "$OUT/core.txt"
+find "$CORE/src" -name '*.java' | sort | sed 's/.*/"&"/' > "$OUT/core.txt"
 javac -encoding UTF-8 --release 8 -Xlint:all,-options -Werror -d "$OUT/classes" "@$OUT/core.txt"
 
 # OJO: aqui NO se puede usar -bootclasspath (javac lo prohibe con target >= 9) ni --release 8
@@ -90,7 +106,7 @@ javac -encoding UTF-8 --release 8 -Xlint:all,-options -Werror -d "$OUT/classes" 
 # comprueba el nivel de API en una app de Android es lint (NewApi), que este build no corre.
 # Esta anotado en "No ejercitado en W3".
 echo "== 4/6 javac (app) =="
-find src "$OUT/gen" -name '*.java' | sort > "$OUT/app.txt"
+find src "$OUT/gen" -name '*.java' | sort | sed 's/.*/"&"/' > "$OUT/app.txt"
 javac -encoding UTF-8 -source 17 -target 17 \
   -classpath "$ANDROID_JAR:$OUT/classes" -Xlint:all,-options -Werror \
   -d "$OUT/classes" "@$OUT/app.txt"
@@ -101,7 +117,7 @@ javac -encoding UTF-8 -source 17 -target 17 \
 if [ "${TEST:-0}" = "1" ]; then
   echo "== extra: javac (pruebas) =="
   { echo "$CORE/test/com/claudewidgets/core/Assert.java"; find test -name '*.java'; } \
-    | sort > "$OUT/tests.txt"
+    | sort | sed 's/.*/"&"/' > "$OUT/tests.txt"
   javac -encoding UTF-8 -source 17 -target 17 \
     -classpath "$ANDROID_JAR:$OUT/classes" -Xlint:all,-options -Werror \
     -d "$OUT/classes" "@$OUT/tests.txt"
@@ -120,15 +136,19 @@ cp "$OUT/base.apk" "$OUT/unsigned.apk"
 
 if [ ! -f "$KEYSTORE" ]; then
   echo "   (llave de depuracion nueva en $KEYSTORE)"
-  keytool -genkeypair -keystore "$KEYSTORE" -storepass "$KEYSTORE_PASSWORD" \
-    -keypass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" -keyalg RSA -keysize 2048 \
-    -validity 10000 -dname "CN=claude-usage-widgets debug, OU=debug, O=none, C=MX" \
-    >/dev/null 2>&1
+  # Las contrasenas van por el entorno, no en la linea de comandos: con `pass:` quedan a la
+  # vista de cualquiera que mire `ps` o /proc. Con la llave de depuracion da igual, pero en F6
+  # la que se usa es la de release y entonces no da igual.
+  KEYSTORE_PASSWORD="$KEYSTORE_PASSWORD" keytool -genkeypair -keystore "$KEYSTORE" \
+    -storepass:env KEYSTORE_PASSWORD -keypass:env KEYSTORE_PASSWORD \
+    -alias "$KEY_ALIAS" -keyalg RSA -keysize 2048 -validity 10000 \
+    -dname "CN=claude-usage-widgets debug, OU=debug, O=none, C=MX" >/dev/null
 fi
 
-apksigner sign --ks "$KEYSTORE" --ks-pass "pass:$KEYSTORE_PASSWORD" \
-  --key-pass "pass:$KEYSTORE_PASSWORD" --ks-key-alias "$KEY_ALIAS" \
-  --min-sdk-version "$MIN_SDK" --out "$APK" "$OUT/unsigned.apk"
+KEYSTORE_PASSWORD="$KEYSTORE_PASSWORD" apksigner sign --ks "$KEYSTORE" \
+  --ks-pass env:KEYSTORE_PASSWORD --key-pass env:KEYSTORE_PASSWORD \
+  --ks-key-alias "$KEY_ALIAS" --min-sdk-version "$MIN_SDK" \
+  --out "$APK" "$OUT/unsigned.apk"
 apksigner verify "$APK"
 
 echo

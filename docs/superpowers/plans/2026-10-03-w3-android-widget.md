@@ -38,7 +38,7 @@ sección **"Lo que W3 NO debe copiar del spike"**.
 | `android.jar` | `~/android/platforms/android-34/android.jar` | `ANDROID_JAR` lo puede sobrescribir |
 | `minSdk` / `targetSdk` | 29 / 34 | |
 | `actions/checkout` | `3d3c42e5aac5ba805825da76410c181273ba90b1` # v7.0.1 | mismo SHA que ya usa el repo |
-| `actions/setup-java` | `b6effb05e454b25005698d916606bdc6ffcbf961` # v5 | temurin 17 |
+| `actions/setup-java` | `de7274f081f381c8f8158605e0321c36c376e2e6` # v6.0.1 | temurin 17 |
 | Dispositivo de prueba | Android 17 (SDK 37), One UI | el `minSdk` 29 **no se prueba en hardware**: ver Review Focus |
 
 **Sin Gradle, sin androidx, sin ninguna dependencia externa.** Todo lo que no esté en `android.jar`
@@ -716,7 +716,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: temurin
           java-version: "17"
@@ -754,6 +754,21 @@ jobs:
 
 El `sdkmanager` del paso anterior instala tambien `cmdline-tools;latest`, que es donde vive
 `lint`, y anade su `bin` al `PATH`.
+
+**Dos cosas que la revisión añadió y que no son opcionales:**
+
+1. **El pin de herramientas tiene que verificarse.** La primera versión de este paso no hacía nada:
+   `sdkmanager` no está en el `PATH` del runner, y `|| true` con `>/dev/null` se tragaban el
+   `command not found`. El job pasaba porque la imagen ya trae la plataforma 34, así que el pin era
+   decorativo. Hay que buscar `sdkmanager` dentro del SDK, mirar su código real con `PIPESTATUS`, y
+   comprobar con `test` que `android.jar`, `aapt2` y `lint` existen de verdad.
+2. **Un canario de lint en cada corrida.** `lint` también pasa cuando no analiza nada ("No issues
+   found"), así que el job copia `android/app`, le inyecta una llamada a `VibratorManager` (API 31)
+   y **exige que lint falle con `[NewApi]`**; si no falla, el job falla. Sin esto, que lint esté
+   sano hoy no dice nada de mañana.
+
+Si se cambia la línea de `LoginActivity` donde el canario inyecta la llamada, hay que ajustar su
+`sed`.
 
 **`lint` no existe en Termux** (no hay `cmdline-tools`), asi que esta comprobacion es **solo de
 CI**. Es una asimetria incomoda —el resto del build es identico en los dos sitios— pero la
@@ -4012,7 +4027,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0          # versionCode = numero de commits
-      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: temurin
           java-version: "17"
