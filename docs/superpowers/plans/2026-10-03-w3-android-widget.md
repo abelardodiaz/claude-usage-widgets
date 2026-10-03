@@ -2231,12 +2231,26 @@ public class SettingsActivity extends Activity {
     protected void onCreate(Bundle state) {
         super.onCreate(state);
         setContentView(R.layout.activity_settings);
-        RadioGroup group = findViewById(R.id.orgs);
-        SharedPreferences prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        paintOrgs();
         // La lista cacheada no se refresca sola: si el usuario crea o deja una organizacion,
         // Ajustes mostraria la de siempre. Abrir esta pantalla es el momento natural de mirar.
         // Al terminar se repintan los radios, porque la lista pudo cambiar.
         WidgetUpdateJob.refreshOrgs(this, this::paintOrgs);
+
+        ((Button) findViewById(R.id.btn_logout)).setOnClickListener(v -> {
+            Session.logout(this);
+            finish();
+        });
+    }
+
+    /**
+     * Dibuja los radios desde la lista cacheada. Se llama al crear la pantalla y otra vez
+     * cuando `refreshOrgs` termina, porque la lista pudo cambiar.
+     */
+    private void paintOrgs() {
+        RadioGroup group = findViewById(R.id.orgs);
+        group.removeAllViews();
+        SharedPreferences prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         String current = prefs.getString(KEY_ORG, null);
 
         RadioButton auto = new RadioButton(this);
@@ -2259,11 +2273,6 @@ public class SettingsActivity extends Activity {
             });
             group.addView(b);
         }
-
-        ((Button) findViewById(R.id.btn_logout)).setOnClickListener(v -> {
-            Session.logout(this);
-            finish();
-        });
     }
 
     /** Los ultimos uuid vistos, cacheados por el refrescador. Vacio si todavia no consulto. */
