@@ -9,6 +9,7 @@ import re
 import sys
 from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from jsonschema import Draft202012Validator, FormatChecker
 
@@ -22,9 +23,22 @@ errors = []
 
 
 def is_tz(s):
-    """Solo comprueba la forma. No resuelve la zona: este validador no calcula nada,
-    y la base IANA no esta disponible en todas las plataformas donde se corre."""
-    return isinstance(s, str) and bool(TZ_OFFSET.match(s) or TZ_IANA.match(s))
+    """Desplazamiento fijo, o zona IANA que exista de verdad.
+
+    Resolver la zona caza erratas tipo 'America/Nueva_York', que si no pasarian
+    silenciosas y dejarian la fixture con valores sin sentido.
+    """
+    if not isinstance(s, str):
+        return False
+    if TZ_OFFSET.match(s):
+        return True
+    if not TZ_IANA.match(s):
+        return False
+    try:
+        ZoneInfo(s)
+    except Exception:
+        return False
+    return True
 
 
 def is_instant(s):
@@ -116,7 +130,7 @@ for p in sorted((ROOT / "fixtures" / "history").glob("*.json")):
     if not is_tz(inp.get("tz")):
         errors.append(
             f"{p}: 'tz' debe ser un desplazamiento fijo (-06:00) "
-            "o una zona IANA (America/New_York)"
+            "o una zona IANA existente (America/New_York)"
         )
     check_instant(p, "now", inp.get("now"))
     need(p, inp.get("weekly", {}), ["percent", "resets_at"])
