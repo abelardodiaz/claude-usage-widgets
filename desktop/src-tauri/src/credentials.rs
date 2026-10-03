@@ -3,19 +3,25 @@
 //! archivo, nunca aparece en logs, `Debug` ni mensajes de error.
 
 use std::fmt;
+use std::fs::File;
+use std::io::{ErrorKind, Read};
 use std::path::{Path, PathBuf};
 
 use jiff::Timestamp;
 use serde_json::Value;
 
-/// Token OAuth de Claude Code. Solo `bearer()` lo expone, y solo a `source_claude_code`.
+/// Tope de `.credentials.json` (el real pesa menos de 1 KiB). Mas grande es `Unreadable`.
+pub const MAX_CREDENTIALS: u64 = 64 * 1024;
+
+/// Token OAuth de Claude Code. Solo `bearer()` lo expone, y solo dentro del crate
+/// (`source_claude_code`).
 pub struct Credential {
     token: String,
     expires_at: Option<Timestamp>,
 }
 
 impl Credential {
-    pub fn bearer(&self) -> &str {
+    pub(crate) fn bearer(&self) -> &str {
         &self.token
     }
 
@@ -50,8 +56,21 @@ pub fn default_path() -> Option<PathBuf> {
 
 /// Lee y valida el archivo. Se llama en cada consulta: el token no se guarda en memoria
 /// mas alla de la peticion.
+/// Solo `NotFound` es `Missing`; cualquier otro fallo (permiso, directorio, UTF-8 invalido,
+/// archivo de mas de `MAX_CREDENTIALS`) es `Unreadable`. Nunca se lee mas alla del tope.
 pub fn read_credential(path: &Path, now: Timestamp) -> Result<Credential, CredentialError> {
-    let text = std::fs::read_to_string(path).map_err(|_| CredentialError::Missing)?;
+    let file = File::open(path).map_err(|e| match e.kind() {
+        ErrorKind::NotFound => CredentialError::Missing,
+        _ => CredentialError::Unreadable,
+    })?;
+    let mut bytes = Vec::new();
+    file.take(MAX_CREDENTIALS + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|_| CredentialError::Unreadable)?;
+    if bytes.len() as u64 > MAX_CREDENTIALS {
+        return Err(CredentialError::Unreadable);
+    }
+    let text = String::from_utf8(bytes).map_err(|_| CredentialError::Unreadable)?;
     parse_credential(&text, now)
 }
 
@@ -68,10 +87,14 @@ pub fn parse_credential(text: &str, now: Timestamp) -> Result<Credential, Creden
         .and_then(Value::as_str)
         .filter(|s| !s.is_empty())
         .ok_or(CredentialError::Unreadable)?;
-    let expires_at = oauth
-        .get("expiresAt")
-        .and_then(Value::as_i64)
-        .and_then(|ms| Timestamp::from_millisecond(ms).ok());
+    // Entero o flotante (truncado a ms); null = ausente; cualquier otro tipo es forma inesperada.
+    // Un numero fuera del rango de `Timestamp` cuenta como ausente: decide el servidor (D3).
+    let expires_ms = match oauth.get("expiresAt") {
+        None | Some(Value::Null) => None,
+        Some(Value::Number(n)) => n.as_i64().or_else(|| n.as_f64().map(|f| f.trunc() as i64)),
+        Some(_) => return Err(CredentialError::Unreadable),
+    };
+    let expires_at = expires_ms.and_then(|ms| Timestamp::from_millisecond(ms).ok());
     if expires_at.is_some_and(|exp| exp <= now) {
         return Err(CredentialError::Expired);
     }
@@ -199,6 +222,73 @@ mod tests {
                 assert!(!shown.contains(SAMPLE), "filtra el token: {shown}");
                 assert!(!shown.contains("sk-ant"), "filtra el token: {shown}");
             }
+        }
+    }
+
+    #[test]
+    fn archivo_mas_grande_que_el_tope_es_ilegible() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(".credentials.json");
+        let json = r#"{"claudeAiOauth":{"accessToken":"sk-ant-oat01-prueba"}}"#;
+        // JSON valido rellenado con espacios hasta el tope exacto: se acepta.
+        let mut exact = json.to_string();
+        exact.push_str(&" ".repeat(MAX_CREDENTIALS as usize - json.len()));
+        std::fs::write(&path, &exact).unwrap();
+        assert!(read_credential(&path, now()).is_ok());
+        // Un byte mas: se rechaza sin leer el resto.
+        exact.push(' ');
+        std::fs::write(&path, &exact).unwrap();
+        assert_eq!(
+            read_credential(&path, now()).unwrap_err(),
+            CredentialError::Unreadable
+        );
+    }
+
+    #[test]
+    fn errores_de_lectura_que_no_son_ausencia() {
+        let dir = tempfile::tempdir().unwrap();
+        // Un directorio en lugar de archivo (permiso denegado en Windows, EISDIR en Linux).
+        assert_eq!(
+            read_credential(dir.path(), now()).unwrap_err(),
+            CredentialError::Unreadable
+        );
+        let path = dir.path().join(".credentials.json");
+        std::fs::write(&path, b"\xFF\xFE{}").unwrap();
+        assert_eq!(
+            read_credential(&path, now()).unwrap_err(),
+            CredentialError::Unreadable
+        );
+    }
+
+    #[test]
+    fn expires_at_de_tipos_raros() {
+        let with = |exp: &str| {
+            format!(
+                r#"{{"claudeAiOauth":{{"accessToken":"sk-ant-oat01-prueba","expiresAt":{exp}}}}}"#
+            )
+        };
+        // Flotante: se trunca a milisegundos enteros.
+        let c = parse_credential(&with("1790985600000.9"), now()).unwrap();
+        assert_eq!(
+            c.expires_at(),
+            Some(Timestamp::from_millisecond(TOMORROW_MS).unwrap())
+        );
+        assert_eq!(
+            parse_credential(&with("1790812800000.5"), now()).unwrap_err(),
+            CredentialError::Expired
+        );
+        // null cuenta como ausente (D3).
+        assert_eq!(
+            parse_credential(&with("null"), now()).unwrap().expires_at(),
+            None
+        );
+        // Tipos no numericos: forma inesperada.
+        for odd in [r#""1790985600000""#, "true", "{}", "[]"] {
+            assert_eq!(
+                parse_credential(&with(odd), now()).unwrap_err(),
+                CredentialError::Unreadable,
+                "{odd}"
+            );
         }
     }
 }
