@@ -1,0 +1,24 @@
+# Job del nucleo Java (W3 F1).
+#
+# Este archivo vive aqui y NO en .github/workflows/ porque el token de la sesion TEL no tiene
+# el scope `workflow` y GitHub rechaza el push. La sesion PC lo mueve a
+# .github/workflows/core.yml con un commit suyo. Fuera de eso, el contenido esta listo.
+name: nucleo
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: "17"
+      # Sin Gradle y sin dependencias: build.sh compila y corre el corredor de fixtures,
+      # y sale con codigo != 0 si algo falla.
+      - run: bash android/core/build.sh
