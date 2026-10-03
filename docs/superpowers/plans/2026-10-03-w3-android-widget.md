@@ -54,8 +54,11 @@ Valen para **todas** las tareas. Son de `SECURITY.md` §5, de la spec §5 y §6,
 1. **La cookie no sale del almacén.** Nunca a un log, a un `toString()`, a un mensaje de error, a
    una captura ni a un `Intent`. De ella solo se registran: cuántas hay, sus nombres, y si existe
    `sessionKey`.
-2. **`lastActiveOrg` es una credencial**, no un dato: su valor es un UUID de organización y recibe
-   el mismo trato que `sessionKey`.
+2. **El UUID de organización (`lastActiveOrg`, `manual_org`) es un dato de cuenta privado**, no una
+   credencial: por sí solo no da acceso a nada, pero identifica al usuario. No se registra, no
+   sale en mensajes de error ni en pantalla (se muestran nombres), y se borra al cerrar sesión.
+   **No se cifra**: cifrarlo daría una falsa sensación de que es un secreto, y vive en las
+   preferencias privadas de la app, que ya están aisladas.
 3. **Nunca se registran cuerpos de respuesta.** Solo código HTTP, `content-type` y longitud.
 4. **Sin `addJavascriptInterface`** y sin ningún puente JS. El WebView es solo para el login.
 5. `android:allowBackup="false"`, `android:usesCleartextTraffic="false"`, sin permisos de red local.
@@ -89,25 +92,40 @@ Cada una tiene su prueba asignada a la tarea que posee el código.
    → Tarea 4.4.
 5. **Widget añadido sin sesión.** Primera instalación: alguien pone el widget antes de iniciar
    sesión. Debe invitar a hacerlo, no quedarse en blanco ni mostrar ceros. → Tarea 4.3, paso 4.
+6. **`minSdk` 29 sin hardware que lo pruebe.** El teléfono de pruebas es Android 17 (SDK 37), así
+   que todo lo que este plan afirma sobre API 29 sale de la documentación, no de ejecutarlo. Las
+   llamadas en riesgo, todas en `RemoteViews`: `setProgressBar` (API 1), `setViewVisibility`
+   (API 1), `setTextViewText` (API 1), `setOnClickPendingIntent` (API 1) — elegidas a propósito
+   por ser antiguas. Las que **no** se usan y habrían sido naturales: `setViewLayoutWidth`,
+   `setColorStateList` y `setCompoundButtonChecked`, todas API 31. → sin prueba asignada; va en
+   "No ejercitado en W3".
 
 ## Decisiones abiertas (las confirma el dueño antes de F3)
 
 Cada una lleva mi recomendación. La sesión PC las lleva al dueño; hasta entonces el plan asume la
 recomendación y lo dice donde toca.
 
-**D1 — Nombre del paquete Android.** Recomiendo **`com.claudewidgets.android`**. Es estable,
+**D1 — Nombre del paquete Android.** Recomiendo **`com.claulimitswidgets.android`**. Es estable,
 coincide con el repositorio y no reclama un dominio. La alternativa ortodoxa sería un dominio del
 dueño en orden inverso; si lo prefiere, se cambia en una tarea (afecta al manifiesto, al
 `build.sh`, a `res/` y a la firma, pero no al núcleo). **No se puede cambiar después del primer
 Release**: Android lo trata como otra app y el usuario perdería el widget y la sesión.
 
-**D2 — Regla de selección de organización.** Hay cuentas con más de una (la del dueño tiene 2).
-Recomiendo, en orden: (a) si existe la cookie `lastActiveOrg` y `/usage` de esa organización
-responde `200`, usar esa — es la que la web considera activa, así que coincide con lo que el
-usuario ve en claude.ai; (b) si no, la primera de `/api/organizations` cuyo `/usage` responda
-`200`; (c) **selector manual obligatorio en ajustes**, que gana siempre sobre (a) y (b).
-Descarto `rate_limit_tier` y `capabilities` como criterio automático: describen el plan, no cuál
-mira el usuario, y elegir "la del plan más alto" mostraría una cuota que no es la suya.
+**D2 — Regla de selección de organización. CONFIRMADA** por el dueño, con dos ajustes de la
+revisión. En orden:
+
+1. **El selector manual de ajustes gana siempre.**
+2. Si no hay manual: la cookie `lastActiveOrg`, si su `/usage` responde `200`. Es la que la web
+   considera activa, así que coincide con lo que el usuario ve en claude.ai. **Ojo:** ese valor se
+   congela en el login — si el usuario cambia de organización en la web después, el widget seguirá
+   mirando la vieja. Para eso está el selector manual, y la pantalla de ajustes lo dice así.
+3. Si no hay ni manual ni `lastActiveOrg`: si **solo una** responde `200`, esa. Si responden
+   **varias**, el widget **no elige**: `Problem.CHOOSE_ORG` ("Elige organización en ajustes") y al
+   tocarlo abre Ajustes. Adivinar sería mostrar una cuota que no es la suya, sin que el usuario
+   tenga cómo saberlo.
+
+Se descartan `rate_limit_tier` y `capabilities` como criterio automático: describen el plan
+contratado, no cuál mira el usuario.
 
 **D3 — Dónde vive la llave de release.** Recomiendo un secret del repositorio
 (`ANDROID_KEYSTORE_BASE64` + `ANDROID_KEYSTORE_PASSWORD` + `ANDROID_KEY_ALIAS`), y que el APK de
@@ -162,7 +180,7 @@ android/app/
     drawable/bar_gray.xml          progressDrawable gris   (R7: gray)
     xml/widget_4x1_info.xml        appwidget-provider
     xml/widget_4x2_info.xml
-  src/com/claudewidgets/android/
+  src/com/claulimitswidgets/android/
     SessionStore.java              cookie cifrada AES-GCM con llave del Android Keystore
     LoginActivity.java             pantalla previa + WebView de claude.ai
     SettingsActivity.java          selector manual de organizacion, cerrar sesion
@@ -181,7 +199,7 @@ android/app/
     BootReceiver.java              reprograma el job tras el reinicio (Review Focus 4)
     Backoff.java                   espera exponencial hasta 30 min (spec 3.4)
     Texts.java                     formato de horas y antiguedad, es/en
-  test/com/claudewidgets/android/
+  test/com/claulimitswidgets/android/
     AppTestRunner.java             corredor propio, sin JUnit, como en el nucleo
     SessionStoreTest.java          cifrado y borrado (corre bajo ART, no en JVM)
     OrgSelectorTest.java           D2
@@ -227,8 +245,11 @@ public final class OrgSelector {
     /** Dice si `/usage` de esa organizacion responde. Lo inyecta el llamador: la regla se
         prueba sin red. */
     public interface Probe { boolean responds(String orgUuid); }
-    /** D2. `manual` gana si no es null. Null = ninguna sirve. */
-    public static String choose(List<String> organizations, String manual,
+    /** Una organizacion, "ninguna sirve" (orgUuid null, ambiguous false), o "que elija el
+        usuario" (orgUuid null, ambiguous true). */
+    public static final class Choice { public final String orgUuid; public final boolean ambiguous; }
+    /** D2. `manual` gana si no es null. */
+    public static Choice choose(List<String> organizations, String manual,
                                 String lastActiveOrg, Probe probe);
 }
 
@@ -251,7 +272,7 @@ public final class Snapshot {
     public final Instant fetchedAt;
     /** Null = todo bien. Si no, que mostrar en vez de los numeros. */
     public final Problem problem;
-    public enum Problem { NO_SESSION, AUTH_EXPIRED, BLOCKED, OFFLINE, BAD_FORMAT }
+    public enum Problem { NO_SESSION, AUTH_EXPIRED, BLOCKED, OFFLINE, BAD_FORMAT, CHOOSE_ORG }
 }
 
 // SnapshotStore.java  (F4)
@@ -259,6 +280,8 @@ public final class SnapshotStore {
     public SnapshotStore(Context ctx);
     /** Guarda lo minimo para reconstruir el widget sin red. */
     public void remember(UsageModel model, Instant fetchedAt, List<String> orgs);
+    /** Las organizaciones vistas, como "uuid|nombre". Ajustes las necesita aunque falle el resto. */
+    public void rememberOrgs(List<String> orgs);
     /** El ultimo modelo guardado, o null si nunca hubo uno. */
     public UsageModel lastModel();
     /** Instante de la ultima consulta buena, o null. */
@@ -304,7 +327,7 @@ depura dos veces. El spike ya probó que la cadena funciona; aquí se convierte 
 
 **Archivos:** crear `android/app/AndroidManifest.xml`, `android/app/res/values/strings.xml`,
 `android/app/res/values-es/strings.xml`, `android/app/res/layout/activity_login.xml`,
-`android/app/src/com/claudewidgets/android/LoginActivity.java`
+`android/app/src/com/claulimitswidgets/android/LoginActivity.java`
 
 - [ ] **Paso 1: Rama**
 
@@ -312,21 +335,21 @@ depura dos veces. El spike ya probó que la cadena funciona; aquí se convierte 
 cd claude-usage-widgets
 git checkout main && git pull
 git checkout -b android/w3-f2-build
-mkdir -p android/app/src/com/claudewidgets/android \
-         android/app/test/com/claudewidgets/android \
+mkdir -p android/app/src/com/claulimitswidgets/android \
+         android/app/test/com/claulimitswidgets/android \
          android/app/res/values android/app/res/values-es \
          android/app/res/layout android/app/res/xml android/app/res/drawable \
          android/app/ci
 ```
 
-- [ ] **Paso 2: Manifiesto** (D1: `com.claudewidgets.android`)
+- [ ] **Paso 2: Manifiesto** (D1: `com.claulimitswidgets.android`)
 
 Crear `android/app/AndroidManifest.xml`:
 
 ```xml
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.claudewidgets.android">
+    package="com.claulimitswidgets.android">
 
     <uses-permission android:name="android.permission.INTERNET" />
 
@@ -395,10 +418,10 @@ Crear `android/app/res/layout/activity_login.xml`:
 
 - [ ] **Paso 5: Activity que demuestra que el núcleo está enlazado**
 
-Crear `android/app/src/com/claudewidgets/android/LoginActivity.java`:
+Crear `android/app/src/com/claulimitswidgets/android/LoginActivity.java`:
 
 ```java
-package com.claudewidgets.android;
+package com.claulimitswidgets.android;
 
 import android.app.Activity;
 import android.os.Bundle;
@@ -481,6 +504,11 @@ echo "== 1/6 aapt2 compile =="
 aapt2 compile --dir res -o "$OUT/compiled/res.zip"
 
 echo "== 2/6 aapt2 link =="
+# versionCode y versionName no van en el manifiesto: los pone aapt2, para que el workflow de
+# release los derive del tag. Sin versionCode creciente, Obtainium no puede actualizar.
+VERSION_CODE="${VERSION_CODE:-1}"
+VERSION_NAME="${VERSION_NAME:-0.0.0-dev}"
+
 aapt2 link \
   -o "$OUT/base.apk" \
   -I "$ANDROID_JAR" \
@@ -488,6 +516,8 @@ aapt2 link \
   --java "$OUT/gen" \
   --min-sdk-version "$MIN_SDK" \
   --target-sdk-version "$TARGET_SDK" \
+  --version-code "$VERSION_CODE" \
+  --version-name "$VERSION_NAME" \
   --auto-add-overlay \
   "$OUT/compiled/res.zip"
 
@@ -499,10 +529,12 @@ echo "== 3/6 javac (nucleo, --release 8) =="
 find "$CORE/src" -name '*.java' | sort > "$OUT/core.txt"
 javac -encoding UTF-8 --release 8 -Xlint:all,-options -Werror -d "$OUT/classes" "@$OUT/core.txt"
 
+# -bootclasspath android.jar hace que javac rechace cualquier API de java.* que Android no
+# tiene, y fija el nivel de fuente sin depender del JDK que haya: 21 en el telefono, 17 en el CI.
 echo "== 4/6 javac (app) =="
 find src "$OUT/gen" -name '*.java' | sort > "$OUT/app.txt"
-javac -encoding UTF-8 -Xlint:all,-options -Werror \
-  -classpath "$ANDROID_JAR:$OUT/classes" -d "$OUT/classes" "@$OUT/app.txt"
+javac -encoding UTF-8 -source 17 -target 17 -bootclasspath "$ANDROID_JAR" \
+  -classpath "$OUT/classes" -Xlint:all,-options -Werror -d "$OUT/classes" "@$OUT/app.txt"
 
 echo "== 5/6 d8 =="
 mapfile -t CLASSES < <(find "$OUT/classes" -name '*.class' | sort)
@@ -588,7 +620,7 @@ Esperado: `Success`.
 - [ ] **Paso 3: Arrancar y leer lo que muestra**
 
 ```bash
-adb shell monkey -p com.claudewidgets.android -c android.intent.category.LAUNCHER 1
+adb shell monkey -p com.claulimitswidgets.android -c android.intent.category.LAUNCHER 1
 sleep 3
 adb shell uiautomator dump /sdcard/ui.xml >/dev/null
 adb shell cat /sdcard/ui.xml | grep -o 'text="[^"]*"' | head -5
@@ -649,12 +681,16 @@ jobs:
       - name: Instalar las herramientas de compilacion
         run: |
           set -euo pipefail
-          yes | sdkmanager --install "platforms;android-34" "build-tools;34.0.0" >/dev/null
+          # `yes |` muere con 141 (SIGPIPE) cuando sdkmanager deja de leer, y con pipefail eso
+          # tumba el paso aunque la instalacion haya ido bien.
+          yes 2>/dev/null | sdkmanager --install "platforms;android-34" "build-tools;34.0.0" >/dev/null || true
           echo "$ANDROID_HOME/build-tools/34.0.0" >> "$GITHUB_PATH"
       - name: Construir el APK
-        env:
-          ANDROID_JAR: ${{ env.ANDROID_HOME }}/platforms/android-34/android.jar
-        run: bash android/app/build.sh
+        # ANDROID_JAR se arma DENTRO del run: el contexto `env` de Actions no ve las variables
+        # del runner, asi que `${{ env.ANDROID_HOME }}` saldria vacio.
+        run: |
+          set -euo pipefail
+          ANDROID_JAR="$ANDROID_HOME/platforms/android-34/android.jar" bash android/app/build.sh
       - name: Comprobar que resources.arsc no quedo comprimido
         run: |
           set -euo pipefail
@@ -694,61 +730,52 @@ exportable del Android Keystore, y la app puede consultar `/usage` distinguiendo
 distintos: sesión vencida, bloqueo y formato irreconocible. Más "cerrar sesión", que borra todo.
 
 **Nota sobre las pruebas de esta fase:** el Android Keystore **no existe en una JVM**, así que
-`SessionStoreTest` no puede correr con `java`. Corre bajo ART en el teléfono, con el mismo truco
-que ya usa `android/core/test/AndroidSmoke`: dexear y lanzar con `app_process`. Es la razón de
-que esta fase traiga su propio corredor.
+`SessionStoreTest` no puede correr con `java`. Corre en el teléfono, dentro del proceso de la app,
+con una `Instrumentation` lanzada por `adb shell am instrument`. **No** con `app_process`: ése
+corre con el uid de `shell`, así que el Keystore sería de otro usuario y el `filesDir` de la app
+no sería escribible. Es la razón de que esta fase traiga su propio corredor.
 
 ### Tarea 3.1: Corredor de pruebas de la app
 
-**Archivos:** crear `android/app/test/com/claudewidgets/android/AppTestRunner.java`,
+**Archivos:** crear `android/app/test/com/claulimitswidgets/android/AppTestRunner.java`,
 modificar `android/app/build.sh`
 
 - [ ] **Paso 1: Escribir el corredor**
 
-Crear `android/app/test/com/claudewidgets/android/AppTestRunner.java`:
+Crear `android/app/test/com/claulimitswidgets/android/AppTestRunner.java`:
 
 ```java
-package com.claudewidgets.android;
+package com.claulimitswidgets.android;
 
 import com.claudewidgets.core.Assert;
 
 import java.util.List;
 
 /**
- * Corredor de las pruebas de la cascara. Corre bajo ART, no en una JVM: el Android Keystore
- * y el almacenamiento de la app no existen fuera del dispositivo.
+ * Corredor de las pruebas de la cascara. NO corre en una JVM: el Keystore y el almacenamiento
+ * de la app no existen fuera del dispositivo.
  *
- * Se lanza con:
- *   adb shell "CLASSPATH=/data/local/tmp/app-test.dex app_process / \
- *              com.claudewidgets.android.AppTestRunner /data/local/tmp/cuw-test"
+ * Lo lanza {@link AppInstrumentation} dentro del proceso de la app. Correrlo con `app_process`
+ * NO sirve: ese proceso tiene el uid de `shell`, asi que el Keystore seria de otro usuario y
+ * `filesDir` no seria escribible.
  */
 public final class AppTestRunner {
 
-    public static void main(String[] args) {
-        if (args.length != 1) {
-            System.err.println("uso: AppTestRunner <directorio temporal escribible>");
-            System.exit(2);
-        }
-        java.io.File tmp = new java.io.File(args[0]);
-        if (!tmp.isDirectory() && !tmp.mkdirs()) {
-            System.err.println("no se pudo crear " + tmp);
-            System.exit(2);
-        }
-        Assert a = new Assert();
-        SessionStoreTest.run(a);
+    private AppTestRunner() {}
+
+    /** Devuelve el texto del resultado; quien llama decide el codigo de salida. */
+    public static String run(Assert a, android.content.Context ctx) {
+        SessionStoreTest.run(a, ctx);
         OrgSelectorTest.run(a);
-        SampleStoreTest.run(a, tmp);
+        SampleStoreTest.run(a, ctx.getCacheDir());
         BackoffTest.run(a);
         UsageClientTest.run(a);
-
         List<String> failures = a.failures();
-        if (failures.isEmpty()) {
-            System.out.println("OK: " + a.checks() + " comprobaciones, 0 fallos");
-            return;
-        }
-        System.out.println("FALLOS (" + failures.size() + " de " + a.checks() + "):");
-        for (String f : failures) System.out.println("  - " + f);
-        System.exit(1);
+        if (failures.isEmpty()) return "OK: " + a.checks() + " comprobaciones, 0 fallos";
+        StringBuilder sb = new StringBuilder("FALLOS (" + failures.size()
+                + " de " + a.checks() + "):");
+        for (String f : failures) sb.append("\n  - ").append(f);
+        return sb.toString();
     }
 }
 ```
@@ -778,15 +805,15 @@ git commit -m "test: corredor de la cascara, corre bajo ART"
 
 ### Tarea 3.2: `SessionStore` — cookie cifrada con el Android Keystore
 
-**Archivos:** crear `android/app/test/com/claudewidgets/android/SessionStoreTest.java`,
-`android/app/src/com/claudewidgets/android/SessionStore.java`
+**Archivos:** crear `android/app/test/com/claulimitswidgets/android/SessionStoreTest.java`,
+`android/app/src/com/claulimitswidgets/android/SessionStore.java`
 
 - [ ] **Paso 1: Escribir la prueba que falla**
 
-Crear `android/app/test/com/claudewidgets/android/SessionStoreTest.java`:
+Crear `android/app/test/com/claulimitswidgets/android/SessionStoreTest.java`:
 
 ```java
-package com.claudewidgets.android;
+package com.claulimitswidgets.android;
 
 import com.claudewidgets.core.Assert;
 
@@ -799,8 +826,8 @@ public final class SessionStoreTest {
 
     private static final String COOKIE = "sessionKey=valor-de-prueba; lastActiveOrg=otro-valor";
 
-    public static void run(Assert a) {
-        SessionStore s = new SessionStore(TestContext.get());
+    public static void run(Assert a, android.content.Context ctx) {
+        SessionStore s = new SessionStore(ctx);
         s.clear();
         a.isTrue("sin sesion al empezar", !s.hasSession());
         a.eq("load sin sesion da null", null, call(a, () -> s.load()));
@@ -810,7 +837,7 @@ public final class SessionStoreTest {
         a.eq("vuelve lo mismo que entro", COOKIE, call(a, () -> s.load()));
 
         // Lo que queda en disco no puede contener el texto claro.
-        File f = new File(TestContext.get().getFilesDir(), SessionStore.FILE_NAME);
+        File f = new File(ctx.getFilesDir(), SessionStore.FILE_NAME);
         String raw = new String(readAll(f), StandardCharsets.ISO_8859_1);
         a.isTrue("el archivo no contiene la cookie en claro", !raw.contains("valor-de-prueba"));
         a.isTrue("el archivo no contiene el nombre sessionKey", !raw.contains("sessionKey"));
@@ -841,55 +868,87 @@ public final class SessionStoreTest {
 }
 ```
 
-`TestContext` es un ayudante mínimo que da un `Context` bajo `app_process` (donde no hay
-Application): se escribe en el paso siguiente.
+El `Context` se lo pasa la `Instrumentation` del paso siguiente: no hay ningún ayudante que lo
+invente.
 
-- [ ] **Paso 2: El ayudante de contexto**
+- [ ] **Paso 2: Correr las pruebas como `Instrumentation`, no con `app_process`**
 
-Crear `android/app/test/com/claudewidgets/android/TestContext.java`:
+`app_process` corre con el uid de `shell`: el Keystore sería de otro usuario, el `filesDir` de la
+app no sería escribible, y `ActivityThread.systemMain` es API oculta. Nada de eso se nota al
+compilar; se nota como fallos raros en el dispositivo.
+
+La forma pública y con el uid correcto es una `Instrumentation`.
+
+Crear `android/app/test/com/claulimitswidgets/android/AppInstrumentation.java`:
 
 ```java
-package com.claudewidgets.android;
+package com.claulimitswidgets.android;
 
-import android.app.Application;
-import android.content.Context;
+import android.app.Instrumentation;
+import android.os.Bundle;
+
+import com.claudewidgets.core.Assert;
+
+import java.util.List;
 
 /**
- * Bajo `app_process` no hay Application, asi que se crea una a mano. Es lo minimo que necesitan
- * `getFilesDir()` y el Keystore.
+ * Corre las pruebas DENTRO del proceso de la app: uid correcto, `filesDir` escribible y
+ * Keystore propio. Se lanza con `adb shell am instrument -w`.
  */
-final class TestContext {
-    private static Context ctx;
+public class AppInstrumentation extends Instrumentation {
 
-    private TestContext() {}
+    @Override
+    public void onCreate(Bundle args) {
+        super.onCreate(args);
+        start();
+    }
 
-    static synchronized Context get() {
-        if (ctx == null) {
-            try {
-                Class<?> at = Class.forName("android.app.ActivityThread");
-                Object thread = at.getMethod("systemMain").invoke(null);
-                ctx = (Context) at.getMethod("getSystemContext").invoke(thread);
-                Application app = (Application) ctx.getPackageManager()
-                        .getApplicationInfo("com.claudewidgets.android", 0)
-                        .getClass().getClassLoader()
-                        .loadClass("android.app.Application").newInstance();
-                app.attachBaseContext(ctx.createPackageContext(
-                        "com.claudewidgets.android", Context.CONTEXT_INCLUDE_CODE));
-                ctx = app;
-            } catch (Exception e) {
-                throw new IllegalStateException("no se pudo armar un Context de prueba", e);
-            }
+    @Override
+    public void onStart() {
+        Bundle out = new Bundle();
+        Assert a = new Assert();
+        try {
+            SessionStoreTest.run(a, getTargetContext());
+            OrgSelectorTest.run(a);
+            SampleStoreTest.run(a, getTargetContext().getCacheDir());
+            BackoffTest.run(a);
+            UsageClientTest.run(a);
+        } catch (RuntimeException e) {
+            a.fail("excepcion no controlada: " + e);
         }
-        return ctx;
+        List<String> failures = a.failures();
+        StringBuilder sb = new StringBuilder();
+        sb.append(failures.isEmpty()
+                ? "OK: " + a.checks() + " comprobaciones, 0 fallos"
+                : "FALLOS (" + failures.size() + " de " + a.checks() + "):");
+        for (String f : failures) sb.append("\n  - ").append(f);
+        out.putString("stream", sb.toString());
+        finish(failures.isEmpty() ? 0 : 1, out);
     }
 }
 ```
 
-> **Si este ayudante no funciona en el dispositivo** (`app_process` cambia entre versiones de
-> Android), la alternativa es una `Activity` de pruebas en el propio APK que corra el
-> `AppTestRunner` y escriba el resultado en `logcat`, lanzada con `am start`. Ejecutar la
-> alternativa **solo** si el paso 4 de esta tarea falla con `IllegalStateException`, y anotarlo
-> en el PR: cambia cómo se corren todas las pruebas de la cáscara.
+Declararla en el manifiesto **solo cuando `TEST=1`** (en el APK de release no existe). En
+`build.sh`, dentro del bloque `if [ "${TEST:-0}" = "1" ]`, antes de `aapt2 link`:
+
+```bash
+  python3 - "$HERE/AndroidManifest.xml" "$OUT/manifest-test.xml" <<'PYEOF'
+import sys
+src, dst = sys.argv[1], sys.argv[2]
+s = open(src, encoding="utf-8").read()
+tag = ('    <instrumentation android:name=".AppInstrumentation"\n'
+       '        android:targetPackage="com.claulimitswidgets.android" />\n')
+assert "</manifest>" in s
+open(dst, "w", encoding="utf-8").write(s.replace("</manifest>", tag + "</manifest>"))
+PYEOF
+  MANIFEST="$OUT/manifest-test.xml"
+```
+
+y usar `"${MANIFEST:-AndroidManifest.xml}"` en el `--manifest` de `aapt2 link`.
+
+`SessionStoreTest` y `SampleStoreTest` reciben el `Context`/`File` como parámetro en vez de
+pedirlo a un ayudante: sus firmas son `run(Assert a, Context ctx)` y `run(Assert a, File dir)`.
+No hay `TestContext`.
 
 - [ ] **Paso 3: Correr la prueba y verla fallar**
 
@@ -900,10 +959,10 @@ Esperado: **falla a compilar** con `cannot find symbol: class SessionStore`. Ese
 
 - [ ] **Paso 4: Implementar `SessionStore`**
 
-Crear `android/app/src/com/claudewidgets/android/SessionStore.java`:
+Crear `android/app/src/com/claulimitswidgets/android/SessionStore.java`:
 
 ```java
-package com.claudewidgets.android;
+package com.claulimitswidgets.android;
 
 import android.content.Context;
 import android.security.keystore.KeyGenParameterSpec;
@@ -1049,15 +1108,8 @@ public final class SessionStore {
 
 ```bash
 TEST=1 bash android/app/build.sh
-cd android/app
-mkdir -p build/dextest
-find build/classes -name '*.class' > build/all.txt
-d8 --min-api 29 --lib "${ANDROID_JAR:-$HOME/android/platforms/android-34/android.jar}" \
-   --output build/dextest $(cat build/all.txt)
-adb push build/dextest/classes.dex /data/local/tmp/app-test.dex
-adb shell "CLASSPATH=/data/local/tmp/app-test.dex app_process / \
-  com.claudewidgets.android.AppTestRunner /data/local/tmp/cuw-test"
-cd ../..
+adb install -r android/app/build/claude-usage.apk
+adb shell am instrument -w com.claulimitswidgets.android/.AppInstrumentation
 ```
 Esperado: `OK: N comprobaciones, 0 fallos`.
 
@@ -1066,14 +1118,14 @@ Esperado: `OK: N comprobaciones, 0 fallos`.
 Esto no se delega a la prueba: es la regla 1 de `SECURITY.md` y conviene verla con los ojos.
 
 ```bash
-adb shell run-as com.claudewidgets.android ls -l files/ 2>/dev/null \
+adb shell run-as com.claulimitswidgets.android ls -l files/ 2>/dev/null \
   || echo "(el APK no es debuggable: se comprueba con la asercion de la prueba)"
 ```
 
 - [ ] **Paso 7: Commit**
 
 ```bash
-git add android/app/src/com/claudewidgets/android/SessionStore.java android/app/test
+git add android/app/src/com/claulimitswidgets/android/SessionStore.java android/app/test
 git commit -m "feat: cookie cifrada con AES-GCM y llave del Android Keystore"
 ```
 
@@ -1087,10 +1139,10 @@ widget mintiera. Por eso son tipos y no un booleano.
 
 - [ ] **Paso 1: La prueba de `Backoff` que falla**
 
-Crear `android/app/test/com/claudewidgets/android/BackoffTest.java`:
+Crear `android/app/test/com/claulimitswidgets/android/BackoffTest.java`:
 
 ```java
-package com.claudewidgets.android;
+package com.claulimitswidgets.android;
 
 import com.claudewidgets.core.Assert;
 
@@ -1115,10 +1167,10 @@ Esperado: `cannot find symbol: class Backoff`.
 
 - [ ] **Paso 3: Implementar**
 
-Crear `android/app/src/com/claudewidgets/android/Backoff.java`:
+Crear `android/app/src/com/claulimitswidgets/android/Backoff.java`:
 
 ```java
-package com.claudewidgets.android;
+package com.claulimitswidgets.android;
 
 /** Espera exponencial de la spec 3.4: desde 1 min, duplicando, con tope de 30 min. */
 public final class Backoff {
@@ -1136,10 +1188,10 @@ public final class Backoff {
 }
 ```
 
-Crear `android/app/src/com/claudewidgets/android/AuthExpiredException.java`:
+Crear `android/app/src/com/claulimitswidgets/android/AuthExpiredException.java`:
 
 ```java
-package com.claudewidgets.android;
+package com.claulimitswidgets.android;
 
 /** 401: la cookie ya no vale. Lleva al usuario a iniciar sesion otra vez. */
 public final class AuthExpiredException extends Exception {
@@ -1148,10 +1200,10 @@ public final class AuthExpiredException extends Exception {
 }
 ```
 
-Crear `android/app/src/com/claudewidgets/android/BlockedException.java`:
+Crear `android/app/src/com/claulimitswidgets/android/BlockedException.java`:
 
 ```java
-package com.claudewidgets.android;
+package com.claulimitswidgets.android;
 
 /**
  * La peticion no llego al endpoint: 403, cabecera `cf-mitigated`, o HTML donde se esperaba JSON.
@@ -1167,11 +1219,9 @@ public final class BlockedException extends Exception {
 - [ ] **Paso 4: Verla pasar**
 
 ```bash
-TEST=1 bash android/app/build.sh && \
-  (cd android/app && d8 --min-api 29 --lib "${ANDROID_JAR:-$HOME/android/platforms/android-34/android.jar}" \
-     --output build/dextest $(find build/classes -name '*.class') && \
-   adb push build/dextest/classes.dex /data/local/tmp/app-test.dex >/dev/null && \
-   adb shell "CLASSPATH=/data/local/tmp/app-test.dex app_process / com.claudewidgets.android.AppTestRunner /data/local/tmp/cuw-test")
+TEST=1 bash android/app/build.sh \
+  && adb install -r android/app/build/claude-usage.apk \
+  && adb shell am instrument -w com.claulimitswidgets.android/.AppInstrumentation
 ```
 Esperado: `OK: N comprobaciones, 0 fallos`, con N mayor que antes.
 
@@ -1196,10 +1246,10 @@ hace es tan importante como lo que hace.
 La clasificación de respuestas se prueba sin red, con un método interno que recibe código,
 `content-type` y cuerpo. La petición de verdad se prueba a mano en la Tarea 3.6.
 
-Crear `android/app/test/com/claudewidgets/android/UsageClientTest.java`:
+Crear `android/app/test/com/claulimitswidgets/android/UsageClientTest.java`:
 
 ```java
-package com.claudewidgets.android;
+package com.claulimitswidgets.android;
 
 import com.claudewidgets.core.Assert;
 
@@ -1260,10 +1310,10 @@ Esperado: `cannot find symbol: class UsageClient`.
 
 - [ ] **Paso 3: Implementar**
 
-Crear `android/app/src/com/claudewidgets/android/UsageClient.java`:
+Crear `android/app/src/com/claulimitswidgets/android/UsageClient.java`:
 
 ```java
-package com.claudewidgets.android;
+package com.claulimitswidgets.android;
 
 import com.claudewidgets.core.Json;
 import com.claudewidgets.core.Parser;
@@ -1362,9 +1412,17 @@ public final class UsageClient {
         return out;
     }
 
+    private static final java.util.regex.Pattern UUID_RE =
+            java.util.regex.Pattern.compile("^[0-9a-fA-F-]{36}$");
+
     public UsageModel usage(String orgUuid) throws IOException, AuthExpiredException,
             BlockedException, RetryLaterException, UnrecognizedFormatException {
-        // orgUuid es una credencial: si falla, el mensaje no lo lleva.
+        // El uuid viene de una respuesta del servidor o de una preferencia: no se concatena a
+        // una URL sin mirarlo. Un valor con '/' o '?' cambiaria a que endpoint se llama.
+        if (orgUuid == null || !UUID_RE.matcher(orgUuid).matches()) {
+            throw new UnrecognizedFormatException("uuid de organizacion con forma invalida");
+        }
+        // orgUuid es un dato de cuenta: si falla, el mensaje no lo lleva.
         return Parser.parse(get(ORGS + "/" + orgUuid + "/usage"), Source.CLAUDE_AI);
     }
 
@@ -1454,11 +1512,9 @@ núcleo: allí `MAX_INPUT` se mide sobre texto ya decodificado y no protege de u
 - [ ] **Paso 4: Verla pasar**
 
 ```bash
-TEST=1 bash android/app/build.sh && (cd android/app && \
-  d8 --min-api 29 --lib "${ANDROID_JAR:-$HOME/android/platforms/android-34/android.jar}" \
-     --output build/dextest $(find build/classes -name '*.class') && \
-  adb push build/dextest/classes.dex /data/local/tmp/app-test.dex >/dev/null && \
-  adb shell "CLASSPATH=/data/local/tmp/app-test.dex app_process / com.claudewidgets.android.AppTestRunner /data/local/tmp/cuw-test")
+TEST=1 bash android/app/build.sh \
+  && adb install -r android/app/build/claude-usage.apk \
+  && adb shell am instrument -w com.claulimitswidgets.android/.AppInstrumentation
 ```
 Esperado: `OK`, con las 11 comprobaciones nuevas de `UsageClientTest`.
 
@@ -1475,10 +1531,10 @@ git commit -m "feat: cliente de uso que distingue vencida, bloqueada y formato r
 
 - [ ] **Paso 1: La prueba que falla**
 
-Crear `android/app/test/com/claudewidgets/android/OrgSelectorTest.java`:
+Crear `android/app/test/com/claulimitswidgets/android/OrgSelectorTest.java`:
 
 ```java
-package com.claudewidgets.android;
+package com.claulimitswidgets.android;
 
 import com.claudewidgets.core.Assert;
 
@@ -1495,23 +1551,30 @@ public final class OrgSelectorTest {
         List<String> dos = Arrays.asList("org-a", "org-b");
 
         a.eq("el manual gana siempre", "org-z",
-                OrgSelector.choose(dos, "org-z", "org-a", u -> true));
+                OrgSelector.choose(dos, "org-z", "org-a", u -> true).orgUuid);
         a.eq("el manual gana aunque no responda", "org-z",
-                OrgSelector.choose(dos, "org-z", "org-a", u -> false));
+                OrgSelector.choose(dos, "org-z", "org-a", u -> false).orgUuid);
 
         a.eq("sin manual, lastActiveOrg si responde", "org-b",
-                OrgSelector.choose(dos, null, "org-b", u -> true));
-        a.eq("lastActiveOrg que no responde cae a la primera que si", "org-a",
-                OrgSelector.choose(dos, null, "org-b", u -> u.equals("org-a")));
+                OrgSelector.choose(dos, null, "org-b", u -> true).orgUuid);
+        a.eq("lastActiveOrg que no responde cae a la unica que si", "org-a",
+                OrgSelector.choose(dos, null, "org-b", u -> u.equals("org-a")).orgUuid);
         a.eq("lastActiveOrg ajeno a la lista igual se intenta", "org-c",
-                OrgSelector.choose(dos, null, "org-c", u -> true));
+                OrgSelector.choose(dos, null, "org-c", u -> true).orgUuid);
 
-        a.eq("sin lastActiveOrg, la primera que responde", "org-b",
-                OrgSelector.choose(dos, null, null, u -> u.equals("org-b")));
+        a.eq("sin pistas y solo una responde", "org-b",
+                OrgSelector.choose(dos, null, null, u -> u.equals("org-b")).orgUuid);
+        // Lo que NO debe hacer: elegir por el usuario.
+        a.eq("sin pistas y varias responden, no elige", null,
+                OrgSelector.choose(dos, null, null, u -> true).orgUuid);
+        a.isTrue("sin pistas y varias responden, pide elegir",
+                OrgSelector.choose(dos, null, null, u -> true).ambiguous);
         a.eq("si ninguna responde, null", null,
-                OrgSelector.choose(dos, null, null, u -> false));
+                OrgSelector.choose(dos, null, null, u -> false).orgUuid);
+        a.isTrue("si ninguna responde no es ambiguo",
+                !OrgSelector.choose(dos, null, null, u -> false).ambiguous);
         a.eq("lista vacia sin manual, null", null,
-                OrgSelector.choose(Arrays.asList(), null, null, u -> true));
+                OrgSelector.choose(Arrays.asList(), null, null, u -> true).orgUuid);
     }
 }
 ```
@@ -1525,11 +1588,12 @@ Esperado: `cannot find symbol: class OrgSelector`.
 
 - [ ] **Paso 3: Implementar**
 
-Crear `android/app/src/com/claudewidgets/android/OrgSelector.java`:
+Crear `android/app/src/com/claulimitswidgets/android/OrgSelector.java`:
 
 ```java
-package com.claudewidgets.android;
+package com.claulimitswidgets.android;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -1546,16 +1610,29 @@ public final class OrgSelector {
 
     private OrgSelector() {}
 
-    public static String choose(List<String> organizations, String manual,
+    /** Lo que decidio la regla: una organizacion, "ninguna sirve", o "que elija el usuario". */
+    public static final class Choice {
+        public final String orgUuid;      // null si hay que preguntar o si ninguna sirve
+        public final boolean ambiguous;   // true: varias responden y no hay pista
+        Choice(String orgUuid, boolean ambiguous) {
+            this.orgUuid = orgUuid;
+            this.ambiguous = ambiguous;
+        }
+    }
+
+    public static Choice choose(List<String> organizations, String manual,
                                 String lastActiveOrg, Probe probe) {
-        if (manual != null && !manual.isEmpty()) return manual;
+        if (manual != null && !manual.isEmpty()) return new Choice(manual, false);
         if (lastActiveOrg != null && !lastActiveOrg.isEmpty() && probe.responds(lastActiveOrg)) {
-            return lastActiveOrg;
+            return new Choice(lastActiveOrg, false);
         }
+        List<String> responden = new ArrayList<>();
         for (String uuid : organizations) {
-            if (probe.responds(uuid)) return uuid;
+            if (probe.responds(uuid)) responden.add(uuid);
         }
-        return null;
+        if (responden.size() == 1) return new Choice(responden.get(0), false);
+        if (responden.isEmpty()) return new Choice(null, false);
+        return new Choice(null, true);   // varias responden y ninguna pista: no se adivina
     }
 }
 ```
@@ -1563,11 +1640,9 @@ public final class OrgSelector {
 - [ ] **Paso 4: Verla pasar y commit**
 
 ```bash
-TEST=1 bash android/app/build.sh && (cd android/app && \
-  d8 --min-api 29 --lib "${ANDROID_JAR:-$HOME/android/platforms/android-34/android.jar}" \
-     --output build/dextest $(find build/classes -name '*.class') && \
-  adb push build/dextest/classes.dex /data/local/tmp/app-test.dex >/dev/null && \
-  adb shell "CLASSPATH=/data/local/tmp/app-test.dex app_process / com.claudewidgets.android.AppTestRunner /data/local/tmp/cuw-test")
+TEST=1 bash android/app/build.sh \
+  && adb install -r android/app/build/claude-usage.apk \
+  && adb shell am instrument -w com.claulimitswidgets.android/.AppInstrumentation
 git add android/app/src android/app/test
 git commit -m "feat: regla de seleccion de organizacion (D2)"
 ```
@@ -1590,6 +1665,7 @@ es avisar antes.
     <string name="login_steps">You will get a link by email. It expires in 10 minutes. If opening it
         shows a verification code instead of signing you in, type that code here.</string>
     <string name="login_start">Sign in with email</string>
+    <string name="login_again">Sign in again</string>
     <string name="login_done">Done</string>
     <string name="login_checking">Checking…</string>
     <string name="login_no_session">No session yet. Finish signing in on the page above.</string>
@@ -1607,6 +1683,7 @@ Y a `res/values-es/strings.xml`:
     <string name="login_steps">Te llegará un enlace por correo. Vence en 10 minutos. Si al abrirlo
         te muestra un código de verificación en vez de iniciar sesión, escribe ese código aquí.</string>
     <string name="login_start">Entrar con correo</string>
+    <string name="login_again">Volver a entrar</string>
     <string name="login_done">Listo</string>
     <string name="login_checking">Comprobando…</string>
     <string name="login_no_session">Todavía no hay sesión. Termina de entrar en la página de arriba.</string>
@@ -1635,11 +1712,17 @@ Y a `res/values-es/strings.xml`:
         <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
             android:text="@string/login_email_only" android:textSize="15sp"
             android:paddingBottom="12dp" />
-        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="@string/login_steps" android:textSize="15sp"
-            android:paddingBottom="20dp" />
+        <TextView android:id="@+id/intro_status" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:text="@string/login_steps"
+            android:textSize="15sp" android:paddingBottom="20dp" />
         <Button android:id="@+id/btn_start" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:text="@string/login_start" />
+        <Button android:id="@+id/btn_settings" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:text="@string/settings_title"
+            android:visibility="gone" />
+        <Button android:id="@+id/btn_logout_intro" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:text="@string/logout"
+            android:visibility="gone" />
     </LinearLayout>
 
     <LinearLayout
@@ -1665,17 +1748,23 @@ Y a `res/values-es/strings.xml`:
 </LinearLayout>
 ```
 
-- [ ] **Paso 3: Implementar** — reemplazar `src/com/claudewidgets/android/LoginActivity.java`:
+- [ ] **Paso 3: Implementar** — reemplazar `src/com/claulimitswidgets/android/LoginActivity.java`:
 
 ```java
-package com.claudewidgets.android;
+package com.claulimitswidgets.android;
 
 import android.app.Activity;
+import android.content.Intent;
+import android.net.Uri;
 import android.os.Bundle;
 import android.view.View;
 import android.webkit.CookieManager;
+import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
+import android.webkit.WebStorage;
 import android.webkit.WebView;
+import android.webkit.WebViewClient;
+import android.webkit.WebViewDatabase;
 import android.widget.Button;
 import android.widget.TextView;
 
@@ -1705,16 +1794,50 @@ public class LoginActivity extends Activity {
         WebSettings s = web.getSettings();
         s.setJavaScriptEnabled(true);      // claude.ai no carga sin JS
         s.setDomStorageEnabled(true);
+        s.setAllowFileAccess(false);       // nada de file:// con JS activado
+        s.setAllowContentAccess(false);    // ni content://
+        s.setGeolocationEnabled(false);
+        s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         // Sin addJavascriptInterface: SECURITY.md regla 5.
         CookieManager cm = CookieManager.getInstance();
         cm.setAcceptCookie(true);
         cm.setAcceptThirdPartyCookies(web, false);   // restriccion global 6
 
+        // Sin esto, cualquier enlace de la pagina navega DENTRO del WebView, con JS y con la
+        // cookie de sesion. Solo claude.ai se carga aqui; lo demas sale al navegador del sistema.
+        web.setWebViewClient(new WebViewClient() {
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest req) {
+                Uri u = req.getUrl();
+                if (isClaude(u)) return false;        // lo carga el WebView
+                try {
+                    startActivity(new Intent(Intent.ACTION_VIEW, u));
+                } catch (RuntimeException ignored) {
+                    // Sin navegador que lo abra: mejor no cargarlo aqui que cargarlo igual.
+                }
+                return true;                           // no se carga dentro
+            }
+        });
+
         ((Button) findViewById(R.id.btn_start)).setOnClickListener(v -> startLogin());
         ((Button) findViewById(R.id.btn_done)).setOnClickListener(v -> finishLogin());
         ((Button) findViewById(R.id.btn_logout)).setOnClickListener(v -> logout());
+        ((Button) findViewById(R.id.btn_settings)).setOnClickListener(
+                v -> startActivity(new Intent(this, SettingsActivity.class)));
 
-        if (store.hasSession()) status.setText(R.string.login_ok);
+        // Con sesion, la intro deja de ser un tutorial y pasa a ser el panel de la cuenta:
+        // si no, Ajustes queda inalcanzable y "cerrar sesion" escondido tras el WebView.
+        boolean signedIn = store.hasSession();
+        ((TextView) findViewById(R.id.intro_status)).setText(
+                signedIn ? R.string.login_ok : R.string.login_steps);
+        findViewById(R.id.btn_settings).setVisibility(signedIn ? View.VISIBLE : View.GONE);
+        findViewById(R.id.btn_logout_intro).setVisibility(signedIn ? View.VISIBLE : View.GONE);
+        ((Button) findViewById(R.id.btn_logout_intro)).setOnClickListener(v -> {
+            Session.logout(this);
+            recreate();
+        });
+        ((Button) findViewById(R.id.btn_start)).setText(
+                signedIn ? R.string.login_again : R.string.login_start);
     }
 
     private void startLogin() {
@@ -1734,6 +1857,10 @@ public class LoginActivity extends Activity {
         }
         try {
             store.save(minimal);           // se guarda YA reducida al minimo
+            // El UA del WebView es el que usaran las consultas nativas: una sola huella hacia
+            // claude.ai. Se guarda aqui porque un JobService no puede crear un WebView.
+            getSharedPreferences(SettingsActivity.PREFS, MODE_PRIVATE).edit()
+                    .putString("user_agent", userAgent(web)).apply();
         } catch (Exception e) {
             // El mensaje de la excepcion podria arrastrar material sensible: no se muestra.
             status.setText(R.string.login_no_session);
@@ -1746,17 +1873,28 @@ public class LoginActivity extends Activity {
     }
 
     private void logout() {
-        store.clear();
+        Session.logout(this);
         wipeWebView();
-        WidgetUpdateJob.cancel(this);      // F4
         status.setText(R.string.login_no_session);
     }
 
-    /** Tras el login el WebView no debe conservar nada: su copia de la cookie sobra. */
+    /** Solo https hacia claude.ai o un subdominio suyo. */
+    private static boolean isClaude(Uri u) {
+        if (u == null || !"https".equals(u.getScheme())) return false;
+        String h = u.getHost();
+        return h != null && (h.equals("claude.ai") || h.endsWith(".claude.ai"));
+    }
+
+    /**
+     * Tras el login el WebView no debe conservar nada. `removeAllCookies` es asincrono: el
+     * `flush` va DENTRO del callback o se escribe en disco lo que se acaba de borrar.
+     * Y con DOM storage activado hay que borrar tambien localStorage e IndexedDB.
+     */
     private void wipeWebView() {
         CookieManager cm = CookieManager.getInstance();
-        cm.removeAllCookies(null);
-        cm.flush();
+        cm.removeAllCookies(ok -> cm.flush());
+        WebStorage.getInstance().deleteAllData();          // localStorage e IndexedDB
+        WebViewDatabase.getInstance(this).clearHttpAuthUsernamePassword();
         web.clearCache(true);
         web.clearHistory();
         web.clearFormData();
@@ -1789,7 +1927,7 @@ git commit -m "feat: login por correo con pantalla previa que explica lo de Goog
 - [ ] **Paso 1: Esqueleto que compila**
 
 ```java
-package com.claudewidgets.android;
+package com.claulimitswidgets.android;
 
 import android.content.Context;
 
@@ -1807,7 +1945,7 @@ public final class WidgetUpdateJob {
 ```bash
 bash android/app/build.sh
 adb install -r android/app/build/claude-usage.apk
-adb shell monkey -p com.claudewidgets.android -c android.intent.category.LAUNCHER 1
+adb shell monkey -p com.claulimitswidgets.android -c android.intent.category.LAUNCHER 1
 ```
 
 Luego, **a mano en el teléfono** (es la única parte que no se automatiza): tocar "Entrar con
@@ -1824,12 +1962,43 @@ adb logcat -d | grep -i "sessionKey\|lastActiveOrg" | grep -v "nombres=" || echo
 ```
 Esperado: `limpio`. Si aparece algo, es un fallo de seguridad y bloquea el PR.
 
-- [ ] **Paso 4: Comprobar que la consulta real funciona con la cookie guardada**
+- [ ] **Paso 4: Probar la cookie MÍNIMA contra claude.ai real**
 
-```bash
-adb shell am start -n com.claudewidgets.android/.SettingsActivity 2>/dev/null \
-  || echo "(SettingsActivity es la Tarea 3.8)"
+Esta es **la hipótesis central de la fase y no está demostrada**. El spike A2 mandó el jarro
+entero, incluidas `__cf_bm` y `_cfuvid`, que son de gestión de bots de Cloudflare. Que
+`sessionKey` + `lastActiveOrg` solas pasen es una suposición razonable, no un hecho.
+
+Añadir a `LoginActivity` un botón "Probar" que llame a `organizations()` y muestre **solo el
+código HTTP**:
+
+```java
+        ((Button) findViewById(R.id.btn_probe)).setOnClickListener(v -> new Thread(() -> {
+            String msg;
+            try {
+                String cookies = store.load();
+                int n = new UsageClient(cookies, userAgent(web)).organizations().size();
+                msg = "HTTP 200, " + n + " organizacion(es)";
+            } catch (AuthExpiredException e) {
+                msg = "HTTP 401: la sesion no vale";
+            } catch (BlockedException e) {
+                msg = "bloqueado: la cookie minima no basta";   // <- el caso que importa
+            } catch (Exception e) {
+                msg = e.getClass().getSimpleName();
+            }
+            final String m = msg;
+            runOnUiThread(() -> status.setText(m));
+        }).start());
 ```
+
+Con su botón en el layout y su cadena (`probe_title` = "Probar" / "Test"), y el `View` visible
+solo cuando hay sesión.
+
+Esperado: `HTTP 200, N organizacion(es)`.
+
+**Si sale "bloqueado"**: la cookie mínima no basta y hay que decidir qué cookies añadir —
+probablemente `__cf_bm` y `_cfuvid`— lo cual cambia la restricción global 7. **Eso es un memo a
+PC, no una decisión de quien ejecute.** Y si el resultado no se puede obtener (sin sesión, sin
+red), se declara como riesgo abierto en el reporte de la fase, no se da por bueno.
 
 - [ ] **Paso 5: Commit, PR y memo**
 
@@ -1841,7 +2010,61 @@ gh pr create --base main --head android/w3-f3-login --title "W3 F3: login por co
 ```
 
 El memo a PC debe incluir: la salida del corredor bajo ART, la confirmación de que `logcat` no
-tiene la cookie, y **si el ayudante `TestContext` funcionó o hubo que usar la alternativa**.
+tiene la cookie, y **si `am instrument` corrió sin problemas** (es la primera vez que el proyecto
+usa `Instrumentation`; si falla, el bloqueo va al memo, no se improvisa otra vía).
+
+### Tarea 3.7b: `Session` — un único "cerrar sesión"
+
+**Archivos:** crear `src/.../Session.java`
+
+Había dos sitios borrando cosas distintas: la pantalla de login borraba la cookie y los ajustes
+borraban la cookie y las preferencias, y **ninguno borraba `samples.jsonl`**. Cerrar sesión tiene
+que dejar el teléfono como antes de instalar, y eso solo se garantiza si hay un único sitio que lo
+haga.
+
+- [ ] **Paso 1: Implementar**
+
+```java
+package com.claulimitswidgets.android;
+
+import android.content.Context;
+
+/**
+ * Cerrar sesion. Un solo sitio, llamado desde el login y desde los ajustes.
+ *
+ * Borra TODO lo que la app sabe del usuario: la cookie y su llave, las muestras, el ultimo
+ * modelo, la organizacion elegida y el User-Agent guardado. Si manana se guarda algo nuevo del
+ * usuario, se borra aqui o el "cerrar sesion" se vuelve mentira.
+ */
+public final class Session {
+
+    private Session() {}
+
+    public static void logout(Context ctx) {
+        Context app = ctx.getApplicationContext();
+        new SessionStore(app).clear();                       // cookie + llave del Keystore
+        new SampleStore(app.getFilesDir()).clear();          // samples.jsonl (D5)
+        new SnapshotStore(app).clear();                      // ultimo modelo, orgs, hora
+        app.getSharedPreferences(SettingsActivity.PREFS, Context.MODE_PRIVATE)
+                .edit().clear().apply();                     // manual_org, user_agent, backoff
+        WidgetUpdateJob.cancel(app);
+        WidgetUpdateJob.pushToWidgets(app, Snapshot.of(Snapshot.Problem.NO_SESSION));
+    }
+}
+```
+
+- [ ] **Paso 2: Comprobar a mano que no queda nada**
+
+```bash
+adb shell run-as com.claulimitswidgets.android ls -R files shared_prefs 2>/dev/null \
+  || echo "(APK no debuggable: lo cubre la prueba de SessionStore)"
+```
+
+- [ ] **Paso 3: Commit**
+
+```bash
+git add android/app/src && git commit -m "feat: un unico cerrar sesion que borra todo"
+```
 
 ### Tarea 3.8: `SettingsActivity` — selector de organización y cerrar sesión
 
@@ -1897,10 +2120,10 @@ modificar `AndroidManifest.xml`
 </LinearLayout>
 ```
 
-- [ ] **Paso 4: Implementar** — crear `src/com/claudewidgets/android/SettingsActivity.java`:
+- [ ] **Paso 4: Implementar** — crear `src/com/claulimitswidgets/android/SettingsActivity.java`:
 
 ```java
-package com.claudewidgets.android;
+package com.claulimitswidgets.android;
 
 import android.app.Activity;
 import android.content.Context;
@@ -1937,19 +2160,20 @@ public class SettingsActivity extends Activity {
         auto.setOnClickListener(v -> prefs.edit().remove(KEY_ORG).apply());
         group.addView(auto);
 
-        for (String uuid : knownOrgs()) {
+        // Se muestran NOMBRES, no uuid: un uuid no le dice nada al usuario y acabaria en una
+        // captura. `SnapshotStore` los guarda como "uuid|nombre" al consultar /organizations.
+        for (String entry : knownOrgs()) {
+            String uuid = entry.contains("|") ? entry.substring(0, entry.indexOf('|')) : entry;
+            String name = entry.contains("|") ? entry.substring(entry.indexOf('|') + 1) : null;
             RadioButton b = new RadioButton(this);
-            b.setText(abbreviate(uuid));
+            b.setText(name != null && !name.isEmpty() ? name : abbreviate(uuid));
             b.setChecked(uuid.equals(current));
             b.setOnClickListener(v -> prefs.edit().putString(KEY_ORG, uuid).apply());
             group.addView(b);
         }
 
         ((Button) findViewById(R.id.btn_logout)).setOnClickListener(v -> {
-            new SessionStore(this).clear();
-            prefs.edit().remove(KEY_ORG).apply();
-            new SnapshotStore(this).clear();   // F4
-            WidgetUpdateJob.cancel(this);
+            Session.logout(this);
             finish();
         });
     }
@@ -1959,7 +2183,7 @@ public class SettingsActivity extends Activity {
         return new SnapshotStore(this).knownOrgs();   // F4
     }
 
-    /** Un uuid completo en pantalla acabaria en una captura. Ocho caracteres bastan para elegir. */
+    /** Respaldo si no se guardo el nombre: ocho caracteres bastan para distinguir dos. */
     static String abbreviate(String uuid) {
         return uuid.length() <= 8 ? uuid : uuid.substring(0, 8) + "…";
     }
@@ -1991,10 +2215,10 @@ esta fase, está mal.
 
 - [ ] **Paso 1: La prueba que falla**
 
-Crear `android/app/test/com/claudewidgets/android/SampleStoreTest.java`:
+Crear `android/app/test/com/claulimitswidgets/android/SampleStoreTest.java`:
 
 ```java
-package com.claudewidgets.android;
+package com.claulimitswidgets.android;
 
 import com.claudewidgets.core.Assert;
 import com.claudewidgets.core.Sample;
@@ -2045,10 +2269,10 @@ public final class SampleStoreTest {
 
 - [ ] **Paso 3: Implementar**
 
-Crear `android/app/src/com/claudewidgets/android/SampleStore.java`:
+Crear `android/app/src/com/claulimitswidgets/android/SampleStore.java`:
 
 ```java
-package com.claudewidgets.android;
+package com.claulimitswidgets.android;
 
 import com.claudewidgets.core.Json;
 import com.claudewidgets.core.Sample;
@@ -2148,11 +2372,9 @@ public final class SampleStore {
 - [ ] **Paso 4: Verla pasar y commit**
 
 ```bash
-TEST=1 bash android/app/build.sh && (cd android/app && \
-  d8 --min-api 29 --lib "${ANDROID_JAR:-$HOME/android/platforms/android-34/android.jar}" \
-     --output build/dextest $(find build/classes -name '*.class') && \
-  adb push build/dextest/classes.dex /data/local/tmp/app-test.dex >/dev/null && \
-  adb shell "CLASSPATH=/data/local/tmp/app-test.dex app_process / com.claudewidgets.android.AppTestRunner /data/local/tmp/cuw-test")
+TEST=1 bash android/app/build.sh \
+  && adb install -r android/app/build/claude-usage.apk \
+  && adb shell am instrument -w com.claulimitswidgets.android/.AppInstrumentation
 git add android/app/src android/app/test && git commit -m "feat: almacen de muestras con ventana de 15 dias"
 ```
 
@@ -2166,7 +2388,7 @@ sesión el widget lo dice.
 - [ ] **Paso 1: `Snapshot`**
 
 ```java
-package com.claudewidgets.android;
+package com.claulimitswidgets.android;
 
 import com.claudewidgets.core.DayUsage;
 import com.claudewidgets.core.Forecast;
@@ -2177,8 +2399,12 @@ import java.time.Instant;
 /** Todo lo que el widget necesita para pintarse, ya calculado por el nucleo. */
 public final class Snapshot {
 
-    /** Que mostrar cuando no hay numeros que mostrar. */
-    public enum Problem { NO_SESSION, AUTH_EXPIRED, BLOCKED, OFFLINE, BAD_FORMAT }
+    /**
+     * Que mostrar cuando no hay numeros que mostrar. `CHOOSE_ORG` no es un fallo: es que hay
+     * varias organizaciones y ninguna pista de cual mira el usuario, asi que elegir por el
+     * seria mostrarle una cuota que no es la suya.
+     */
+    public enum Problem { NO_SESSION, AUTH_EXPIRED, BLOCKED, OFFLINE, BAD_FORMAT, CHOOSE_ORG }
 
     public final UsageModel model;
     public final DayUsage day;
@@ -2218,7 +2444,7 @@ public final class Snapshot {
 - [ ] **Paso 2: `SnapshotStore`**
 
 ```java
-package com.claudewidgets.android;
+package com.claulimitswidgets.android;
 
 import android.content.Context;
 import android.content.SharedPreferences;
@@ -2309,7 +2535,7 @@ public final class SnapshotStore {
 - [ ] **Paso 3: `UsageRefresher`**
 
 ```java
-package com.claudewidgets.android;
+package com.claulimitswidgets.android;
 
 import android.content.Context;
 import android.content.SharedPreferences;
@@ -2349,7 +2575,19 @@ public final class UsageRefresher {
         this.meta = new SnapshotStore(this.ctx);
     }
 
+    /**
+     * Un solo refresco a la vez. `runNow` (toque, login) y el JobService pueden coincidir, y
+     * `SampleStore.append` es leer-y-reescribir: sin esto, dos a la vez corrompen samples.jsonl.
+     */
+    private static final Object LOCK = new Object();
+
     public Snapshot refresh() {
+        synchronized (LOCK) {
+            return refreshLocked();
+        }
+    }
+
+    private Snapshot refreshLocked() {
         String cookies;
         try {
             cookies = session.load();
@@ -2360,19 +2598,52 @@ public final class UsageRefresher {
             return Snapshot.of(Snapshot.Problem.NO_SESSION);
         }
 
+        SharedPreferences prefs = ctx.getSharedPreferences(
+                SettingsActivity.PREFS, Context.MODE_PRIVATE);
+
+        // Backoff: si el ultimo intento fallo, no se vuelve a la red hasta que toque.
+        long notBefore = prefs.getLong(KEY_NEXT_ALLOWED, 0L);
+        if (Instant.now().getEpochSecond() < notBefore) {
+            return keepOld(problemFromName(prefs.getString(KEY_LAST_PROBLEM, null)));
+        }
+
         UsageClient client = new UsageClient(cookies, userAgent());
         try {
-            SharedPreferences prefs = ctx.getSharedPreferences(
-                    SettingsActivity.PREFS, Context.MODE_PRIVATE);
             String manual = prefs.getString(SettingsActivity.KEY_ORG, null);
-            List<String> orgs = client.organizations();
-            meta.rememberOrgs(orgs);   // antes de elegir: Ajustes los necesita aunque falle luego
-            String org = OrgSelector.choose(orgs, manual,
-                    UsageClient.lastActiveOrg(cookies), uuid -> probe(client, uuid));
-            if (org == null) return keepOld(Snapshot.Problem.BAD_FORMAT);
+            String lastActive = UsageClient.lastActiveOrg(cookies);
 
-            UsageModel model = client.usage(org);
+            // Con una pista basta: no se llama a /organizations en cada refresco. Solo cuando
+            // no hay pista o todavia no se vio la lista. Son 3 peticiones menos por ciclo.
+            List<String> orgs = (manual != null || lastActive != null) && !meta.knownOrgs().isEmpty()
+                    ? meta.knownOrgs()
+                    : client.organizations();
+            meta.rememberOrgs(orgs);   // Ajustes los necesita aunque el resto falle
+
+            // El probe devuelve el modelo, no un booleano: asi la consulta que decide la
+            // organizacion es la misma que se muestra, en vez de tirarla y repetirla.
+            final UsageModel[] fetched = new UsageModel[1];
+            final Exception[] fatal = new Exception[1];
+            OrgSelector.Choice choice = OrgSelector.choose(orgs, manual, lastActive, uuid -> {
+                if (fatal[0] != null) return false;
+                try {
+                    fetched[0] = client.usage(uuid);
+                    return true;
+                } catch (AuthExpiredException | BlockedException e) {
+                    fatal[0] = e;      // no se traga: se vuelve a lanzar abajo
+                    return false;
+                } catch (Exception e) {
+                    return false;
+                }
+            });
+            if (fatal[0] instanceof AuthExpiredException) throw (AuthExpiredException) fatal[0];
+            if (fatal[0] instanceof BlockedException) throw (BlockedException) fatal[0];
+            if (choice.ambiguous) return keepOld(Snapshot.Problem.CHOOSE_ORG);
+            if (choice.orgUuid == null) return keepOld(Snapshot.Problem.BAD_FORMAT);
+
+            // Si la eleccion vino del manual, el probe no corrio: hay que consultar.
+            UsageModel model = fetched[0] != null ? fetched[0] : client.usage(choice.orgUuid);
             Instant now = Instant.now();
+            clearBackoff(prefs);
             return compute(model, now);
         } catch (AuthExpiredException e) {
             return keepOld(Snapshot.Problem.AUTH_EXPIRED);
@@ -2386,8 +2657,38 @@ public final class UsageRefresher {
         }
     }
 
-    /** Lo ultimo que se pudo calcular, marcado con el problema de ahora. */
+    private static final String KEY_ATTEMPT = "backoff_attempt";
+    private static final String KEY_NEXT_ALLOWED = "backoff_next_allowed_at";
+    private static final String KEY_LAST_PROBLEM = "backoff_last_problem";
+
+    /** Un 200 reinicia la cuenta: el siguiente fallo vuelve a esperar un minuto, no media hora. */
+    private void clearBackoff(SharedPreferences prefs) {
+        prefs.edit().remove(KEY_ATTEMPT).remove(KEY_NEXT_ALLOWED).remove(KEY_LAST_PROBLEM).apply();
+    }
+
+    private static Snapshot.Problem problemFromName(String name) {
+        if (name == null) return Snapshot.Problem.OFFLINE;
+        try {
+            return Snapshot.Problem.valueOf(name);
+        } catch (IllegalArgumentException e) {
+            return Snapshot.Problem.OFFLINE;
+        }
+    }
+
+    /**
+     * Lo ultimo que se pudo calcular, marcado con el problema de ahora, y se anota el backoff:
+     * sin esto `Backoff` quedaria definido y probado pero nunca aplicado.
+     */
     private Snapshot keepOld(Snapshot.Problem p) {
+        SharedPreferences prefs = ctx.getSharedPreferences(
+                SettingsActivity.PREFS, Context.MODE_PRIVATE);
+        int attempt = prefs.getInt(KEY_ATTEMPT, 0);
+        prefs.edit()
+                .putInt(KEY_ATTEMPT, attempt + 1)
+                .putLong(KEY_NEXT_ALLOWED,
+                        Instant.now().getEpochSecond() + Backoff.seconds(attempt))
+                .putString(KEY_LAST_PROBLEM, p.name())
+                .apply();
         Snapshot old = last();
         return old.hasData() ? old.withProblem(p) : Snapshot.of(p);
     }
@@ -2411,11 +2712,14 @@ public final class UsageRefresher {
         }
         Instant now = Instant.now();
         DayUsage day = History.compute(model.weekly, all, now, ZoneId.systemDefault());
+        // `problem` va en null: `last()` describe lo que se sabe, no un fallo. Marcarlo siempre
+        // como OFFLINE haria que el widget dijera "Sin conexion" despues de cualquier onUpdate
+        // del lanzador, con datos recien traidos. La edad ya la muestra el campo `age`.
         return new Snapshot(model, day,
                 Projection.session(model.session.percent, model.session.resetsAt, now),
                 Projection.weekly(model.weekly.percent, model.weekly.resetsAt, all, now),
                 Colors.paceMark(model.weekly.resetsAt, now),
-                fetchedAt, Snapshot.Problem.OFFLINE);
+                fetchedAt, null);
     }
 
     private Snapshot compute(UsageModel model, Instant now) {
@@ -2457,16 +2761,13 @@ public final class UsageRefresher {
      * Se guarda al iniciar sesion porque crear un WebView desde un JobService no es viable.
      */
     private String userAgent() {
+        // Sin respaldo a `http.agent`: si no esta guardado es que no hubo login, y una huella
+        // distinta a la del WebView es justo lo que podria disparar un reto.
         return ctx.getSharedPreferences(SettingsActivity.PREFS, Context.MODE_PRIVATE)
-                .getString("user_agent", System.getProperty("http.agent"));
+                .getString("user_agent", "");
     }
 }
 ```
-
-> **Nota para quien ejecute:** `LoginActivity.finishLogin()` debe guardar el User-Agent del
-> WebView en esa preferencia antes de llamar a `WidgetUpdateJob.schedule`. Añadir en el paso
-> correspondiente:
-> `prefs.edit().putString("user_agent", userAgent(web)).apply();`
 
 - [ ] **Paso 4: Commit**
 
@@ -2613,6 +2914,11 @@ descubre en el teléfono, no en el compilador.
                 android:max="100" android:progressDrawable="@drawable/bar_gray" android:visibility="gone" />
         </FrameLayout>
 
+        <!-- Marca de ritmo parejo (R7): una barra fina gris debajo de la semanal, que avanza
+             con la ventana. Sin esto, `Colors.paceMark` se calcularia y no se veria. -->
+        <ProgressBar android:id="@+id/pace" style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent" android:layout_height="2dp"
+            android:max="100" android:progressDrawable="@drawable/bar_gray" />
         <TextView android:id="@+id/forecast" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:textColor="#FF9AA3B2"
             android:textSize="11sp" android:paddingTop="6dp" />
@@ -2667,6 +2973,7 @@ reintentar.
     <string name="p_blocked">Blocked by Claude — retrying</string>
     <string name="p_offline">No connection</string>
     <string name="p_bad_format">Unexpected response format</string>
+    <string name="p_choose_org">Pick an organization in Settings</string>
 ```
 
 `values-es/strings.xml`:
@@ -2686,12 +2993,13 @@ reintentar.
     <string name="p_blocked">Claude está bloqueando — reintentando</string>
     <string name="p_offline">Sin conexión</string>
     <string name="p_bad_format">Formato de respuesta no reconocido</string>
+    <string name="p_choose_org">Elige organización en Ajustes</string>
 ```
 
 - [ ] **Paso 7: `WidgetRenderer`**
 
 ```java
-package com.claudewidgets.android;
+package com.claulimitswidgets.android;
 
 import android.app.PendingIntent;
 import android.content.ComponentName;
@@ -2741,23 +3049,55 @@ public final class WidgetRenderer {
                         Colors.bar(s.model.session.percent));
                 bar(v, WEEKLY_BARS, s.model.weekly.percent,
                         Colors.bar(s.model.weekly.percent));
+                // Esto es DIBUJO, no regla: cuanto se llena la barra. El COLOR lo decide
+                // `Colors.today`, que es R7. No se toca uno pensando en el otro.
                 double todayPct = s.day.quotaToday == null || s.day.quotaToday <= 0
                         ? 0 : 100 * s.day.todayUsed / s.day.quotaToday;
                 bar(v, TODAY_BARS, todayPct,
                         Colors.today(s.day.todayUsed, s.day.quotaToday));
                 v.setTextViewText(R.id.today, ctx.getString(R.string.w_today,
                         one(s.day.todayUsed), s.day.quotaToday == null ? "—" : one(s.day.quotaToday)));
+                // Marca de ritmo parejo: cuanto de la ventana semanal transcurrio (R7).
+                v.setViewVisibility(R.id.pace, s.paceMark == null
+                        ? android.view.View.GONE : android.view.View.VISIBLE);
+                if (s.paceMark != null) {
+                    v.setProgressBar(R.id.pace, 100, (int) Math.round(s.paceMark * 100), false);
+                }
                 v.setTextViewText(R.id.forecast, forecast(ctx, s));
             }
         }
 
-        // Tocar = actualizar. El PendingIntent corre con la identidad de la app, asi que llega
-        // al receptor aunque sea exported="false" (verificado en W0).
+        // El toque lleva a donde se arregla el problema, no siempre a "refrescar": decirle
+        // "toca para iniciar sesion" y que al tocar solo reintente seria mentirle.
+        v.setOnClickPendingIntent(R.id.root, tapIntent(ctx, s, compact));
+        return v;
+    }
+
+    /**
+     * Con NO_SESSION o AUTH_EXPIRED abre el login; con CHOOSE_ORG abre Ajustes; en los demas
+     * casos refresca. El PendingIntent corre con la identidad de la app, asi que el broadcast
+     * llega al receptor aunque sea `exported="false"` (verificado en W0).
+     *
+     * "Mantener pulsado = abrir la app" NO es posible: la pulsacion larga sobre un widget la
+     * consume el lanzador para moverlo, y un AppWidgetProvider no la ve. Por eso el acceso a
+     * Ajustes vive en la pantalla de la app (Tarea 3.8) y en el toque cuando hay que elegir.
+     */
+    private static PendingIntent tapIntent(Context ctx, Snapshot s, boolean compact) {
+        int req = compact ? 1 : 2;
+        int flags = PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE;
+        if (s.problem == Snapshot.Problem.NO_SESSION || s.problem == Snapshot.Problem.AUTH_EXPIRED) {
+            return PendingIntent.getActivity(ctx, req,
+                    new Intent(ctx, LoginActivity.class)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), flags);
+        }
+        if (s.problem == Snapshot.Problem.CHOOSE_ORG) {
+            return PendingIntent.getActivity(ctx, req,
+                    new Intent(ctx, SettingsActivity.class)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), flags);
+        }
         Intent tap = new Intent(ctx, compact ? Widget4x1Provider.class : Widget4x2Provider.class)
                 .setAction(WidgetUpdateJob.ACTION_TAP);
-        v.setOnClickPendingIntent(R.id.root, PendingIntent.getBroadcast(ctx, compact ? 1 : 2, tap,
-                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE));
-        return v;
+        return PendingIntent.getBroadcast(ctx, req, tap, flags);
     }
 
     // Orden fijo: verde, ambar, rojo, gris. Debe coincidir con `index(Color)`.
@@ -2797,6 +3137,7 @@ public final class WidgetRenderer {
             case AUTH_EXPIRED:  return R.string.p_auth_expired;
             case BLOCKED:       return R.string.p_blocked;
             case OFFLINE:       return R.string.p_offline;
+            case CHOOSE_ORG:    return R.string.p_choose_org;
             default:            return R.string.p_bad_format;
         }
     }
@@ -2825,7 +3166,7 @@ public final class WidgetRenderer {
 - [ ] **Paso 8: Los dos proveedores**
 
 ```java
-package com.claudewidgets.android;
+package com.claulimitswidgets.android;
 
 import android.appwidget.AppWidgetManager;
 import android.appwidget.AppWidgetProvider;
@@ -2898,7 +3239,7 @@ usuario no tiene forma de saber por qué.
 - [ ] **Paso 1: Implementar el job**
 
 ```java
-package com.claudewidgets.android;
+package com.claulimitswidgets.android;
 
 import android.app.job.JobInfo;
 import android.app.job.JobParameters;
@@ -2916,7 +3257,7 @@ import android.widget.RemoteViews;
  */
 public class WidgetUpdateJob extends JobService {
 
-    public static final String ACTION_TAP = "com.claudewidgets.android.TAP";
+    public static final String ACTION_TAP = "com.claulimitswidgets.android.TAP";
     private static final int JOB_ID = 4201;
     private static final long PERIOD_MS = 15 * 60 * 1000L;
 
@@ -2926,7 +3267,9 @@ public class WidgetUpdateJob extends JobService {
         js.schedule(new JobInfo.Builder(JOB_ID, new ComponentName(ctx, WidgetUpdateJob.class))
                 .setPeriodic(PERIOD_MS)
                 .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
-                .setPersisted(false)   // se reprograma desde BootReceiver
+                // Con RECEIVE_BOOT_COMPLETED declarado, el job puede persistir y lo reprograma
+                // el sistema. BootReceiver se queda solo para refrescar al arrancar.
+                .setPersisted(true)
                 .build());
     }
 
@@ -2938,7 +3281,14 @@ public class WidgetUpdateJob extends JobService {
     /** Actualizacion inmediata, fuera del periodo: al iniciar sesion y al tocar el widget. */
     public static void runNow(Context ctx) {
         new Thread(() -> {
-            Snapshot s = new UsageRefresher(ctx).refresh();
+            Snapshot s;
+            try {
+                s = new UsageRefresher(ctx).refresh();
+            } catch (RuntimeException e) {
+                // Un hilo crudo que lanza se lleva el proceso por delante. `refresh()` promete
+                // no lanzar, pero esto es lo que hace que la promesa no dependa de recordarlo.
+                s = Snapshot.of(Snapshot.Problem.BAD_FORMAT);
+            }
             pushToWidgets(ctx, s);
         }, "cuw-refresh").start();
     }
@@ -2981,16 +3331,15 @@ public class WidgetUpdateJob extends JobService {
 - [ ] **Paso 2: `BootReceiver`**
 
 ```java
-package com.claudewidgets.android;
+package com.claulimitswidgets.android;
 
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 
 /**
- * `JobScheduler` no sobrevive al reinicio con `setPersisted(false)`, y persistirlo exige el
- * permiso igual. Se reprograma aqui: sin esto el widget se congela tras reiniciar el telefono
- * y el usuario no tiene como saber por que.
+ * El job persiste al reinicio (`setPersisted(true)`), pero el primer ciclo tardaria hasta 15 min
+ * en llegar. Aqui se refresca en cuanto arranca, y se reprograma por si el job se perdio.
  */
 public class BootReceiver extends BroadcastReceiver {
     @Override
@@ -3038,16 +3387,16 @@ Esperado: textos del widget. Si todavía no hay sesión, debe decir "Toca para i
 - [ ] **Paso 5: Comprobar el job**
 
 ```bash
-adb shell dumpsys jobscheduler | grep -A3 "com.claudewidgets.android" | head -10
+adb shell dumpsys jobscheduler | grep -A3 "com.claulimitswidgets.android" | head -10
 ```
 Esperado: un job con `PERIODIC` de 900000 ms.
 
 - [ ] **Paso 6: Comprobar el reinicio sin reiniciar el teléfono**
 
 ```bash
-adb shell am broadcast -a android.intent.action.BOOT_COMPLETED -n com.claudewidgets.android/.BootReceiver
+adb shell am broadcast -a android.intent.action.BOOT_COMPLETED -n com.claulimitswidgets.android/.BootReceiver
 sleep 5
-adb shell dumpsys jobscheduler | grep -c "com.claudewidgets.android"
+adb shell dumpsys jobscheduler | grep -c "com.claulimitswidgets.android"
 ```
 Esperado: distinto de 0. (La prueba de reinicio de verdad va en F5.)
 
@@ -3086,7 +3435,7 @@ Cloudflare puntúa huella TLS, ritmo y reputación de IP. Esta fase mide el ritm
 # Requiere una sesion ya iniciada (el login es lo unico manual).
 # Solo ASCII. Uso: bash android/app/pruebas/recorrido.sh
 set -uo pipefail
-PKG=com.claudewidgets.android
+PKG=com.claulimitswidgets.android
 S="$(adb devices | awk '/\tdevice$/{print $1; exit}')"
 [ -n "$S" ] || { echo "ERROR: sin dispositivo; revisar la depuracion inalambrica"; exit 1; }
 fallos=0
@@ -3116,12 +3465,24 @@ sleep 8
 comprobar "sigue mostrando datos tras el toque" '(Sesion|Sesión|Session) [0-9]+%'
 
 echo "== 3. sin red =="
-echo "  (se simula cortando el acceso del paquete, no apagando las radios del dueno)"
-adb -s "$S" shell cmd netpolicy add restrict-background "$(adb -s "$S" shell dumpsys package $PKG | grep -m1 userId= | grep -oE '[0-9]+')" 2>/dev/null
+echo "  (se corta el acceso del paquete, no se apagan las radios del dueno)"
+UID=$(adb -s "$S" shell dumpsys package $PKG | grep -m1 userId= | grep -oE '[0-9]+')
+[ -n "$UID" ] || { echo "  FALLA     no se pudo leer el uid de $PKG"; fallos=$((fallos+1)); }
+adb -s "$S" shell cmd netpolicy add restrict-background-blacklist "$UID"
+adb -s "$S" shell cmd netpolicy set restrict-background true
+# Se VERIFICA que la restriccion entro. Si el comando fallara en silencio, la prueba pasaria
+# siempre sin probar nada: es justo lo que le paso a la primera version de este guion.
+if adb -s "$S" shell cmd netpolicy list restrict-background-blacklist | grep -qw "$UID"; then
+  echo "  OK        la restriccion de red esta activa"
+else
+  echo "  FALLA     no se pudo restringir la red de $PKG"; fallos=$((fallos+1))
+fi
 adb -s "$S" shell am broadcast -a $PKG.TAP -n $PKG/.Widget4x2Provider >/dev/null 2>&1
-sleep 10
-comprobar "avisa de que no hay conexion o conserva el dato" '(Sin conexion|Sin conexión|No connection|hace [0-9]+)'
-adb -s "$S" shell cmd netpolicy remove restrict-background "$(adb -s "$S" shell dumpsys package $PKG | grep -m1 userId= | grep -oE '[0-9]+')" 2>/dev/null
+sleep 15
+comprobar "avisa de que no hay conexion" '(Sin conexion|Sin conexión|No connection)'
+comprobar "conserva el dato viejo con su edad" '(hace [0-9]+|[0-9]+ (min|h) ago|ahora mismo|just now)'
+adb -s "$S" shell cmd netpolicy set restrict-background false
+adb -s "$S" shell cmd netpolicy remove restrict-background-blacklist "$UID"
 
 echo "== 4. rotacion =="
 adb -s "$S" shell settings put system accelerometer_rotation 0
@@ -3158,11 +3519,12 @@ git add android/app/pruebas && git commit -m "test: recorrido automatizado en el
 
 ### Tarea 5.2: Sesión vencida y bloqueo, provocados a propósito
 
-- [ ] **Paso 1: Sesión vencida** — se provoca corrompiendo la cookie guardada, que es más honesto
-  que esperar a que caduque:
+- [ ] **Paso 1: Cerrar sesión** — esto prueba el camino de "no hay sesión", **no un 401 real**.
+  Un 401 del servidor no se puede provocar a voluntad; esa rama la cubre `UsageClientTest` y queda
+  declarada como no ejercitada contra el servidor:
 
 ```bash
-adb shell am start -n com.claudewidgets.android/.SettingsActivity
+adb shell am start -n com.claulimitswidgets.android/.SettingsActivity
 # Cerrar sesion desde la app, y luego comprobar el widget:
 adb shell input keyevent KEYCODE_HOME; sleep 3
 adb shell uiautomator dump /sdcard/r.xml >/dev/null
@@ -3182,7 +3544,7 @@ adb reboot
 # esperar a que vuelva
 until adb shell getprop sys.boot_completed 2>/dev/null | grep -q 1; do sleep 5; done
 sleep 30
-adb shell dumpsys jobscheduler | grep -c com.claudewidgets.android
+adb shell dumpsys jobscheduler | grep -c com.claulimitswidgets.android
 ```
 Esperado: distinto de 0. Y el widget debe seguir mostrando datos (con su antigüedad).
 
@@ -3210,20 +3572,42 @@ set -uo pipefail
 OUT="${1:-ritmo24h.log}"
 S="$(adb devices | awk '/\tdevice$/{print $1; exit}')"
 [ -n "$S" ] || { echo "ERROR: sin dispositivo"; exit 1; }
+# Termux se duerme con Doze y el `sleep` no llega a las 24 h. El wake lock lo evita.
+command -v termux-wake-lock >/dev/null 2>&1 && termux-wake-lock
+trap 'command -v termux-wake-unlock >/dev/null 2>&1 && termux-wake-unlock' EXIT INT TERM
+
 adb -s "$S" logcat -c
 echo "inicio: $(date -u +%FT%TZ)" > "$OUT"
 adb -s "$S" logcat -v time -s CuwHttp:I >> "$OUT" &
 LOGPID=$!
-trap 'kill $LOGPID 2>/dev/null' EXIT INT TERM
+trap 'kill $LOGPID 2>/dev/null; command -v termux-wake-unlock >/dev/null 2>&1 && termux-wake-unlock' EXIT INT TERM
+
 sleep 86400
 echo "fin: $(date -u +%FT%TZ)" >> "$OUT"
-echo "== resumen =="
+
+# Los contadores los lleva la APP en sus preferencias, no este guion: logcat rota y se pierde,
+# y un `grep -c` sobre un archivo incompleto daria cero sin que nadie lo note.
+echo "== contadores de la app =="
+adb -s "$S" shell run-as com.claulimitswidgets.android \
+  cat shared_prefs/cuw.xml 2>/dev/null | grep -E 'n200|n401|n403|nHtml|nCfMitigated|nRetry' \
+  || echo "  (APK no debuggable: leer los contadores desde Ajustes)"
+echo "== respaldo: lo que alcanzo a quedar en logcat =="
 grep -oE 'code=[0-9]+' "$OUT" | sort | uniq -c
-grep -c 'blocked' "$OUT" || true
 ```
 
-- [ ] **Paso 2: Añadir el registro mínimo a `UsageClient`** (solo código, tipo y longitud; nunca
-  cuerpo ni cabeceras con valores):
+- [ ] **Paso 1b: Contadores en la app**
+
+`UsageClient.check` incrementa en las preferencias `cuw` un contador por desenlace: `n200`,
+`n401`, `n403`, `nHtml`, `nCfMitigated`, `nRetry`. Son seis enteros, no llevan ningún dato de la
+cuenta, y son lo que de verdad se lee al final de las 24 h: `logcat` rota y lo que se pierda no
+se recupera.
+
+- [ ] **Paso 2: Añadir el registro mínimo a `UsageClient`**
+
+**Este `Log.i` se queda en el APK de release**, a propósito: es lo único que permite diagnosticar
+un bloqueo en el teléfono de otra persona. Por eso registra **solo** código HTTP, tipo de
+contenido y longitud — nunca el cuerpo, nunca una cabecera con su valor, nunca la URL (que lleva
+el UUID de organización).
 
 ```java
         android.util.Log.i("CuwHttp", "code=" + code
@@ -3239,6 +3623,11 @@ nohup bash android/app/pruebas/ritmo24h.sh ritmo24h.log >/dev/null 2>&1 &
 ```
 
 Durante esas 24 h **no se toca el teléfono para esta prueba**; se puede seguir usando normalmente.
+
+- [ ] **Paso 3b: Si hubo retos, se abre el plan B** — el reporte no se queda en describirlo: si
+  aparece algún `403`, `cf-mitigated` o HTML, se abre una tarea de **plan B** (rehacer la consulta
+  dentro de un WebView en primer plano) y se mide si el bloqueo es puntual o sistemático. Sin
+  retos, el plan B se declara innecesario por ahora y se deja documentado por si cambia.
 
 - [ ] **Paso 4: Escribir el reporte** — `docs/spikes/2026-10-w3-ritmo-24h.md` con: cuántas
   peticiones, cuántos `200`, cuántos `403`, cuántos `cf-mitigated`, cuántos HTML; y **la conclusión
@@ -3281,8 +3670,13 @@ permissions:
 jobs:
   apk:
     runs-on: ubuntu-latest
+    # Environment con revisor obligatorio (D3): la llave de release no se usa sin que una
+    # persona apruebe esa ejecucion.
+    environment: android-release
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0          # versionCode = numero de commits
       - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
         with:
           distribution: temurin
@@ -3290,7 +3684,7 @@ jobs:
       - name: Instalar las herramientas de compilacion
         run: |
           set -euo pipefail
-          yes | sdkmanager --install "platforms;android-34" "build-tools;34.0.0" >/dev/null
+          yes 2>/dev/null | sdkmanager --install "platforms;android-34" "build-tools;34.0.0" >/dev/null || true
           echo "$ANDROID_HOME/build-tools/34.0.0" >> "$GITHUB_PATH"
       - name: Reconstruir la llave desde el secret
         env:
@@ -3300,23 +3694,33 @@ jobs:
           printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.keystore"
       - name: Construir y firmar
         env:
-          ANDROID_JAR: ${{ env.ANDROID_HOME }}/platforms/android-34/android.jar
           KEYSTORE: ${{ runner.temp }}/release.keystore
           KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-        run: bash android/app/build.sh
+          VERSION_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          # El tag es `android-vN.N.N`; versionCode es el numero de commits, monotono y sin
+          # tener que acordarse de subirlo a mano.
+          export VERSION_CODE="$(git rev-list --count HEAD)"
+          export VERSION_NAME="${VERSION_NAME#android-v}"
+          ANDROID_JAR="$ANDROID_HOME/platforms/android-34/android.jar" bash android/app/build.sh
       - name: Borrar la llave del runner
         if: always()
         run: shred -u "$RUNNER_TEMP/release.keystore" 2>/dev/null || rm -f "$RUNNER_TEMP/release.keystore"
-      - name: Checksum
+      - name: Checksum y huella del certificado
         run: |
           set -euo pipefail
           cd android/app/build
           sha256sum claude-usage.apk > claude-usage.apk.sha256
           cat claude-usage.apk.sha256
-      - name: Publicar
+          # La huella del certificado es lo que deja comprobar que una actualizacion viene de
+          # la misma llave. Se publica en el README y se imprime aqui para cotejarla.
+          apksigner verify --print-certs claude-usage.apk | grep -i "SHA-256 digest"
+      - name: Publicar (borrador: lo revisa una persona antes de que sea publico)
         uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8 # v2.3.2
         with:
+          draft: true
           files: |
             android/app/build/claude-usage.apk
             android/app/build/claude-usage.apk.sha256
@@ -3370,6 +3774,25 @@ El memo a PC debe pedir dos cosas que esta sesión no puede hacer: **mover los d
 secrets**. Hasta que eso pase, F6 no se puede cerrar.
 
 ---
+
+## No ejercitado en W3
+
+Lo que este plan **no** demuestra, escrito en un solo sitio para que nadie lo lea como probado:
+
+1. **El reto real de Cloudflare.** No se puede provocar a voluntad. La clasificación
+   (403, `cf-mitigated`, HTML) se prueba por unidad en `UsageClientTest`; que el servidor la
+   dispare de verdad solo se sabrá si ocurre en la prueba de 24 h.
+2. **Un `401` real del servidor.** Igual: la rama está probada por unidad; el recorrido prueba
+   "cerrar sesión", que es otro camino.
+3. **API 29 en hardware.** El teléfono de pruebas es Android 17 (SDK 37). Las llamadas de
+   `RemoteViews` se eligieron entre las de API 1 justamente por esto, pero **nadie lo ha ejecutado
+   en un dispositivo API 29**.
+4. **Otros lanzadores.** `exported="false"` en el `AppWidgetProvider` está verificado en One UI.
+   Nova, Pixel Launcher y los demás no se han probado.
+5. **El plan B del WebView bajo `JobScheduler`.** El spike midió `postDelayed` con el proceso
+   congelado, no un job real. Si hiciera falta el plan B, hay que medirlo otra vez.
+6. **Que la cookie mínima baste.** Se prueba en la Tarea 3.7 contra el servidor real; hasta que
+   esa prueba dé `200`, es una hipótesis.
 
 ## Dependencias entre fases
 
