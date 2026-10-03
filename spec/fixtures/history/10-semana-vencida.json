@@ -1,0 +1,31 @@
+{
+  "description": "weekly.resets_at ya paso: se mide el consumo pero no hay cuota de hoy",
+  "input": {
+    "tz": "-06:00",
+    "now": "2026-10-09T19:00:00-06:00",
+    "weekly": {
+      "percent": 90,
+      "resets_at": "2026-10-09T18:00:00-06:00"
+    },
+    "samples": [
+      {
+        "t": "2026-10-09T08:00:00-06:00",
+        "percent": 80,
+        "resets_at": "2026-10-09T18:00:00-06:00"
+      },
+      {
+        "t": "2026-10-09T19:00:00-06:00",
+        "percent": 90,
+        "resets_at": "2026-10-09T18:00:00-06:00"
+      }
+    ]
+  },
+  "expected": {
+    "per_day": {
+      "2026-10-09": 10
+    },
+    "today_used": 10,
+    "quota_today": null,
+    "partial": true
+  }
+}
