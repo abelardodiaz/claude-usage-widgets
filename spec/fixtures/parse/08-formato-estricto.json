@@ -1,5 +1,5 @@
 {
-  "description": "Instantes mal formados segun R0: todos a null. Solo la forma canonica se acepta",
+  "description": "Forma de R0: once cadenas mal formadas a null y cuatro validas (incluidas +18:00 y nueve digitos de fraccion)",
   "source": "claude_code",
   "input": {
     "five_hour": {

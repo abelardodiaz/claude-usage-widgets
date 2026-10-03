@@ -131,12 +131,13 @@ public final class Parser {
      * rechaza aqui aunque `OffsetDateTime` lo aceptaria (su parseo por omision es
      * parseCaseInsensitive).
      *
-     * El desplazamiento de +-18:00 NO lo impone esta regex, que admitiria `+23:59`: lo impone
-     * `OffsetDateTime`, que lanza por encima de ese limite y cae en el `catch`. El contrato lo
-     * dice explicito para que la otra implementacion no acepte mas.
+     * El desplazamiento de +-18:00 lo acota la propia regex. `OffsetDateTime` tambien lo
+     * rechazaria por encima de ese limite, pero dejarselo a la biblioteca haria que la regla
+     * dependiera de un detalle de implementacion en vez de estar escrita aqui.
      */
     private static final Pattern RFC3339 = Pattern.compile(
-            "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?(Z|[+-]\\d{2}:\\d{2})$");
+            "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?"
+            + "(Z|[+-](0\\d|1[0-7]):[0-5]\\d|[+-]18:00)$");
 
     /**
      * RFC 3339 con desplazamiento. Lo que no se pueda leer se degrada a nulo (R1).

@@ -76,10 +76,9 @@ probar "R1: inventa 0% cuando falta utilization" $SRC/Parser.java \
 probar "R0: sin la puerta de formato estricto" $SRC/Parser.java \
   "if (!RFC3339.matcher((String) v).matches()) return null;" \
   "if (false) return null;"
-# NO hay mutante para "hits_at a nanos en vez de ms": ningun fixture lo distingue, y uno que lo
-# hiciera tendria un `expected` booleano que depende de la septima cifra de un double. Esta
-# anotado como no ejercitado en el PR; el valor de la regla es que las dos implementaciones
-# coincidan por construccion, no que una prueba lo verifique.
+probar "R0: before_reset en nanos en vez de ms" $SRC/Projection.java \
+  "return new Forecast(hitsAt, hitsAt.toEpochMilli() < resetsAt.toEpochMilli(), basis);" \
+  "return new Forecast(hitsAt, hitsAt.isBefore(resetsAt), basis);"
 
 echo "== arbol restaurado =="
 bash build.sh 2>&1 | tail -2
