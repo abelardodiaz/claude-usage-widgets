@@ -1,0 +1,39 @@
+# Job del APK de Android (W3 F2).
+#
+# Vive aqui y NO en .github/workflows/ porque el token de la sesion TEL no tiene el scope
+# `workflow` y GitHub rechaza el push. La sesion PC lo mueve con un commit suyo.
+name: android
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: "17"
+      # El runner trae el SDK de Android preinstalado; se fija la version para que el APK
+      # del CI y el del telefono se construyan contra el mismo android.jar.
+      - name: Instalar las herramientas de compilacion
+        run: |
+          set -euo pipefail
+          # `yes |` muere con 141 (SIGPIPE) cuando sdkmanager deja de leer, y con pipefail eso
+          # tumba el paso aunque la instalacion haya ido bien.
+          yes 2>/dev/null | sdkmanager --install "platforms;android-34" "build-tools;34.0.0" >/dev/null || true
+          echo "$ANDROID_HOME/build-tools/34.0.0" >> "$GITHUB_PATH"
+      - name: Construir el APK
+        # ANDROID_JAR se arma DENTRO del run: el contexto `env` de Actions no ve las variables
+        # del runner, asi que `${{ env.ANDROID_HOME }}` saldria vacio.
+        run: |
+          set -euo pipefail
+          ANDROID_JAR="$ANDROID_HOME/platforms/android-34/android.jar" bash android/app/build.sh
+      - name: Comprobar que resources.arsc no quedo comprimido
+        run: |
+          set -euo pipefail
+          unzip -lv android/app/build/claude-usage.apk | grep resources.arsc | grep -q Stored
