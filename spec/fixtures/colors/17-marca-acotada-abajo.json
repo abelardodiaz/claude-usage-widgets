@@ -1,0 +1,1 @@
+{"description": "Marca de ritmo parejo: reinicio a mas de 7 dias, se acota a 0", "input": {"bar": "pace_mark", "now": "2026-10-06T12:00:00-06:00", "resets_at": "2026-10-14T12:00:00-06:00"}, "expected": {"mark": 0}}

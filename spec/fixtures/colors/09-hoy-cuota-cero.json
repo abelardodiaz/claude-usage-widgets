@@ -1,0 +1,1 @@
+{"description": "Hoy: cuota exactamente 0 es gris, no rojo", "input": {"bar": "today", "today_used": 10, "quota_today": 0}, "expected": {"color": "gray"}}

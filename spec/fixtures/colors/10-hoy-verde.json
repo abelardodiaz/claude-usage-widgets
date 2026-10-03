@@ -1,0 +1,1 @@
+{"description": "Hoy: cociente 0.69, justo debajo del limite verde", "input": {"bar": "today", "today_used": 6.9, "quota_today": 10}, "expected": {"color": "green"}}

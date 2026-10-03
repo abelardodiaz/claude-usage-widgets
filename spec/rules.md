@@ -120,7 +120,12 @@ o si `|a.resets_at − b.resets_at| < 3600 s`.
 
 ## R7. Colores
 
-- Barras de sesión, semana y limitados: verde `< 60`, ámbar `< 85`, rojo `≥ 85`.
+Los fixtures de `spec/fixtures/colors/` fijan esta regla. Los colores viajan como
+`"green"`, `"amber"`, `"red"` y `"gray"`; el nombre que se muestre al usuario es cosa de la UI.
+
+- Barras de sesión, semana y limitados, por `percent`: verde `< 60`, ámbar `< 85`, rojo `≥ 85`.
+  `percent` se usa crudo (R0): uno negativo cae en verde y uno mayor que 100 en rojo; ninguno
+  de los dos es error.
 - Barra de hoy, en este orden:
   1. `quota_today < 0` → **rojo**. La cuota semanal ya se agotó, así que hoy no queda nada.
      Sin este paso el cociente saldría negativo y caería en "verde", diciendo que todo va bien
