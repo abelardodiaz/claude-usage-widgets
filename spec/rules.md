@@ -20,6 +20,9 @@ Las reglas con pasos numerados se evalúan **en ese orden**: la primera que apli
 - "Hoy" = fecha local de `now`.
 - Las comparaciones `<`, `≤`, `≥` son literales: `t ≥ now − 24 h` incluye la muestra tomada
   exactamente 24 h antes (lo fija `projection/05`).
+- `before_reset` se evalúa materializando `hits_at` como instante a la resolución de la
+  implementación (milisegundos) y comparándolo literalmente con `resets_at`; la tolerancia de
+  1 s de los fixtures aplica a `hits_at`, no al booleano (lo fijan `projection/17` y `20`).
 - Muestras con `t > now` se ignoran. `samples` ya incluye la muestra actual; no se agrega
   `(now, weekly.percent)` implícitamente.
 - `percent` se conserva tal cual viene (puede ser > 100 o < 0; no es error). R3 usa el valor

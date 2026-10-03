@@ -1,0 +1,36 @@
+{
+  "description": "R4: con reinicio a media jornada today_used supera al semanal y base se acota a 0",
+  "input": {
+    "tz": "-06:00",
+    "now": "2026-10-02T13:00:00-06:00",
+    "weekly": {
+      "percent": 2,
+      "resets_at": "2026-10-09T12:00:00-06:00"
+    },
+    "samples": [
+      {
+        "t": "2026-10-02T08:00:00-06:00",
+        "percent": 70,
+        "resets_at": "2026-10-02T12:00:00-06:00"
+      },
+      {
+        "t": "2026-10-02T11:00:00-06:00",
+        "percent": 76,
+        "resets_at": "2026-10-02T12:00:00-06:00"
+      },
+      {
+        "t": "2026-10-02T13:00:00-06:00",
+        "percent": 2,
+        "resets_at": "2026-10-09T12:00:00-06:00"
+      }
+    ]
+  },
+  "expected": {
+    "per_day": {
+      "2026-10-02": 8
+    },
+    "today_used": 8,
+    "quota_today": 13.333333,
+    "partial": true
+  }
+}
