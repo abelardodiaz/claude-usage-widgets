@@ -2235,7 +2235,8 @@ public class SettingsActivity extends Activity {
         SharedPreferences prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         // La lista cacheada no se refresca sola: si el usuario crea o deja una organizacion,
         // Ajustes mostraria la de siempre. Abrir esta pantalla es el momento natural de mirar.
-        WidgetUpdateJob.refreshOrgs(this);
+        // Al terminar se repintan los radios, porque la lista pudo cambiar.
+        WidgetUpdateJob.refreshOrgs(this, this::paintOrgs);
         String current = prefs.getString(KEY_ORG, null);
 
         RadioButton auto = new RadioButton(this);
@@ -2901,6 +2902,12 @@ public final class UsageRefresher {
      * El mismo User-Agent que usa el WebView del login: una sola huella hacia claude.ai.
      * Se guarda al iniciar sesion porque crear un WebView desde un JobService no es viable.
      */
+    /** El UA guardado, para quien no tiene una instancia a mano (Ajustes). */
+    static String userAgentOf(Context ctx) {
+        return ctx.getSharedPreferences(SettingsActivity.PREFS, Context.MODE_PRIVATE)
+                .getString("user_agent", "");
+    }
+
     private String userAgent() {
         // Sin respaldo a `http.agent`: si no esta guardado es que no hubo login, y una huella
         // distinta a la del WebView es justo lo que podria disparar un reto.
@@ -3441,14 +3448,31 @@ public class WidgetUpdateJob extends JobService {
         }, "cuw-refresh").start();
     }
 
-    /** Vuelve a leer /api/organizations en segundo plano. Lo llama Ajustes al abrirse. */
-    public static void refreshOrgs(Context ctx) {
+    /**
+     * Vuelve a leer /api/organizations y repinta los radios. Lo llama Ajustes al abrirse.
+     *
+     * NO llama a `refresh()`: ese, con pista y cache, se salta `/organizations` justo para
+     * ahorrar peticiones, asi que la lista no se refrescaria nunca y encima gastaria una
+     * consulta de uso. Aqui se pide la lista y nada mas; sin backoff, porque es una accion
+     * del usuario.
+     */
+    public static void refreshOrgs(Activity activity, Runnable onDone) {
+        Context app = activity.getApplicationContext();
         new Thread(() -> {
-            try {
-                new UsageRefresher(ctx).refresh();
-            } catch (RuntimeException ignored) {
-                // Ajustes sigue usable con la lista vieja.
+            synchronized (UsageRefresher.LOCK) {
+                try {
+                    SessionStore store = new SessionStore(app);
+                    if (!store.hasSession()) return;
+                    String cookies = store.load();
+                    if (cookies == null) return;
+                    UsageClient c = new UsageClient(cookies, UsageRefresher.userAgentOf(app));
+                    new SnapshotStore(app).rememberOrgs(c.organizations());
+                } catch (Exception ignored) {
+                    // Ajustes sigue usable con la lista vieja.
+                    return;
+                }
             }
+            activity.runOnUiThread(onDone);
         }, "cuw-orgs").start();
     }
 
@@ -3593,7 +3617,10 @@ Cloudflare puntúa huella TLS, ritmo y reputación de IP. Esta fase mide el ritm
 # recorrido.sh - ejercita la app instalada en el telefono y comprueba lo que muestra.
 # Requiere una sesion ya iniciada (el login es lo unico manual).
 # Solo ASCII. Uso: bash android/app/pruebas/recorrido.sh
-set -euo pipefail
+# `set -e` NO: este guion tiene que REPORTAR fallos, no morirse en ellos. Con `-e` y `pipefail`,
+# un `grep` que no encuentra nada (que es justo lo que hay que reportar) termina el guion y no se
+# ve el resumen. Se protege lo que puede fallar, uno por uno.
+set -uo pipefail
 PKG=com.claulimitswidgets.android
 S="$(adb devices | awk '/\tdevice$/{print $1; exit}')"
 [ -n "$S" ] || { echo "ERROR: sin dispositivo; revisar la depuracion inalambrica"; exit 1; }
@@ -3612,12 +3639,12 @@ adb -s "$S" shell input keyevent KEYCODE_HOME; sleep 3
 comprobar "porcentaje de sesion" '(Sesion|Sesión|Session) [0-9]+%'
 
 echo "== 2. tocar actualiza =="
-antes=$(texto | grep -oE '(ahora mismo|just now|hace [0-9]+ min|[0-9]+ min ago)' | head -1)
+antes=$(texto | grep -oE '(ahora mismo|just now|hace [0-9]+ min|[0-9]+ min ago)' | head -1 || true)
 # El toque se localiza por el texto del widget, no por coordenadas fijas.
 coord=$(adb -s "$S" shell uiautomator dump /sdcard/r.xml >/dev/null 2>&1; \
         adb -s "$S" shell cat /sdcard/r.xml | tr '<' '\n' | grep -m1 'Sesi' | \
         grep -oE 'bounds="\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]"' | \
-        grep -oE '[0-9]+' | paste -sd' ')
+        grep -oE '[0-9]+' | paste -sd' ' || true)
 set -- $coord
 if [ $# -eq 4 ]; then adb -s "$S" shell input tap $(( ($1+$3)/2 )) $(( ($2+$4)/2 )); fi
 sleep 8
@@ -3631,8 +3658,12 @@ APP_UID=$(adb -s "$S" shell dumpsys package $PKG | grep -m1 userId= | grep -oE '
 if [ -z "$APP_UID" ]; then
   echo "  FALLA     no se pudo leer el uid de $PKG"; fallos=$((fallos+1))
 else
-  adb -s "$S" shell cmd netpolicy add restrict-background-blacklist "$APP_UID"
-  adb -s "$S" shell cmd netpolicy set restrict-background true
+  if ! adb -s "$S" shell cmd netpolicy add restrict-background-blacklist "$APP_UID"; then
+    echo "  FALLA     cmd netpolicy no acepto la lista negra"; fallos=$((fallos+1))
+  fi
+  if ! adb -s "$S" shell cmd netpolicy set restrict-background true; then
+    echo "  FALLA     cmd netpolicy no acepto activar la restriccion"; fallos=$((fallos+1))
+  fi
   # Se VERIFICA que la restriccion entro. Si el comando fallara en silencio, la prueba pasaria
   # siempre sin probar nada: es justo lo que le paso a las dos primeras versiones de este guion.
   if adb -s "$S" shell cmd netpolicy list restrict-background-blacklist | grep -qw "$APP_UID"; then
@@ -3640,20 +3671,31 @@ else
   else
     echo "  FALLA     no se pudo restringir la red de $PKG"; fallos=$((fallos+1))
   fi
-  # Y que la red sea MEDIDA: `restrict-background` solo corta datos de fondo en redes medidas.
-  # En la Wi-Fi de casa, sin marcarla como medida, no corta NADA y la prueba no probaria nada.
-  if adb -s "$S" shell dumpsys netpolicy | grep -qiE "metered.*true|mMeteredIfaces.*[a-z]"; then
-    echo "  OK        hay una red medida"
+  # La red tiene que ser MEDIDA: `restrict-background` solo corta datos de fondo ahi.
+  # OJO: buscar "metered.*true" en todo el dumpsys casa SIEMPRE en un telefono con SIM, porque
+  # la politica de la red movil dice metered=true aunque estemos en Wi-Fi. Lo que importa es que
+  # la INTERFAZ ACTIVA este en "Metered ifaces".
+  if adb -s "$S" shell dumpsys netpolicy | grep -i "metered ifaces" | grep -q wlan; then
+    echo "  OK        la interfaz Wi-Fi activa esta entre las medidas"
   else
-    echo "  FALLA     la red no esta marcada como medida: este paso no prueba nada"
+    echo "  FALLA     la Wi-Fi no esta marcada como medida: este paso no prueba nada"
     fallos=$((fallos+1))
   fi
   adb -s "$S" shell am broadcast -a $PKG.TAP -n $PKG/.Widget4x2Provider >/dev/null 2>&1
   sleep 15
   comprobar "avisa de que no hay conexion" '(Sin conexion|Sin conexión|No connection)'
   comprobar "conserva el dato viejo con su edad" '(hace [0-9]+|[0-9]+ (min|h) ago|ahora mismo|just now)'
-  adb -s "$S" shell cmd netpolicy set restrict-background false
-  adb -s "$S" shell cmd netpolicy remove restrict-background-blacklist "$APP_UID"
+
+  # Ida y vuelta: sin esto, un widget que SIEMPRE dijera "Sin conexion" pasaria la prueba.
+  if ! adb -s "$S" shell cmd netpolicy set restrict-background false; then
+    echo "  FALLA     no se pudo quitar la restriccion"; fallos=$((fallos+1))
+  fi
+  if ! adb -s "$S" shell cmd netpolicy remove restrict-background-blacklist "$APP_UID"; then
+    echo "  FALLA     no se pudo sacar la app de la lista"; fallos=$((fallos+1))
+  fi
+  adb -s "$S" shell am broadcast -a $PKG.TAP -n $PKG/.Widget4x2Provider >/dev/null 2>&1
+  sleep 15
+  comprobar "al volver la red, vuelve a estar al dia" '(ahora mismo|just now)'
 fi
 
 echo "== 4. rotacion =="
@@ -3686,9 +3728,12 @@ nada, así que sin este paso el "sin red" del guion no prueba nada aunque salga 
 En el teléfono: Ajustes → Conexiones → Wi-Fi → la red → Uso de datos → **Medida**. Comprobar:
 
 ```bash
-adb shell dumpsys netpolicy | grep -iE "metered|mMeteredIfaces" | head -5
+adb shell dumpsys netpolicy | grep -i "metered ifaces"
 ```
-Esperado: la interfaz Wi-Fi aparece entre las medidas. El guion lo verifica y **falla** si no.
+Esperado: la línea incluye la interfaz Wi-Fi (`wlan0` o similar). **No vale** buscar
+`metered.*true` en todo el `dumpsys`: en un teléfono con SIM eso casa siempre, porque la política
+de la red móvil dice `metered=true` aunque estés en Wi-Fi. El guion verifica la interfaz activa
+y **falla** si no está.
 Al terminar las pruebas, volver a dejarla sin medir.
 
 - [ ] **Paso 2: Correrlo** — `bash android/app/pruebas/recorrido.sh`.
@@ -3770,13 +3815,13 @@ trap 'kill $LOGPID 2>/dev/null; command -v termux-wake-unlock >/dev/null 2>&1 &&
 sleep 86400
 echo "fin: $(date -u +%FT%TZ)" >> "$OUT"
 
-# Los contadores los lleva la APP y los escribe en UNA linea tras cada ciclo. Se lee la ULTIMA,
-# que trae los totales acumulados: asi no importa que logcat haya rotado por el medio.
-echo "== contadores (ultima linea de totales) =="
-grep -oE 'n200=[0-9]+ n401=[0-9]+ n403=[0-9]+ nHtml=[0-9]+ nCfMitigated=[0-9]+ nRetry=[0-9]+' \
-  "$OUT" | tail -1 || echo "  (ninguna linea de totales: revisar que la app corriera)"
-echo "== respaldo: respuestas individuales que quedaron en el log =="
-grep -oE 'code=[0-9]+' "$OUT" | sort | uniq -c
+# Se SUMAN las lineas individuales, no se lee la ultima de totales: los contadores son por
+# proceso y Samsung mata la app cada tanto, asi que esa linea se reinicia sin avisar.
+echo "== respuestas, sumadas sobre todo el periodo =="
+grep -oE 'code=[0-9]+' "$OUT" | sort | uniq -c || echo "  (ninguna: revisar que la app corriera)"
+echo "== bloqueos =="
+printf "  cf-mitigated: %s\n" "$(grep -c 'cf-mitigated=yes' "$OUT" || true)"
+printf "  html:         %s\n" "$(grep -c 'ctype=text/html' "$OUT" || true)"
 ```
 
 - [ ] **Paso 1b: Contadores en la app**
@@ -3798,8 +3843,25 @@ Lleva seis contadores estáticos y `UsageRefresher` los vuelca tras cada ciclo:
     }
 ```
 
-`check(...)` incrementa el que corresponda antes de lanzar, y `UsageRefresher.refreshLocked()`
-termina con `android.util.Log.i("CuwHttp", UsageClient.countsLine())`.
+`check(...)` incrementa el que corresponda antes de lanzar. El volcado va en `refresh()`, en un
+`finally`, para que salga también cuando el ciclo termina por excepción:
+
+```java
+    public Snapshot refresh() {
+        synchronized (LOCK) {
+            try {
+                return refreshLocked();
+            } finally {
+                android.util.Log.i("CuwHttp", UsageClient.countsLine());
+            }
+        }
+    }
+```
+
+**Los contadores son por proceso y Samsung mata la app**, así que `ritmo24h.sh` **suma todas las
+líneas `code=`** del log en vez de leer la última de totales: la línea de totales se reinicia cada
+vez que el proceso vuelve a arrancar. Y la prueba parte de un APK recién arrancado, porque las
+pruebas de la cáscara también mueven los contadores.
 
 **Por qué así y no con `run-as`:** el APK de release no es depurable, así que
 `adb shell run-as ... cat shared_prefs/...` **siempre** falla. Un guion que lea por ahí daría
@@ -3819,9 +3881,11 @@ el UUID de organización).
                 + (cfMitigated != null && !cfMitigated.isEmpty() ? " cf-mitigated=yes" : ""));
 ```
 
-- [ ] **Paso 3: Correrla**
+- [ ] **Paso 3: Correrla**, partiendo de un proceso recién arrancado (las pruebas de la cáscara
+  también mueven los contadores):
 
 ```bash
+adb shell am force-stop com.claulimitswidgets.android
 nohup bash android/app/pruebas/ritmo24h.sh ritmo24h.log >/dev/null 2>&1 &
 ```
 
@@ -4005,8 +4069,9 @@ Lo que este plan **no** demuestra, escrito en un solo sitio para que nadie lo le
    `am instrument` falla, el bloqueo va a un memo: no se improvisa otra vía, porque la que había
    (`app_process`) es justamente la que se descartó por correr con otro uid.
 8. **La prueba "sin red" solo vale con la Wi-Fi marcada como medida.** `restrict-background` no
-   corta nada en una red sin medir. El guion lo verifica y falla si no lo está, pero depende de un
-   ajuste manual del teléfono que hay que acordarse de deshacer.
+   corta nada en una red sin medir. El guion verifica que la interfaz Wi-Fi activa esté en
+   `Metered ifaces` y falla si no, pero depende de un ajuste manual del teléfono que hay que
+   acordarse de deshacer.
 
 ## Dependencias entre fases
 
