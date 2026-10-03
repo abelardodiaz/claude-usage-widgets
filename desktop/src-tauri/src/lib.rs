@@ -1,5 +1,6 @@
 //! Cascara Tauri: construye la ventana y arranca la app.
 
+pub mod backoff;
 pub mod colors;
 pub mod credentials;
 pub mod history;
