@@ -6,12 +6,12 @@ import java.util.List;
 /** El modelo normalizado del contrato (`spec/usage-model.schema.json`). */
 public final class UsageModel {
     public final Source source;
-    public final Bar session;
-    public final Bar weekly;
+    public final Window session;
+    public final Window weekly;
     public final List<ScopedLimit> scoped;
     public final List<BreakdownRow> breakdown;
 
-    public UsageModel(Source source, Bar session, Bar weekly,
+    public UsageModel(Source source, Window session, Window weekly,
                       List<ScopedLimit> scoped, List<BreakdownRow> breakdown) {
         this.source = source;
         this.session = session;

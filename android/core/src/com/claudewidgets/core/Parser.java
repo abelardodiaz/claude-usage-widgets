@@ -28,8 +28,11 @@ public final class Parser {
         return parse(root, source);
     }
 
-    /** Misma regla sobre un arbol ya leido, para quien ya tiene la respuesta parseada. */
-    public static UsageModel parse(Object root, Source source) throws UnrecognizedFormatException {
+    /**
+     * Misma regla sobre un arbol ya leido. Package-private a proposito: la usa el corredor de
+     * fixtures para no reserializar la entrada. La superficie publica es `parse(String, Source)`.
+     */
+    static UsageModel parse(Object root, Source source) throws UnrecognizedFormatException {
         if (!(root instanceof Map)) {
             throw new UnrecognizedFormatException("la respuesta no es un objeto JSON");
         }
@@ -43,7 +46,7 @@ public final class Parser {
     }
 
     /** Sesion y semana son obligatorias: si falta su `utilization` numerica, se aborta (R1). */
-    private static Bar window(Map<?, ?> root, String key) throws UnrecognizedFormatException {
+    private static Window window(Map<?, ?> root, String key) throws UnrecognizedFormatException {
         Object raw = root.get(key);
         if (!(raw instanceof Map)) {
             throw new UnrecognizedFormatException("'" + key + "' no es un objeto");
@@ -52,7 +55,7 @@ public final class Parser {
         if (!(util instanceof Double)) {
             throw new UnrecognizedFormatException("'" + key + ".utilization' no es un numero");
         }
-        return new Bar((Double) util, instant(((Map<?, ?>) raw).get("resets_at")));
+        return new Window((Double) util, instant(((Map<?, ?>) raw).get("resets_at")));
     }
 
     private static List<ScopedLimit> scoped(Object raw) {
@@ -112,11 +115,20 @@ public final class Parser {
         return s.isEmpty() ? null : s;
     }
 
-    /** RFC 3339 con desplazamiento. Lo que no se pueda leer se degrada a nulo (R1). */
+    /**
+     * RFC 3339 con desplazamiento. Lo que no se pueda leer se degrada a nulo (R1).
+     *
+     * Defensa en profundidad: RFC 3339 solo admite anio de cuatro digitos, pero
+     * {@code OffsetDateTime} acepta hasta +-999999999. Un anio asi no es un dato, es una
+     * entrada hostil, y aunque la aritmetica de {@link Projection#seconds} ya no desborda,
+     * aqui se corta antes.
+     */
     static Instant instant(Object v) {
         if (!(v instanceof String)) return null;
         try {
-            return OffsetDateTime.parse((String) v).toInstant();
+            OffsetDateTime t = OffsetDateTime.parse((String) v);
+            if (t.getYear() < 0 || t.getYear() > 9999) return null;
+            return t.toInstant();
         } catch (RuntimeException e) {
             return null;
         }

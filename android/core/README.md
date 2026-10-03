@@ -10,8 +10,14 @@ JVM y bajo ART. Implementa R0–R7 de `spec/rules.md` y se contrasta contra las 
 bash android/core/build.sh
 ```
 
-Compila con `-Xlint:all -Werror` y corre el corredor. Sale con código distinto de 0 si algo falla.
-No necesita Gradle, JUnit ni red.
+Correr en **Linux, WSL o Termux**. Bajo Git Bash de Windows no funciona por cómo resuelve las
+rutas; no es un entorno objetivo.
+
+`src/` se compila con `--release 8` a propósito: Android trae `java.time` desde API 26 con la
+superficie de Java 8, y el CI usa un JDK 17 que si no dejaría colar APIs de Java 9+ que revientan
+en un teléfono real. `test/` se compila aparte, sin esa restricción, porque no corre en Android.
+
+Todo con `-Werror`. Sale con código distinto de 0 si algo falla. No necesita Gradle, JUnit ni red.
 
 ## Qué hay
 

@@ -38,7 +38,7 @@ public final class History {
         return out;
     }
 
-    public static DayUsage compute(Bar weekly, List<Sample> samples, Instant now, ZoneId tz) {
+    public static DayUsage compute(Window weekly, List<Sample> samples, Instant now, ZoneId tz) {
         List<Sample> clean = cleanSamples(samples, now);
 
         // R3 pasos 2 y 3.

@@ -26,6 +26,13 @@ public final class FixtureRunner {
 
     private FixtureRunner() {}
 
+    /**
+     * Minimo de fixtures que deben existir. Sin esto, borrar `spec/fixtures/` entero dejaria el
+     * corredor en verde con cero comprobaciones: una suite que no contrasta nada no falla nunca.
+     * Se sube cuando el contrato crece.
+     */
+    static final int MIN_TOTAL = 49;
+
     public static void run(Assert a, Path fixtures) {
         int n = 0;
         n += family(a, fixtures.resolve("parse"), FixtureRunner::parseCase);
@@ -33,6 +40,9 @@ public final class FixtureRunner {
         n += family(a, fixtures.resolve("projection"), FixtureRunner::projectionCase);
         n += family(a, fixtures.resolve("colors"), FixtureRunner::colorCase);
         System.out.println("  fixtures: " + n + " contrastados");
+        if (n < MIN_TOTAL) {
+            a.fail("solo se contrastaron " + n + " fixtures; se esperaban al menos " + MIN_TOTAL);
+        }
     }
 
     // ------------------------------------------------------------------- parseo
@@ -87,7 +97,7 @@ public final class FixtureRunner {
         Map<?, ?> in = (Map<?, ?>) fx.get("input");
         Map<?, ?> exp = (Map<?, ?>) fx.get("expected");
         Map<?, ?> w = (Map<?, ?>) in.get("weekly");
-        Bar weekly = new Bar((Double) w.get("percent"), Parser.instant(w.get("resets_at")));
+        Window weekly = new Window((Double) w.get("percent"), Parser.instant(w.get("resets_at")));
         Instant now = Parser.instant(in.get("now"));
         ZoneId tz = ZoneId.of((String) in.get("tz"));
 
@@ -128,7 +138,7 @@ public final class FixtureRunner {
 
         instant(a, name + ".hits_at", exp.get("hits_at"), f.hitsAt);
         a.eq(name + ".before_reset", exp.get("before_reset"), f.beforeReset);
-        a.eq(name + ".basis", exp.get("basis"), f.basis);
+        a.eq(name + ".basis", exp.get("basis"), f.basis == null ? null : f.basis.toString());
     }
 
     private static List<Sample> samples(Object raw) {
@@ -167,7 +177,7 @@ public final class FixtureRunner {
         a.eq(name + ".color", exp.get("color"), got.toString());
     }
 
-    private static void window(Assert a, String what, Map<?, ?> expected, Bar got) {
+    private static void window(Assert a, String what, Map<?, ?> expected, Window got) {
         a.near(what + ".percent", (Double) expected.get("percent"), got.percent, NUM_TOL);
         instant(a, what + ".resets_at", expected.get("resets_at"), got.resetsAt);
     }
@@ -176,9 +186,15 @@ public final class FixtureRunner {
 
     /** Compara instantes como instantes, no como texto (R0), con 1 s de tolerancia. */
     static void instant(Assert a, String what, Object expectedText, Instant got) {
-        Instant expected = Parser.instant(expectedText);
-        if (expectedText == null || expectedText instanceof String && expected == null) {
+        if (expectedText == null) {
             a.eq(what, null, got);
+            return;
+        }
+        Instant expected = Parser.instant(expectedText);
+        if (expected == null) {
+            // Que un fixture traiga un instante ilegible no puede pasar por "se esperaba null":
+            // coincidiria por casualidad y taparia el error del fixture.
+            a.fail(what + ": el fixture trae un instante invalido <" + expectedText + ">");
             return;
         }
         if (got == null) {
@@ -201,6 +217,10 @@ public final class FixtureRunner {
             s.filter(p -> p.getFileName().toString().endsWith(".json")).sorted().forEach(files::add);
         } catch (IOException e) {
             throw new UncheckedIOException("no se pudo leer " + dir, e);
+        }
+        if (files.isEmpty()) {
+            a.fail("la familia " + dir.getFileName() + " no tiene ningun fixture");
+            return 0;
         }
         for (Path f : files) {
             String name = dir.getFileName() + "/" + f.getFileName();

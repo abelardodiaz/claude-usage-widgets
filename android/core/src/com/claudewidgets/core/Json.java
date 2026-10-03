@@ -18,7 +18,14 @@ import java.util.Map;
  *   <li>Numeros: siempre {@code Double}. Se rechazan NaN e infinitos, incluido el desbordamiento
  *       de un literal demasiado grande.
  *   <li>Cadenas: escapes completos con {@code \\uXXXX} y pares sustitutos. Los caracteres de
- *       control sin escapar se rechazan, como manda RFC 8259.
+ *       control sin escapar se rechazan, como manda RFC 8259. Un sustituto suelto
+ *       ({@code \\uD800} sin su pareja) <b>se acepta</b> y produce UTF-16 mal formado: es lo que
+ *       hacen los lectores habituales, y rechazarlo tiraria una respuesta entera por una
+ *       etiqueta decorativa, al reves de lo que R1 pide (degradar, no abortar). Quien escriba
+ *       esos textos a disco o a la red debe contar con ello.
+ *   <li>{@link #MAX_INPUT} se mide sobre el {@code String} ya decodificado, asi que <b>no</b>
+ *       protege de una descarga enorme: la capa HTTP debe acotar los BYTES leidos antes de
+ *       construir el String (y quitar ahi el BOM, que aqui es basura).
  * </ul>
  *
  * Valores devueltos: {@code Map<String,Object>}, {@code List<Object>}, {@code String},
@@ -152,7 +159,7 @@ public final class Json {
         if (i + 4 > s.length()) throw new JsonException(at("escape \\u incompleto"));
         int v = 0;
         for (int k = 0; k < 4; k++) {
-            int d = Character.digit(s.charAt(i + k), 16);
+            int d = hexDigit(s.charAt(i + k));
             if (d < 0) throw new JsonException(at("escape \\u con un digito no hexadecimal"));
             v = v * 16 + d;
         }
@@ -186,7 +193,9 @@ public final class Json {
         String lit = s.substring(start, i);
         double d = Double.parseDouble(lit);
         if (Double.isNaN(d) || Double.isInfinite(d)) {
-            throw new JsonException("numero fuera de rango: " + lit);
+            // El literal se trunca: uno de 1 MB de digitos haria un mensaje de 1 MB, y los
+            // mensajes acaban en los logs.
+            throw new JsonException("numero fuera de rango: " + ellipsis(lit, 32));
         }
         return d;
     }
@@ -200,6 +209,21 @@ public final class Json {
     // ------------------------------------------------------------------- utiles
 
     private static boolean isDigit(char c) { return c >= '0' && c <= '9'; }
+
+    /**
+     * Hexadecimal ASCII y nada mas. {@code Character.digit} aceptaria digitos arabigo-indicos
+     * o de ancho completo, que JSON no admite.
+     */
+    private static int hexDigit(char c) {
+        if (c >= '0' && c <= '9') return c - '0';
+        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+        if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+        return -1;
+    }
+
+    private static String ellipsis(String s, int max) {
+        return s.length() <= max ? s : s.substring(0, max) + "...";
+    }
 
     /** Caracter actual, o '\0' si se acabo la entrada. */
     private char peek() { return i < s.length() ? s.charAt(i) : '\0'; }

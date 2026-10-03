@@ -42,6 +42,13 @@ public final class JsonTest {
                 () -> Json.parse("\"a\u0001b\""));
         a.throwsOf("escape desconocido", Json.JsonException.class, () -> Json.parse("\"\\x\""));
         a.throwsOf("unicode incompleto", Json.JsonException.class, () -> Json.parse("\"\\u00\""));
+        // Character.digit aceptaria estos; JSON no.
+        a.throwsOf("unicode con digito arabigo-indico", Json.JsonException.class,
+                () -> Json.parse("\"\\u00\u0660\u0661\""));
+        a.throwsOf("unicode con digito de ancho completo", Json.JsonException.class,
+                () -> Json.parse("\"\\u00\uFF10\uFF11\""));
+        // Decision documentada: el sustituto suelto se acepta (R1 degrada, no aborta).
+        a.eq("sustituto suelto se acepta", 1, ((String) Json.parse("\"\\uD800\"")).length());
         a.throwsOf("cadena sin cerrar", Json.JsonException.class, () -> Json.parse("\"abc"));
     }
 
@@ -60,6 +67,15 @@ public final class JsonTest {
         a.throwsOf("Infinity", Json.JsonException.class, () -> Json.parse("Infinity"));
         a.throwsOf("desbordamiento a Infinity", Json.JsonException.class,
                 () -> Json.parse("1e400"));
+        // El mensaje no puede arrastrar el literal entero: acabaria en los logs.
+        StringBuilder enorme = new StringBuilder("1e");
+        for (int k = 0; k < 500; k++) enorme.append('9');
+        try {
+            Json.parse(enorme.toString());
+            a.fail("literal enorme: no lanzo");
+        } catch (Json.JsonException e) {
+            a.isTrue("el mensaje no arrastra el literal entero", e.getMessage().length() < 120);
+        }
     }
 
     private static void broken(Assert a) {

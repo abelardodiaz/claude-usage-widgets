@@ -1,6 +1,5 @@
 package com.claudewidgets.core;
 
-import java.time.Duration;
 import java.time.Instant;
 
 /** R7. Decide colores; no dibuja nada. */
@@ -39,7 +38,7 @@ public final class Colors {
      */
     public static Double paceMark(Instant resetsAt, Instant now) {
         if (resetsAt == null) return null;
-        double left = Duration.between(now, resetsAt).toNanos() / 1e9;
+        double left = Projection.seconds(now, resetsAt);  // no desborda (ver alli)
         double v = 1 - left / WEEK_SECONDS;
         return Math.max(0.0, Math.min(1.0, v));
     }

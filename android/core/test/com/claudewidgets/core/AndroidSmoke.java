@@ -25,7 +25,7 @@ public final class AndroidSmoke {
         List<Sample> ss = new ArrayList<>();
         ss.add(new Sample(Instant.parse("2026-10-31T16:00:00Z"), 10, Instant.parse("2026-11-05T05:00:00Z")));
         ss.add(new Sample(now, 59, Instant.parse("2026-11-05T05:00:00Z")));
-        DayUsage d = History.compute(new Bar(59, Instant.parse("2026-11-05T05:00:00Z")), ss, now, tz);
+        DayUsage d = History.compute(new Window(59, Instant.parse("2026-11-05T05:00:00Z")), ss, now, tz);
         System.out.println("history : per_day=" + d.perDay + " hoy=" + d.todayUsed
                 + " cuota=" + d.quotaToday);
 

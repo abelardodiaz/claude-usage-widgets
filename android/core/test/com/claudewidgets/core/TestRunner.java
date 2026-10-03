@@ -13,8 +13,10 @@ public final class TestRunner {
         }
         Assert a = new Assert();
         JsonTest.run(a);
-        int jsonChecks = a.checks();
-        System.out.println("  lector JSON: " + jsonChecks + " comprobaciones");
+        System.out.println("  lector JSON: " + a.checks() + " comprobaciones");
+        int before = a.checks();
+        CoreTest.run(a);
+        System.out.println("  regresion:   " + (a.checks() - before) + " comprobaciones");
 
         FixtureRunner.run(a, Path.of(args[0]));
 
