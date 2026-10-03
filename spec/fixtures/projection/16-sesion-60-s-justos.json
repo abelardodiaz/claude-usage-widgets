@@ -1,0 +1,15 @@
+{
+  "description": "R5: con elapsed de exactamente 60 s ya se proyecta",
+  "input": {
+    "kind": "session",
+    "now": "2026-10-02T10:01:00-06:00",
+    "percent": 1,
+    "resets_at": "2026-10-02T15:00:00-06:00",
+    "samples": []
+  },
+  "expected": {
+    "hits_at": "2026-10-02T11:40:00-06:00",
+    "before_reset": true,
+    "basis": "window"
+  }
+}

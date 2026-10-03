@@ -1,0 +1,15 @@
+{
+  "description": "R6: ventana semanal con menos de 60 s y sin muestras: no se proyecta",
+  "input": {
+    "kind": "weekly",
+    "now": "2026-10-02T18:00:30-06:00",
+    "percent": 1,
+    "resets_at": "2026-10-09T18:00:00-06:00",
+    "samples": []
+  },
+  "expected": {
+    "hits_at": null,
+    "before_reset": null,
+    "basis": null
+  }
+}

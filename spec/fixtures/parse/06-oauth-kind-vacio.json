@@ -1,0 +1,53 @@
+{
+  "description": "R1: un limite con kind vacio o no cadena no entra a scoped",
+  "source": "claude_code",
+  "input": {
+    "five_hour": {
+      "utilization": 10,
+      "resets_at": "2026-10-02T15:00:00-06:00"
+    },
+    "seven_day": {
+      "utilization": 40,
+      "resets_at": "2026-10-09T18:00:00-06:00"
+    },
+    "limits": [
+      {
+        "kind": "",
+        "percent": 10,
+        "resets_at": "2026-10-09T18:00:00-06:00",
+        "scope": null
+      },
+      {
+        "kind": null,
+        "percent": 11,
+        "resets_at": "2026-10-09T18:00:00-06:00",
+        "scope": null
+      },
+      {
+        "kind": "monthly",
+        "percent": 5,
+        "resets_at": null,
+        "scope": null
+      }
+    ]
+  },
+  "expected": {
+    "source": "claude_code",
+    "session": {
+      "percent": 10,
+      "resets_at": "2026-10-02T15:00:00-06:00"
+    },
+    "weekly": {
+      "percent": 40,
+      "resets_at": "2026-10-09T18:00:00-06:00"
+    },
+    "scoped": [
+      {
+        "label": "monthly",
+        "percent": 5,
+        "resets_at": null
+      }
+    ],
+    "breakdown": []
+  }
+}

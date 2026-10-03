@@ -1,0 +1,32 @@
+{
+  "description": "R3: tras un reinicio el intervalo arranca en el inicio de la ventana nueva, no en a.t",
+  "input": {
+    "tz": "-06:00",
+    "now": "2026-10-03T12:00:00-06:00",
+    "weekly": {
+      "percent": 9,
+      "resets_at": "2026-10-09T18:00:00-06:00"
+    },
+    "samples": [
+      {
+        "t": "2026-10-02T12:00:00-06:00",
+        "percent": 70,
+        "resets_at": "2026-10-02T18:00:00-06:00"
+      },
+      {
+        "t": "2026-10-03T12:00:00-06:00",
+        "percent": 9,
+        "resets_at": "2026-10-09T18:00:00-06:00"
+      }
+    ]
+  },
+  "expected": {
+    "per_day": {
+      "2026-10-02": 3,
+      "2026-10-03": 6
+    },
+    "today_used": 6,
+    "quota_today": 14.37037,
+    "partial": false
+  }
+}
