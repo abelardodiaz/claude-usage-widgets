@@ -1,0 +1,1 @@
+{"description": "Barra por porcentaje: R0 permite pasar de 100 y sigue siendo rojo", "input": {"bar": "weekly", "percent": 150}, "expected": {"color": "red"}}

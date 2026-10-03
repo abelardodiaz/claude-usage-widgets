@@ -1,0 +1,1 @@
+{"description": "Barra por porcentaje: R0 permite negativo; cae en verde, no es error", "input": {"bar": "session", "percent": -5}, "expected": {"color": "green"}}

@@ -1,0 +1,1 @@
+{"description": "Barra por porcentaje: 85 exacto ya es rojo", "input": {"bar": "session", "percent": 85}, "expected": {"color": "red"}}

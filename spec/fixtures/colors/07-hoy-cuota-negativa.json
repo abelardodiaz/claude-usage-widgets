@@ -1,0 +1,1 @@
+{"description": "Hoy: cuota negativa (semana agotada) es ROJO antes de calcular cociente alguno", "input": {"bar": "today", "today_used": 0.5, "quota_today": -0.266667}, "expected": {"color": "red"}}

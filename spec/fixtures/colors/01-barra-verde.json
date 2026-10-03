@@ -1,0 +1,1 @@
+{"description": "Barra por porcentaje: justo debajo del limite verde", "input": {"bar": "session", "percent": 59.999}, "expected": {"color": "green"}}

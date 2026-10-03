@@ -1,0 +1,1 @@
+{"description": "Barra por porcentaje: 60 exacto ya es ambar (el limite no es verde)", "input": {"bar": "weekly", "percent": 60}, "expected": {"color": "amber"}}
