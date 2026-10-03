@@ -77,6 +77,9 @@ def check_instant(path, name, value, nullable=False):
         return
     if not is_instant(value):
         errors.append(f"{path}: '{name}' no es un instante RFC 3339 con zona: {value!r}")
+    elif not 0 <= datetime.fromisoformat(value).year <= 9998:
+        # R1: fuera de 0000-9998 el instante seria nulo; un fixture no debe depender de eso
+        errors.append(f"{path}: '{name}' tiene anio fuera de 0000-9998: {value!r}")
 
 
 def check_num(path, name, value, nullable=False):

@@ -1,0 +1,67 @@
+{
+  "description": "R1: el anio que cuenta es el de la cadena (no el UTC): 9999 o mayor es nulo, 9998 es valido aunque en UTC caiga en 9999",
+  "source": "claude_code",
+  "input": {
+    "five_hour": {
+      "utilization": 10,
+      "resets_at": "9999-12-31T23:59:59Z"
+    },
+    "seven_day": {
+      "utilization": 40,
+      "resets_at": "9998-06-01T00:00:00Z"
+    },
+    "limits": [
+      {
+        "kind": "weekly_scoped",
+        "percent": 5,
+        "resets_at": "9999-01-01T00:00:00Z",
+        "scope": {
+          "model": {
+            "display_name": "Fable"
+          }
+        }
+      },
+      {
+        "kind": "scoped_a",
+        "percent": 6,
+        "resets_at": "9998-12-31T23:00:00-05:00",
+        "scope": null
+      },
+      {
+        "kind": "scoped_b",
+        "percent": 7,
+        "resets_at": "9999-01-01T00:00:00+14:00",
+        "scope": null
+      }
+    ]
+  },
+  "expected": {
+    "source": "claude_code",
+    "session": {
+      "percent": 10,
+      "resets_at": null
+    },
+    "weekly": {
+      "percent": 40,
+      "resets_at": "9998-06-01T00:00:00Z"
+    },
+    "scoped": [
+      {
+        "label": "Fable",
+        "percent": 5,
+        "resets_at": null
+      },
+      {
+        "label": "scoped_a",
+        "percent": 6,
+        "resets_at": "9998-12-31T23:00:00-05:00"
+      },
+      {
+        "label": "scoped_b",
+        "percent": 7,
+        "resets_at": null
+      }
+    ],
+    "breakdown": []
+  }
+}

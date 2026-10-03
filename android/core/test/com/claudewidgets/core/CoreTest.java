@@ -11,7 +11,10 @@ import java.util.List;
  */
 public final class CoreTest {
 
-    /** Centinela habitual de "sin limite" en una respuesta: valido, y antes tumbaba el widget. */
+    /**
+     * Centinela habitual de "sin limite". Ya no pasa el parseo (R1 lo anula), pero el nucleo
+     * tampoco puede lanzar si le llega como Instant directo; antes tumbaba el widget.
+     */
     private static final String LEJANO = "9999-12-31T23:59:59Z";
 
     public static void run(Assert a) {
@@ -32,8 +35,8 @@ public final class CoreTest {
         a.isTrue("weekly con resets lejano no lanza",
                 Projection.weekly(50, lejos, new ArrayList<>(), now) != null);
 
-        // La ventana lleva abierta siglos, asi que `elapsed` es enorme y el ritmo no significa
-        // nada: ninguna de las dos proyecta.
+        // Con resets_at en el anio 9999 el inicio de la ventana (resets_at - 5 h) queda en el
+        // futuro: `elapsed` sale NEGATIVO y cae en `elapsed < 60 s`, asi que no proyecta.
         a.eq("session lejana no proyecta", null, Projection.session(50, lejos, now).hitsAt);
 
         a.eq("paceMark con resets lejano se acota a 0", 0.0, Colors.paceMark(lejos, now));
@@ -53,7 +56,8 @@ public final class CoreTest {
                 Parser.instant("+999999999-12-31T23:59:59Z"));
         a.eq("anio negativo enorme se degrada a null", null,
                 Parser.instant("-999999999-01-01T00:00:00Z"));
-        a.isTrue("el anio 9999 si se acepta", Parser.instant(LEJANO) != null);
+        a.eq("el anio 9999 (centinela de sin limite) es nulo, R1", null, Parser.instant(LEJANO));
+        a.isTrue("el anio 9998 si se acepta", Parser.instant("9998-12-31T23:59:59Z") != null);
         a.isTrue("un anio normal se acepta", Parser.instant("2026-10-03T00:00:00Z") != null);
     }
 }
