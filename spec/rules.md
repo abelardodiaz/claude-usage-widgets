@@ -112,6 +112,7 @@ o si `|a.resets_at − b.resets_at| < 3600 s`.
    → `hits_at = null`, `before_reset = null`, `basis = null`.
 4. Si no: `rate = percent / elapsed`, `hits_at = now + (100 − percent) / rate`,
    `before_reset = hits_at < resets_at`, `basis = "window"`.
+   Si `hits_at` no es representable como instante, `hits_at`, `before_reset` y `basis` son nulos.
 
 ## R6. Proyección de la semana
 
@@ -128,6 +129,7 @@ o si `|a.resets_at − b.resets_at| < 3600 s`.
    `elapsed < 60 s` → `hits_at = null`, `before_reset = null`, `basis = null`.
    Si no: `rate = percent / elapsed`, `basis = "window"`.
 6. `hits_at = now + (100 − percent) / rate`, `before_reset = hits_at < resets_at`.
+   Si `hits_at` no es representable como instante, `hits_at`, `before_reset` y `basis` son nulos.
 
 ## R7. Colores
 

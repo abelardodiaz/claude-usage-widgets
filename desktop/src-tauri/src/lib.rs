@@ -1,5 +1,13 @@
 //! Cascara Tauri: construye la ventana y arranca la app.
 
+pub mod colors;
+pub mod history;
+pub mod model;
+pub mod parse;
+pub mod projection;
+pub mod store;
+pub mod timez;
+
 use tauri::{Manager, PhysicalPosition};
 
 /// Ancho logico de la ventana (la UI ajusta solo el alto).
