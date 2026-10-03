@@ -34,7 +34,7 @@ function setLang(lang) {
   $("btnClose").title = T.titles.close;
 }
 
-const hm = (d) => d.toLocaleTimeString(T.locale, { hour: "2-digit", minute: "2-digit", hour12: false });
+const hm = (d) => d.toLocaleTimeString(T.locale, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
 
 function when(iso) {
   if (!iso) return "--";
@@ -63,18 +63,19 @@ function statusText() {
   if (!data) return T.errors.loading;
   if (data.error === "ipc") return T.errors.ipc;
   if (!data.error) return "";
-  const base = T.errors[data.error] || T.errors.unexpected;
+  let text = T.errors[data.error] || T.errors.unexpected;
   if (data.error === "rate_limited" || data.error === "server_error") {
-    return base + (data.retry_at ? hm(new Date(data.retry_at)) : "");
+    text += data.retry_at ? when(data.retry_at) : "";
   }
-  if (data.error === "offline" && data.age_seconds != null) return base + T.ago + ago(data.age_seconds);
-  return base;
+  // Con cualquier error se sigue mostrando el ultimo dato: se dice de cuando es.
+  if (data.age_seconds != null) text += T.ago + ago(data.age_seconds);
+  return text;
 }
 
 function render() {
   $("status").textContent = statusText();
   $("status").classList.toggle("err", !!(data && data.error));
-  $("updated").textContent = data && data.updated_at ? T.updated + hm(new Date(data.updated_at)) : "";
+  $("updated").textContent = data && data.updated_at ? T.updated + when(data.updated_at) : "";
   if (!data || !data.usage) { renderPanel(); fit(); return; }
 
   const u = data.usage;
@@ -125,9 +126,14 @@ function renderHist() {
   const limit = q == null ? "" : `<div class="limit" style="bottom:${(q / max) * 78}px"><em>${T.hist.quota}${q.toFixed(1)}%</em></div>`;
   return `<h4>${T.hist.title} ${closeButton()}</h4>
     <div class="chart">${limit}
-      ${h.map((d) => `<div class="col ${d.date === todayIso ? "today" : ""} ${q != null && d.used > q ? "over" : ""}">
+      ${h.map((d) => {
+        // Hoy lleva el color que decide el nucleo (R7); los dias pasados, gris neutro.
+        const isToday = d.date === todayIso;
+        const bg = isToday ? `;background:${paint(data.today.color)}` : "";
+        return `<div class="col ${isToday ? "today" : ""}">
         <span class="v">${d.used > 0 ? d.used.toFixed(1) + "%" : ""}</span>
-        <div class="b" style="height:${(d.used / max) * 78}px"></div></div>`).join("")}
+        <div class="b" style="height:${(d.used / max) * 78}px${bg}"></div></div>`;
+      }).join("")}
     </div>
     <div class="days">${h.map((d) => {
       const dt = new Date(d.date + "T12:00");
@@ -148,8 +154,8 @@ function renderMix() {
 
 function projItem(label, x, resetIso) {
   if (!x.hits_at) return `<div class="proj ok"><small>${label}</small><p>${T.proj.none}</p></div>`;
-  const d = new Date(x.hits_at);
-  const cls = x.before_reset ? (d - new Date() < 3 * 36e5 ? "bad" : "warn") : "ok";
+  // El borde solo traduce el booleano del nucleo (R5/R6): antes del reinicio -> rojo; si no, verde.
+  const cls = x.before_reset === true ? "bad" : "ok";
   const head = x.before_reset ? T.proj.hitsBefore + esc(when(x.hits_at)) : T.proj.notBefore;
   const sub = x.before_reset
     ? T.proj.subBefore + esc(when(resetIso)) + T.proj.subBeforeEnd
