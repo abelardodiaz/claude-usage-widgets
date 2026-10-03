@@ -398,12 +398,14 @@ mod tests {
             let json = serde_json::to_value(&v).unwrap();
             let mut strings = Vec::new();
             collect_strings(&json, &mut strings);
-            for s in strings {
+            // El mensaje solo nombra indices: el valor podria ser la ruta real de credenciales
+            // y no debe acabar en los registros del CI.
+            for (i, s) in strings.iter().enumerate() {
                 let lower = s.to_lowercase();
-                for f in &forbidden {
+                for (j, f) in forbidden.iter().enumerate() {
                     assert!(
                         !lower.contains(f.as_str()),
-                        "la vista expone {f:?} en {s:?}"
+                        "la vista expone el patron prohibido #{j} en la cadena #{i} (error {error:?})"
                     );
                 }
             }

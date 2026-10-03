@@ -104,6 +104,14 @@ impl UsageService {
         }
     }
 
+    /// Siembra el estado (solo pruebas): simula una consulta anterior sin red.
+    #[cfg(test)]
+    fn seed(&self, snapshot: Snapshot, last_attempt: Option<Timestamp>) {
+        let mut inner = self.lock();
+        inner.snapshot = snapshot;
+        inner.last_attempt = last_attempt;
+    }
+
     fn lock(&self) -> std::sync::MutexGuard<'_, Inner> {
         self.inner
             .lock()
@@ -154,5 +162,39 @@ mod tests {
 
         service.get_at(add_seconds(now, 62.0).unwrap(), true);
         assert_eq!(service.attempts(), 3, "forzar salta el intervalo minimo");
+    }
+
+    #[test]
+    fn el_backoff_se_respeta_tambien_al_forzar() {
+        // D2: durante un backoff ni siquiera "actualizar" (force) consulta la fuente.
+        let dir = tempfile::tempdir().unwrap();
+        let service = UsageService::new(
+            ClaudeCodeSource::new(dir.path().join("no-existe.json")),
+            SampleStore::new(dir.path()),
+            zone_from_spec("-06:00").unwrap(),
+            "es",
+        );
+        let now: Timestamp = "2026-10-06T12:00:00-06:00".parse().unwrap();
+        let retry_at = add_seconds(now, 120.0);
+        service.seed(
+            Snapshot {
+                error: Some(ErrorCode::RateLimited),
+                retry_at,
+                ..Snapshot::default()
+            },
+            Some(now),
+        );
+
+        let view = service.get_at(add_seconds(now, 10.0).unwrap(), true);
+        assert_eq!(service.attempts(), 0, "forzar no salta el backoff");
+        assert_eq!(view.error, Some(ErrorCode::RateLimited));
+        assert_eq!(view.retry_at, retry_at);
+
+        service.get_at(add_seconds(now, 121.0).unwrap(), false);
+        assert_eq!(
+            service.attempts(),
+            1,
+            "pasado retry_at se vuelve a consultar"
+        );
     }
 }
