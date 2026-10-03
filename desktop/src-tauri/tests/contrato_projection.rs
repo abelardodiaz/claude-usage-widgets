@@ -8,7 +8,7 @@ use claude_usage_widgets_lib::projection::{project_session, project_weekly};
 fn fixtures_de_proyeccion() {
     let fixtures = common::load_fixtures("projection");
     assert!(
-        fixtures.len() >= 20,
+        fixtures.len() >= 22,
         "faltan fixtures de proyeccion: {}",
         fixtures.len()
     );

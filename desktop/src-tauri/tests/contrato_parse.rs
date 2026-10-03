@@ -67,27 +67,38 @@ fn check_usage(name: &str, expected: &Value, usage: &Usage) {
 fn fixtures_de_parseo() {
     let fixtures = common::load_fixtures("parse");
     assert!(
-        fixtures.len() >= 6,
+        fixtures.len() >= 7,
         "faltan fixtures de parseo: {}",
         fixtures.len()
     );
     for (name, fx) in fixtures {
         let source = match fx["source"].as_str() {
+            Some("claude_code") => Source::ClaudeCode,
             Some("claude_ai") => Source::ClaudeAi,
-            _ => Source::ClaudeCode,
+            other => panic!("{name}: source desconocido {other:?}"),
         };
         let expected = &fx["expected"];
         let result = parse_usage(&fx["input"], source);
-        if expected.get("error").is_some() {
+        if let Some(error) = expected.get("error") {
+            assert_eq!(
+                error.as_str(),
+                Some("unrecognized_format"),
+                "{name}: error esperado desconocido"
+            );
             assert_eq!(
                 result,
                 Err(ParseError::UnrecognizedFormat),
                 "{name}: debia fallar"
             );
+            assert_eq!(
+                ParseError::UnrecognizedFormat.to_string(),
+                "unrecognized_format"
+            );
             continue;
         }
         let usage = result.unwrap_or_else(|e| panic!("{name}: {e}"));
-        assert_eq!(usage.source, source, "{name} source");
+        let expected_source = serde_json::to_value(usage.source).unwrap();
+        assert_eq!(expected["source"], expected_source, "{name} source");
         check_usage(&name, expected, &usage);
     }
 }
