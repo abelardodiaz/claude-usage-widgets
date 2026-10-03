@@ -1,8 +1,4 @@
-# Job del nucleo Java (W3 F1).
-#
-# Este archivo vive aqui y NO en .github/workflows/ porque el token de la sesion TEL no tiene
-# el scope `workflow` y GitHub rechaza el push. La sesion PC lo mueve a
-# .github/workflows/core.yml con un commit suyo. Fuera de eso, el contenido esta listo.
+# Job del nucleo Java (W3 F1): compila android/core y corre el corredor de fixtures.
 name: nucleo
 on:
   pull_request:
