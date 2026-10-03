@@ -2,6 +2,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.claulimitswidgets.android">
 
+    <!-- lint lee el minSdk de AQUI, no de las banderas de aapt2: sin esto asumiria minSdk 1
+         y NewApi marcaria medio SDK. Los valores tienen que coincidir con los de build.sh. -->
+    <uses-sdk android:minSdkVersion="29" android:targetSdkVersion="34" />
+
     <uses-permission android:name="android.permission.INTERNET" />
 
     <application

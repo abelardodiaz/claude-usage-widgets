@@ -353,6 +353,10 @@ Crear `android/app/AndroidManifest.xml`:
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.claulimitswidgets.android">
 
+    <!-- lint lee el minSdk de AQUI, no de las banderas de aapt2: sin esto asumiria minSdk 1
+         y NewApi marcaria medio SDK. Los valores tienen que coincidir con los de build.sh. -->
+    <uses-sdk android:minSdkVersion="29" android:targetSdkVersion="34" />
+
     <uses-permission android:name="android.permission.INTERNET" />
 
     <application
@@ -549,12 +553,20 @@ echo "== 3/6 javac (nucleo, --release 8) =="
 find "$CORE/src" -name '*.java' | sort > "$OUT/core.txt"
 javac -encoding UTF-8 --release 8 -Xlint:all,-options -Werror -d "$OUT/classes" "@$OUT/core.txt"
 
-# -bootclasspath android.jar hace que javac rechace cualquier API de java.* que Android no
-# tiene, y fija el nivel de fuente sin depender del JDK que haya: 21 en el telefono, 17 en el CI.
+# OJO: aqui NO se puede usar -bootclasspath (javac lo prohibe con target >= 9) ni --release 8
+# para acotar las APIs. Se probaron las dos:
+#   -bootclasspath "$ANDROID_JAR"  -> "option --boot-class-path not allowed with target 17"
+#   --release 8                    -> compila `java.util.List.of` igual, porque android.jar esta
+#                                     en el classpath y aporta sus propias clases java.* al nivel
+#                                     de la API con la que se compila (34).
+# O sea que la app NO tiene la red de seguridad que si tiene android/core, y no es cuestion de
+# banderas: en una app de Android las APIs java.* disponibles son las de android.jar. Lo que
+# comprueba el minSdk de verdad es lint (NewApi), que corre en el CI (Tarea 2.4).
 echo "== 4/6 javac (app) =="
 find src "$OUT/gen" -name '*.java' | sort > "$OUT/app.txt"
-javac -encoding UTF-8 -source 17 -target 17 -bootclasspath "$ANDROID_JAR" \
-  -classpath "$OUT/classes" -Xlint:all,-options -Werror -d "$OUT/classes" "@$OUT/app.txt"
+javac -encoding UTF-8 -source 17 -target 17 \
+  -classpath "$ANDROID_JAR:$OUT/classes" -Xlint:all,-options -Werror \
+  -d "$OUT/classes" "@$OUT/app.txt"
 
 # Bloque TEST=1 numero 2: las pruebas de la cascara. Mismas banderas que la app, porque corren
 # en el telefono. De `android/core/test` solo entra `Assert`: el resto (FixtureRunner, TestRunner,
@@ -563,8 +575,9 @@ if [ "${TEST:-0}" = "1" ]; then
   echo "== extra: javac (pruebas) =="
   { echo "$CORE/test/com/claudewidgets/core/Assert.java"; find test -name '*.java'; } \
     | sort > "$OUT/tests.txt"
-  javac -encoding UTF-8 -source 17 -target 17 -bootclasspath "$ANDROID_JAR" \
-    -classpath "$OUT/classes" -Xlint:all,-options -Werror -d "$OUT/classes" "@$OUT/tests.txt"
+  javac -encoding UTF-8 -source 17 -target 17 \
+    -classpath "$ANDROID_JAR:$OUT/classes" -Xlint:all,-options -Werror \
+    -d "$OUT/classes" "@$OUT/tests.txt"
 fi
 
 echo "== 5/6 d8 =="
@@ -726,7 +739,38 @@ jobs:
         run: |
           set -euo pipefail
           unzip -lv android/app/build/claude-usage.apk | grep resources.arsc | grep -q Stored
+      # La UNICA comprobacion de que el codigo respeta minSdk 29. No la hace javac: con
+      # android.jar en el classpath, las APIs java.* disponibles son las de la API 34, y ni
+      # `--release 8` lo evita. Y tampoco hay un dispositivo API 29 donde probarlo.
+      - name: lint NewApi (minSdk 29)
+        run: |
+          set -euo pipefail
+          lint --check NewApi --exitcode \
+            --sdk-home "$ANDROID_HOME" \
+            --classpath android/app/build/classes \
+            --libraries "$ANDROID_HOME/platforms/android-34/android.jar" \
+            android/app
 ```
+
+El `sdkmanager` del paso anterior instala tambien `cmdline-tools;latest`, que es donde vive
+`lint`, y anade su `bin` al `PATH`.
+
+**`lint` no existe en Termux** (no hay `cmdline-tools`), asi que esta comprobacion es **solo de
+CI**. Es una asimetria incomoda —el resto del build es identico en los dos sitios— pero la
+alternativa seria no comprobar el `minSdk` en ningun lado.
+
+- [ ] **Paso 1b: Hacer fallar a lint a proposito**
+
+Una comprobacion que nunca ha fallado no sirve. En una rama de usar y tirar, meter una llamada a
+una API posterior a 29 en `LoginActivity`:
+
+```java
+        // API 31: deberia hacer fallar a lint con minSdk 29
+        android.os.VibratorManager vm = getSystemService(android.os.VibratorManager.class);
+```
+
+Empujar, comprobar que el job **falla** con `NewApi`, guardar la salida para el PR, y borrar la
+rama. Si lint **no** falla, la comprobacion no sirve y hay que arreglarla antes de seguir.
 
 - [ ] **Paso 2: Comprobar que el YAML es válido** (el CI no lo dirá hasta que PC lo mueva)
 
@@ -4080,9 +4124,11 @@ Lo que este plan **no** demuestra, escrito en un solo sitio para que nadie lo le
    dispare de verdad solo se sabrá si ocurre en la prueba de 24 h.
 2. **Un `401` real del servidor.** Igual: la rama está probada por unidad; el recorrido prueba
    "cerrar sesión", que es otro camino.
-3. **API 29 en hardware.** El teléfono de pruebas es Android 17 (SDK 37). Las llamadas de
-   `RemoteViews` se eligieron entre las de API 1 justamente por esto, pero **nadie lo ha ejecutado
-   en un dispositivo API 29**.
+3. **API 29 en hardware.** El teléfono de pruebas es Android 17 (SDK 37). El nivel de API lo
+   comprueba **lint (`NewApi`) en el CI**, no el compilador ni un dispositivo: con `android.jar`
+   en el classpath, `javac` ve las APIs de la 34 y ni `--release 8` lo impide. Las llamadas de
+   `RemoteViews` se eligieron entre las de API 1 de todas formas. Lo que sigue sin probarse es el
+   **comportamiento** en un dispositivo API 29, no la disponibilidad de las APIs.
 4. **Otros lanzadores.** `exported="false"` en el `AppWidgetProvider` está verificado en One UI.
    Nova, Pixel Launcher y los demás no se han probado.
 5. **El plan B del WebView bajo `JobScheduler`.** El spike midió `postDelayed` con el proceso
