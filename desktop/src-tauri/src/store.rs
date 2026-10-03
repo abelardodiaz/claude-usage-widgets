@@ -1,7 +1,7 @@
 //! Almacen local de muestras: una linea JSON por muestra (`t`, `percent`, `resets_at`),
 //! en la carpeta de datos de la app, recortado a 15 dias en cada escritura.
 
-use std::fs::{self, OpenOptions};
+use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
@@ -13,6 +13,8 @@ use crate::model::Sample;
 pub const RETENTION: SignedDuration = SignedDuration::from_secs(15 * 86_400);
 /// Nombre del archivo dentro de la carpeta de datos.
 pub const FILE_NAME: &str = "samples.jsonl";
+/// Temporal del recorte, en la misma carpeta (el `rename` final no cruza volumenes).
+pub const TMP_NAME: &str = "samples.jsonl.tmp";
 
 pub struct SampleStore {
     path: PathBuf,
@@ -63,9 +65,27 @@ impl SampleStore {
                 text.push_str(&serde_json::to_string(s)?);
                 text.push('\n');
             }
-            fs::write(&self.path, text)?;
+            self.replace_atomically(&text)?;
         }
         Ok(())
+    }
+
+    /// Reescribe el archivo sin ventana de perdida: escribe `samples.jsonl.tmp` en la misma
+    /// carpeta, lo baja a disco y lo renombra encima (en Windows `MoveFileExW` con
+    /// `REPLACE_EXISTING`). Un cierre a medias deja el archivo viejo intacto, nunca truncado.
+    fn replace_atomically(&self, text: &str) -> io::Result<()> {
+        let tmp = self.path.with_file_name(TMP_NAME);
+        let written = (|| {
+            let mut file = File::create(&tmp)?;
+            file.write_all(text.as_bytes())?;
+            file.sync_all()?;
+            fs::rename(&tmp, &self.path)
+        })();
+        if written.is_err() {
+            // Mejor esfuerzo: el temporal huerfano no se lee nunca y se pisa en el siguiente recorte.
+            let _ = fs::remove_file(&tmp);
+        }
+        written
     }
 }
 
@@ -129,6 +149,52 @@ mod tests {
             all.iter().map(|s| s.percent).collect::<Vec<_>>(),
             vec![2.0, 3.0]
         );
+    }
+
+    #[test]
+    fn el_recorte_no_deja_temporal() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = SampleStore::new(dir.path());
+        // Un temporal huerfano de un cierre anterior a medias no estorba ni se lee.
+        std::fs::write(dir.path().join(TMP_NAME), "{\"t\":").unwrap();
+        let early = ts("2026-10-06T12:00:00-06:00");
+        store
+            .append(&sample("2026-10-01T12:00:00-06:00", 1.0), early)
+            .unwrap();
+        let now = ts("2026-10-20T12:00:00-06:00");
+        store
+            .append(&sample("2026-10-20T12:00:00-06:00", 3.0), now)
+            .unwrap(); // recorta
+        assert_eq!(
+            store.load().iter().map(|s| s.percent).collect::<Vec<_>>(),
+            vec![3.0]
+        );
+        assert!(!dir.path().join(TMP_NAME).exists());
+    }
+
+    #[test]
+    fn un_recorte_fallido_no_toca_el_archivo() {
+        // Si no se puede escribir el temporal (aqui es una carpeta), el recorte falla sin haber
+        // truncado samples.jsonl: un cierre a medias no pierde los 15 dias.
+        let dir = tempfile::tempdir().unwrap();
+        let store = SampleStore::new(dir.path());
+        let early = ts("2026-10-06T12:00:00-06:00");
+        store
+            .append(&sample("2026-10-01T12:00:00-06:00", 1.0), early)
+            .unwrap();
+        store
+            .append(&sample("2026-10-02T12:00:00-06:00", 2.0), early)
+            .unwrap();
+        let before = std::fs::read_to_string(store.path()).unwrap();
+        assert_eq!(before.lines().count(), 2);
+        std::fs::create_dir(dir.path().join(TMP_NAME)).unwrap();
+        let now = ts("2026-10-20T12:00:00-06:00");
+        assert!(
+            store
+                .append(&sample("2026-10-20T12:00:00-06:00", 3.0), now)
+                .is_err()
+        );
+        assert_eq!(std::fs::read_to_string(store.path()).unwrap(), before);
     }
 
     #[test]
