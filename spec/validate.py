@@ -170,6 +170,37 @@ for p in sorted((ROOT / "fixtures" / "projection").glob("*.json")):
     if exp.get("basis") not in ("window", "24h", None):
         errors.append(f"{p}: 'basis' debe ser window, 24h o null")
 
+for p in sorted((ROOT / "fixtures" / "colors").glob("*.json")):
+    fx = load(p)
+    if fx is None:
+        continue
+    need(p, fx, ["description", "input", "expected"])
+    inp, exp = fx.get("input", {}), fx.get("expected", {})
+    bar = inp.get("bar")
+    if bar not in ("session", "weekly", "scoped", "today", "pace_mark"):
+        errors.append(f"{p}: 'bar' debe ser session, weekly, scoped, today o pace_mark")
+    elif bar == "pace_mark":
+        need(p, inp, ["bar", "now", "resets_at"])
+        check_instant(p, "now", inp.get("now"))
+        check_instant(p, "resets_at", inp.get("resets_at"), nullable=True)
+        need(p, exp, ["mark"])
+        mark = exp.get("mark")
+        if mark is not None and (not isinstance(mark, (int, float)) or isinstance(mark, bool)):
+            errors.append(f"{p}: 'mark' debe ser numero o null")
+        elif isinstance(mark, (int, float)) and not 0 <= mark <= 1:
+            errors.append(f"{p}: 'mark' debe estar en [0, 1]")
+    else:
+        if bar == "today":
+            need(p, inp, ["bar", "today_used", "quota_today"])
+            check_num(p, "today_used", inp.get("today_used"))
+            check_num(p, "quota_today", inp.get("quota_today"), nullable=True)
+        else:
+            need(p, inp, ["bar", "percent"])
+            check_num(p, "percent", inp.get("percent"))
+        need(p, exp, ["color"])
+        if exp.get("color") not in ("green", "amber", "red", "gray"):
+            errors.append(f"{p}: 'color' debe ser green, amber, red o gray")
+
 count = sum(1 for _ in (ROOT / "fixtures").rglob("*.json"))
 if errors:
     print("\n".join(errors))

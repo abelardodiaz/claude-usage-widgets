@@ -1,0 +1,1 @@
+{"description": "Hoy: cociente 0.7 exacto ya es ambar", "input": {"bar": "today", "today_used": 7, "quota_today": 10}, "expected": {"color": "amber"}}

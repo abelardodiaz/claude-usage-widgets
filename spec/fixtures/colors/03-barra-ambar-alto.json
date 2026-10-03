@@ -1,0 +1,1 @@
+{"description": "Barra por porcentaje: justo debajo del limite rojo", "input": {"bar": "scoped", "percent": 84.999}, "expected": {"color": "amber"}}

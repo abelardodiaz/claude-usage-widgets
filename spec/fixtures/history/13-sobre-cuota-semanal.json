@@ -1,0 +1,32 @@
+{
+  "description": "weekly.percent > 100 y poco consumo hoy: quota_today sale negativa (R7 la pinta roja)",
+  "input": {
+    "tz": "-06:00",
+    "now": "2026-10-06T12:00:00-06:00",
+    "weekly": {
+      "percent": 101.5,
+      "resets_at": "2026-10-09T18:00:00-06:00"
+    },
+    "samples": [
+      {
+        "t": "2026-10-05T12:00:00-06:00",
+        "percent": 100.5,
+        "resets_at": "2026-10-09T18:00:00-06:00"
+      },
+      {
+        "t": "2026-10-06T12:00:00-06:00",
+        "percent": 101.5,
+        "resets_at": "2026-10-09T18:00:00-06:00"
+      }
+    ]
+  },
+  "expected": {
+    "per_day": {
+      "2026-10-05": 0.5,
+      "2026-10-06": 0.5
+    },
+    "today_used": 0.5,
+    "quota_today": -0.266667,
+    "partial": false
+  }
+}
