@@ -7,6 +7,7 @@ pub mod history;
 pub mod model;
 pub mod parse;
 pub mod projection;
+pub mod service;
 pub mod source_claude_code;
 pub mod store;
 pub mod timez;
