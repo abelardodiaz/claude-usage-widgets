@@ -99,10 +99,13 @@ fn strict_shape(b: &[u8]) -> bool {
     match b.get(i) {
         Some(b'Z') => b.len() == i + 1,
         Some(b'+' | b'-') => {
+            // Desplazamiento acotado a +-18:00 (R1; el limite de OffsetDateTime en Java).
             b.len() == i + 6
-                && digits(b, i + 1, 2).is_some_and(|h| h <= 23)
                 && b[i + 3] == b':'
-                && digits(b, i + 4, 2).is_some_and(|m| m <= 59)
+                && match (digits(b, i + 1, 2), digits(b, i + 4, 2)) {
+                    (Some(h), Some(m)) => m <= 59 && (h < 18 || (h == 18 && m == 0)),
+                    _ => false,
+                }
         }
         _ => false,
     }
