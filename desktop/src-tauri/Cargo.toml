@@ -1,0 +1,29 @@
+[package]
+name = "claude-usage-widgets"
+version = "0.1.0"
+description = "Widget de escritorio con el uso de tu plan de Claude"
+authors = ["Abelardo Diaz"]
+license = "MIT"
+repository = "https://github.com/abelardodiaz/claude-usage-widgets"
+edition = "2024"
+rust-version = "1.90"
+
+[lib]
+# El sufijo _lib evita el choque de nombres con el binario en Windows.
+name = "claude_usage_widgets_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "=2.7.1", features = [] }
+
+[dependencies]
+tauri = { version = "=2.12.1", features = [] }
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.151"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

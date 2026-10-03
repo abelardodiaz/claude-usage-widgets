@@ -9,3 +9,12 @@ updates:
     directory: /spec
     schedule:
       interval: weekly
+  # Incluye jiff-tzdb, la copia embebida de tzdata del widget (D11).
+  - package-ecosystem: cargo
+    directory: /desktop/src-tauri
+    schedule:
+      interval: weekly
+  - package-ecosystem: npm
+    directory: /desktop
+    schedule:
+      interval: weekly
