@@ -121,13 +121,14 @@ public final class Parser {
      * Defensa en profundidad: RFC 3339 solo admite anio de cuatro digitos, pero
      * {@code OffsetDateTime} acepta hasta +-999999999. Un anio asi no es un dato, es una
      * entrada hostil, y aunque la aritmetica de {@link Projection#seconds} ya no desborda,
-     * aqui se corta antes.
+     * aqui se corta antes. El anio 9999 tambien es nulo (R1): es el centinela de "sin limite"
+     * y no todas las implementaciones del contrato lo representan completo.
      */
     static Instant instant(Object v) {
         if (!(v instanceof String)) return null;
         try {
             OffsetDateTime t = OffsetDateTime.parse((String) v);
-            if (t.getYear() < 0 || t.getYear() > 9999) return null;
+            if (t.getYear() < 0 || t.getYear() > 9998) return null;
             return t.toInstant();
         } catch (RuntimeException e) {
             return null;

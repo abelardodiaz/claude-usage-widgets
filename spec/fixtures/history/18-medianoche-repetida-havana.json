@@ -1,0 +1,33 @@
+{
+  "description": "R0: con medianoche repetida (America/Havana, fin del horario de verano a la 01:00) el dia empieza en la primera ocurrencia",
+  "input": {
+    "tz": "America/Havana",
+    "now": "2026-11-02T12:00:00-05:00",
+    "weekly": {
+      "percent": 59,
+      "resets_at": "2026-11-05T00:00:00-05:00"
+    },
+    "samples": [
+      {
+        "t": "2026-10-31T12:00:00-04:00",
+        "percent": 10,
+        "resets_at": "2026-11-05T00:00:00-05:00"
+      },
+      {
+        "t": "2026-11-02T12:00:00-05:00",
+        "percent": 59,
+        "resets_at": "2026-11-05T00:00:00-05:00"
+      }
+    ]
+  },
+  "expected": {
+    "per_day": {
+      "2026-10-31": 12,
+      "2026-11-01": 25,
+      "2026-11-02": 12
+    },
+    "today_used": 12,
+    "quota_today": 17.666667,
+    "partial": false
+  }
+}

@@ -36,7 +36,11 @@ Entrada: JSON de `GET https://api.anthropic.com/api/oauth/usage`.
 - `weekly` ← `seven_day`: igual.
 - Si `five_hour` o `seven_day` falta, no es objeto, o su `utilization` no es número →
   error `unrecognized_format` (nunca se inventa un 0 %).
-- `resets_at` ausente, nulo, no cadena o no parseable como RFC 3339 → `null`.
+- `resets_at` ausente, nulo, no cadena, no parseable como RFC 3339, o con año fuera de
+  0000-9998 → `null`. El año 9999 es el centinela habitual de "sin límite" (`9999-12-31T23:59:59Z`)
+  y además no todas las bibliotecas lo representan completo (jiff termina en
+  `9999-12-30T22:00:00Z`): tratarlo como nulo da la misma conducta en todas las implementaciones.
+  Lo fija `parse/07`.
 - `scoped` ← cada elemento de `limits[]` cuyo `kind` sea cadena no vacía distinta de `session` y `weekly_all` y cuyo
   `percent` sea número. `label` = `scope.model.display_name`, si no `scope.surface.display_name`,
   si no `kind`; una cadena vacía cuenta como ausente. Si `limits` falta o no es arreglo → `[]`.

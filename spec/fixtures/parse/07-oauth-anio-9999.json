@@ -1,0 +1,45 @@
+{
+  "description": "R1: un resets_at con anio 9999 o mayor (centinela de 'sin limite') es nulo; 9998 es valido",
+  "source": "claude_code",
+  "input": {
+    "five_hour": {
+      "utilization": 10,
+      "resets_at": "9999-12-31T23:59:59Z"
+    },
+    "seven_day": {
+      "utilization": 40,
+      "resets_at": "9998-06-01T00:00:00Z"
+    },
+    "limits": [
+      {
+        "kind": "weekly_scoped",
+        "percent": 5,
+        "resets_at": "9999-01-01T00:00:00Z",
+        "scope": {
+          "model": {
+            "display_name": "Fable"
+          }
+        }
+      }
+    ]
+  },
+  "expected": {
+    "source": "claude_code",
+    "session": {
+      "percent": 10,
+      "resets_at": null
+    },
+    "weekly": {
+      "percent": 40,
+      "resets_at": "9998-06-01T00:00:00Z"
+    },
+    "scoped": [
+      {
+        "label": "Fable",
+        "percent": 5,
+        "resets_at": null
+      }
+    ],
+    "breakdown": []
+  }
+}
