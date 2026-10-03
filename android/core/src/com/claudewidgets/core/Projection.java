@@ -80,10 +80,18 @@ public final class Projection {
         // Se suma en segundos y nanos aparte: `plusNanos(round(s * 1e9))` saturaria el long y
         // daria una fecha falsa en silencio con ritmos minusculos.
         long whole = (long) secondsToFull;
-        long nanos = Math.round((secondsToFull - whole) * 1e9);
+        // A MILISEGUNDOS, no a nanosegundos (R0): los instantes se comparan a esa resolucion.
+        // Con nanos, un `hits_at` a menos de medio milisegundo de `resets_at` daria un
+        // `before_reset` distinto al de una implementacion que redondee a ms.
+        //
+        // NINGUN FIXTURE distingue este caso: haria falta uno cuyo `expected` booleano dependa
+        // de la septima cifra significativa de un double, y eso seria mas fragil que util. La
+        // regla vale porque hace coincidir a las dos implementaciones por construccion, no
+        // porque una prueba lo verifique.
+        long millis = Math.round((secondsToFull - whole) * 1000.0);
         Instant hitsAt;
         try {
-            hitsAt = now.plusSeconds(whole).plusNanos(nanos);
+            hitsAt = now.plusSeconds(whole).plusMillis(millis);
         } catch (RuntimeException e) {
             // Fuera del rango de Instant: no se puede decir cuando, como en los demas
             // casos imposibles de R5 y R6.

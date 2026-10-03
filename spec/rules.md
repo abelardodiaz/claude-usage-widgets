@@ -7,7 +7,30 @@ Las reglas con pasos numerados se evalúan **en ese orden**: la primera que apli
 ## R0. Convenciones
 
 - Instantes: RFC 3339 con desplazamiento. Se comparan como instantes (misma hora UTC = iguales),
-  no como texto. Tolerancia en fixtures: 1 s.
+  no como texto, **a resolución de milisegundos**: `same_window` (R2) y `before_reset` (R5, R6)
+  redondean a milisegundos antes de comparar. Sin eso, dos implementaciones que guarden
+  nanosegundos y milisegundos dan respuestas distintas con la misma entrada. Tolerancia en
+  fixtures: 1 s.
+- **Forma aceptada de un instante leído de la respuesta** (R1): exactamente
+
+  ```
+  YYYY-MM-DDTHH:MM:SS(.fracción)?(Z|+HH:MM|-HH:MM)
+  ```
+
+  Año de **exactamente cuatro dígitos sin signo**, `T` como separador, segundos **obligatorios**,
+  fracción de **1 a 9 dígitos** si lleva punto (lo máximo que representan Java y Rust;
+  más dígitos se truncarían en silencio, cada uno a su manera), desplazamiento con minutos y
+  **sin segundos**. Todo lo
+  demás → `null`. Se rechazan, entre otras: `+002026-10-02T12:00:00Z` (año con signo),
+  `2026-10-02T12:00Z` (sin segundos), `+00` y `+00:00:30` (desplazamiento mal formado),
+  `2026-10-02T12:00:00.Z` (fracción vacía),
+  `2026-10-02T12:00:00.1234567890Z` (diez dígitos), `2026-10-02 12:00:00Z` (espacio en vez de `T`),
+  `2026-10-02T12:00:00Z[UTC]` (anotación de zona) y `2026-06-30T23:59:60Z` (segundo 60).
+
+  No es quisquillosidad: las bibliotecas de fecha difieren justo en estos casos, y una que acepte
+  `+00:00:30` desplaza el instante treinta segundos respecto de otra que lo rechace. Esta regla
+  vale **solo** para instantes leídos de la respuesta; `t` y `now` de los fixtures no pasan por
+  ella.
 - Números: sin redondeo interno; los fixtures muestran hasta 6 decimales. Tolerancia: 0.001.
 - "h" y "días" en restas de instantes (5 h, 7 días, 24 h, 1 h) son duraciones fijas de
   3600 s y 86 400 s. `days_left` = segundos / 86 400.
