@@ -9,12 +9,36 @@ import re
 import sys
 from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from jsonschema import Draft202012Validator, FormatChecker
 
 ROOT = Path(__file__).parent
 DAY = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+# R0 exige zona IANA con horario de verano para "dia local". Se admite tambien el
+# desplazamiento fijo que usan los fixtures sin cambio de horario.
+TZ_OFFSET = re.compile(r"^[+-]\d{2}:\d{2}$")
+TZ_IANA = re.compile(r"^[A-Za-z][A-Za-z0-9_+-]*(?:/[A-Za-z0-9_+-]+)*$")
 errors = []
+
+
+def is_tz(s):
+    """Desplazamiento fijo, o zona IANA que exista de verdad.
+
+    Resolver la zona caza erratas tipo 'America/Nueva_York', que si no pasarian
+    silenciosas y dejarian la fixture con valores sin sentido.
+    """
+    if not isinstance(s, str):
+        return False
+    if TZ_OFFSET.match(s):
+        return True
+    if not TZ_IANA.match(s):
+        return False
+    try:
+        ZoneInfo(s)
+    except Exception:
+        return False
+    return True
 
 
 def is_instant(s):
@@ -103,8 +127,11 @@ for p in sorted((ROOT / "fixtures" / "history").glob("*.json")):
     inp, exp = fx.get("input", {}), fx.get("expected", {})
     need(p, inp, ["tz", "now", "weekly", "samples"])
     need(p, exp, ["per_day", "today_used", "quota_today", "partial"])
-    if not isinstance(inp.get("tz"), str) or not re.match(r"^[+-]\d{2}:\d{2}$", inp.get("tz", "")):
-        errors.append(f"{p}: 'tz' debe ser un desplazamiento fijo tipo -06:00")
+    if not is_tz(inp.get("tz")):
+        errors.append(
+            f"{p}: 'tz' debe ser un desplazamiento fijo (-06:00) "
+            "o una zona IANA existente (America/New_York)"
+        )
     check_instant(p, "now", inp.get("now"))
     need(p, inp.get("weekly", {}), ["percent", "resets_at"])
     check_num(p, "weekly.percent", inp.get("weekly", {}).get("percent"))

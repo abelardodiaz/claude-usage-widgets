@@ -1,0 +1,32 @@
+{
+  "description": "Dia de 23 h (empieza el horario de verano): el reparto de R3 sigue el tiempo real, no el reloj",
+  "input": {
+    "tz": "America/New_York",
+    "now": "2026-03-08T12:00:00-04:00",
+    "weekly": {
+      "percent": 33,
+      "resets_at": "2026-03-12T00:00:00-04:00"
+    },
+    "samples": [
+      {
+        "t": "2026-03-07T12:00:00-05:00",
+        "percent": 10,
+        "resets_at": "2026-03-12T00:00:00-04:00"
+      },
+      {
+        "t": "2026-03-08T12:00:00-04:00",
+        "percent": 33,
+        "resets_at": "2026-03-12T00:00:00-04:00"
+      }
+    ]
+  },
+  "expected": {
+    "per_day": {
+      "2026-03-07": 12,
+      "2026-03-08": 11
+    },
+    "today_used": 11,
+    "quota_today": 19.705263,
+    "partial": false
+  }
+}

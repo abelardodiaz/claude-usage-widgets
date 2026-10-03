@@ -14,7 +14,9 @@ Las reglas con pasos numerados se evalúan **en ese orden**: la primera que apli
 - "Día local" y "medianoche local" se calculan en la zona del dispositivo (IANA, con horario de
   verano). En un fixture, en la zona `tz` de la entrada. Un día con cambio de horario dura 23 o
   25 h y el reparto de R3 sigue siendo proporcional al tiempo real. Si la medianoche no existe en
-  esa zona, se usa el primer instante del día. Las claves de `per_day` son `YYYY-MM-DD` locales.
+  esa zona (la zona adelanta 23:00 → 00:00), se usa el primer instante del día. Si ocurre
+  **dos veces** (la zona atrasa 01:00 → 00:00, como `America/Havana`), se usa la **primera**
+  ocurrencia: el instante más temprano cuya fecha local es `d`. Las claves de `per_day` son `YYYY-MM-DD` locales.
 - "Hoy" = fecha local de `now`.
 - Las comparaciones `<`, `≤`, `≥` son literales: `t ≥ now − 24 h` incluye la muestra tomada
   exactamente 24 h antes (lo fija `projection/05`).

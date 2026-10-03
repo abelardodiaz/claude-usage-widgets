@@ -1,0 +1,33 @@
+{
+  "description": "Dos medianoches alrededor del inicio del horario de verano: el dia de 23 h queda visible",
+  "input": {
+    "tz": "America/New_York",
+    "now": "2026-03-09T12:00:00-04:00",
+    "weekly": {
+      "percent": 57,
+      "resets_at": "2026-03-12T00:00:00-04:00"
+    },
+    "samples": [
+      {
+        "t": "2026-03-07T12:00:00-05:00",
+        "percent": 10,
+        "resets_at": "2026-03-12T00:00:00-04:00"
+      },
+      {
+        "t": "2026-03-09T12:00:00-04:00",
+        "percent": 57,
+        "resets_at": "2026-03-12T00:00:00-04:00"
+      }
+    ]
+  },
+  "expected": {
+    "per_day": {
+      "2026-03-07": 12,
+      "2026-03-08": 23,
+      "2026-03-09": 12
+    },
+    "today_used": 12,
+    "quota_today": 18.333333,
+    "partial": false
+  }
+}
