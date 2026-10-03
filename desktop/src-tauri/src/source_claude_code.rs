@@ -1,6 +1,10 @@
 //! `ClaudeCodeSource`: GET https://api.anthropic.com/api/oauth/usage con el token de Claude Code.
 //! Unico host de red del producto. Sin proxies del entorno, sin redirecciones (el Authorization
 //! jamas viaja a otro host), timeout fijo. Los errores nunca incluyen el token ni el cuerpo.
+//!
+//! LOGS: `ureq_proto` vuelca en `trace!` los bytes crudos de la peticion, incluida la cabecera
+//! `Authorization` (el `debug!` de `ureq` si la redacta). Por eso `ureq` y `ureq_proto` nunca a
+//! Trace: cualquier logger futuro los fija en `Off`. Lo vigila la prueba `ureq_nunca_a_trace`.
 
 use std::fmt;
 use std::io::Read;
@@ -140,6 +144,7 @@ impl ClaudeCodeSource {
             .http_status_as_error(false)
             .proxy(None)
             .max_redirects(0)
+            .https_only(true)
             .user_agent(USER_AGENT)
             .build();
         Self {
@@ -403,5 +408,28 @@ mod tests {
                 .unwrap_err(),
             FetchError::UnrecognizedFormat
         );
+    }
+
+    #[test]
+    fn agente_sin_proxy_sin_redirecciones_solo_https() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = ClaudeCodeSource::new(dir.path().join("x.json"));
+        let config = source.agent.config();
+        assert_eq!(config.max_redirects(), 0);
+        assert!(config.proxy().is_none());
+        assert!(config.https_only());
+        assert!(!config.http_status_as_error());
+    }
+
+    /// ureq_proto vuelca en `trace!` los bytes crudos de la peticion, incluida la cabecera
+    /// Authorization. Ningun logger del producto puede habilitar esos targets a Trace.
+    #[test]
+    fn ureq_nunca_a_trace() {
+        for target in ["ureq", "ureq_proto"] {
+            assert!(
+                !log::log_enabled!(target: target, log::Level::Trace),
+                "{target} a Trace"
+            );
+        }
     }
 }
