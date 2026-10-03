@@ -75,6 +75,12 @@ pub fn seconds_between(from: Timestamp, to: Timestamp) -> f64 {
     to.duration_since(from).as_secs_f64()
 }
 
+/// Milisegundos desde 1970-01-01T00:00:00Z, con piso (como `Instant.toEpochMilli` de Java).
+/// R0 compara instantes a esa resolucion. Cualquier `Timestamp` cabe en un `i64` de ms.
+pub fn epoch_millis(t: Timestamp) -> i64 {
+    t.as_nanosecond().div_euclid(1_000_000) as i64
+}
+
 /// `t + secs`; `None` si no es representable (NaN, infinito o fuera de rango).
 pub fn add_seconds(t: Timestamp, secs: f64) -> Option<Timestamp> {
     let d = SignedDuration::try_from_secs_f64(secs).ok()?;
@@ -164,6 +170,15 @@ mod tests {
         // Fuera del rango de Timestamp: None, nunca panico ni fecha saturada.
         assert_eq!(add_seconds(a, 1e300), None);
         assert_eq!(add_seconds(Timestamp::MAX, 1.0), None);
+    }
+
+    #[test]
+    fn milisegundos_desde_epoch_con_piso() {
+        assert_eq!(epoch_millis(ts("1970-01-01T00:00:01.9999Z")), 1_999);
+        assert_eq!(epoch_millis(ts("1969-12-31T23:59:59.9995Z")), -1);
+        assert_eq!(epoch_millis(Timestamp::UNIX_EPOCH), 0);
+        let _ = epoch_millis(Timestamp::MIN);
+        let _ = epoch_millis(Timestamp::MAX);
     }
 
     #[test]

@@ -4,7 +4,7 @@ use jiff::{SignedDuration, Timestamp};
 
 use crate::history::{prepare_samples, same_window};
 use crate::model::{Basis, Projection, Sample, Window};
-use crate::timez::{DAY, seconds_between};
+use crate::timez::{DAY, epoch_millis, seconds_between};
 
 /// Duracion de la ventana de sesion (5 h).
 pub const SESSION_LEN: SignedDuration = SignedDuration::from_secs(5 * 3_600);
@@ -36,27 +36,28 @@ fn full(now: Timestamp, basis: Basis) -> Projection {
     }
 }
 
-/// `now + secs` materializado a la resolucion del contrato (milisegundos, R0); `None` si no es
-/// representable (NaN, infinito o fuera del rango de `Timestamp`). Aritmetica comprobada: nunca
-/// entra en panico ni satura a una fecha falsa.
+/// `now + secs` materializado como instante a la resolucion del contrato (milisegundos, R0):
+/// `now` se lleva a su milisegundo (piso) y `secs` se redondea al milisegundo mas cercano.
+/// `None` si no es representable (NaN, infinito o fuera del rango de `Timestamp`). Aritmetica
+/// comprobada: nunca entra en panico ni satura a una fecha falsa.
 fn materialize(now: Timestamp, secs: f64) -> Option<Timestamp> {
     let millis = (secs * 1_000.0).round();
     // `i64::MAX as f64` redondea hacia arriba a 2^63: con `<` el `as i64` nunca satura.
     if !millis.is_finite() || millis.abs() >= i64::MAX as f64 {
         return None;
     }
-    now.checked_add(SignedDuration::from_millis(millis as i64))
-        .ok()
+    let total = epoch_millis(now).checked_add(millis as i64)?;
+    Timestamp::from_millisecond(total).ok()
 }
 
 /// `hits_at = now + (100 - percent) / rate`, `before_reset = hits_at < resets_at` comparado
-/// literalmente con el instante ya materializado (R0; `hits_at == resets_at` -> false).
-/// Si `hits_at` no es representable como instante: `hits_at`, `before_reset` y `basis` nulos.
+/// literalmente a milisegundos con el instante ya materializado (R0; `hits_at == resets_at`
+/// -> false). Si `hits_at` no es representable: `hits_at`, `before_reset` y `basis` nulos.
 fn hits(now: Timestamp, percent: f64, rate: f64, resets_at: Timestamp, basis: Basis) -> Projection {
     match materialize(now, (100.0 - percent) / rate) {
         Some(hits_at) => Projection {
             hits_at: Some(hits_at),
-            before_reset: Some(hits_at < resets_at),
+            before_reset: Some(epoch_millis(hits_at) < epoch_millis(resets_at)),
             basis: Some(basis),
         },
         None => Projection::NONE,
@@ -244,5 +245,37 @@ mod tests {
         assert_eq!(materialize(now, f64::INFINITY), None);
         assert_eq!(materialize(now, 1e300), None);
         assert_eq!(materialize(Timestamp::MAX, 1.0), None);
+        // `now` con fraccion por debajo del milisegundo: el resultado queda en milisegundos.
+        let fine = ts("2026-10-06T12:00:00.0007-06:00");
+        assert_eq!(
+            materialize(fine, 1.0),
+            Some(ts("2026-10-06T12:00:01-06:00"))
+        );
+    }
+
+    #[test]
+    fn before_reset_se_compara_en_milisegundos() {
+        // Ritmo 24h (no depende de resets_at): 24 % en 24 h -> hits_at = 2026-10-09T18:00:00.000.
+        // resets_at 0.5 ms despues cae en el mismo milisegundo: no es "antes del reinicio"
+        // (a nanosegundos si lo seria).
+        let now = ts("2026-10-06T18:00:00-06:00");
+        let window_reset = Some(ts("2026-10-09T18:00:00-06:00"));
+        let resets_at = ts("2026-10-09T18:00:00.0005-06:00");
+        let samples = [
+            Sample {
+                t: ts("2026-10-05T18:00:00-06:00"),
+                percent: 4.0,
+                resets_at: window_reset,
+            },
+            Sample {
+                t: now,
+                percent: 28.0,
+                resets_at: window_reset,
+            },
+        ];
+        let p = project_weekly(now, &win(28.0, Some(resets_at)), &samples);
+        assert_eq!(p.basis, Some(Basis::Last24h));
+        assert_eq!(p.hits_at, Some(ts("2026-10-09T18:00:00-06:00")));
+        assert_eq!(p.before_reset, Some(false));
     }
 }

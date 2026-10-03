@@ -6,18 +6,24 @@ use jiff::tz::TimeZone;
 use jiff::{SignedDuration, Timestamp};
 
 use crate::model::{Sample, TodayStats, Window};
-use crate::timez::{DAY, HOUR, day_key, local_date, next_day_start, seconds_between, start_of_day};
+use crate::timez::{
+    DAY, day_key, epoch_millis, local_date, next_day_start, seconds_between, start_of_day,
+};
 
 /// Siete dias fijos (R0).
 const WEEK: SignedDuration = SignedDuration::from_secs(7 * 86_400);
 
-/// R2: misma ventana semanal si alguno de los dos es nulo o difieren menos de 1 h.
+/// R2: misma ventana semanal si alguno de los dos es nulo o difieren menos de 1 h, comparando
+/// a milisegundos (R0; igual que el nucleo Java).
 pub fn same_window(a: Option<Timestamp>, b: Option<Timestamp>) -> bool {
     match (a, b) {
-        (Some(a), Some(b)) => a.duration_since(b).abs() < HOUR,
+        (Some(a), Some(b)) => (epoch_millis(a) - epoch_millis(b)).abs() < HOUR_MILLIS,
         _ => true,
     }
 }
+
+/// Una hora en milisegundos.
+const HOUR_MILLIS: i64 = 3_600_000;
 
 /// R3 paso 1: descarta `t > now`, ordena de forma estable por `t` y, si varias comparten `t`,
 /// conserva la ultima en orden de entrada.
@@ -136,6 +142,18 @@ mod tests {
         assert!(!same_window(a, c));
         assert!(same_window(None, c));
         assert!(same_window(a, None));
+    }
+
+    #[test]
+    fn misma_ventana_en_milisegundos() {
+        // R0: se compara a milisegundos (piso, como `toEpochMilli` de Java). En nanosegundos
+        // difieren 3599.9992 s (< 1 h); en milisegundos, 3 600 000 ms exactos (no < 1 h).
+        let a = Some(ts("2026-10-09T18:00:00.0009-06:00"));
+        let b = Some(ts("2026-10-09T19:00:00.0001-06:00"));
+        assert!(!same_window(a, b));
+        assert!(!same_window(b, a));
+        let c = Some(ts("2026-10-09T18:59:59.9999-06:00"));
+        assert!(same_window(Some(ts("2026-10-09T18:00:00-06:00")), c));
     }
 
     #[test]
