@@ -63,7 +63,7 @@ pub fn parse_instant(v: Option<&Value>) -> Option<Timestamp> {
 
 /// Forma exacta `YYYY-MM-DDTHH:MM:SS(.fraccion)?(Z|+HH:MM|-HH:MM)` (perfil de RFC 3339):
 /// anio de exactamente cuatro digitos sin signo, `T` y `Z` solo en mayuscula (RFC 3339 5.6
-/// permite minusculas pero no las exige; el nucleo Java hace lo mismo), sin espacios, sin
+/// permite minusculas pero no las exige; el nucleo Java se alinea en un PR de contrato posterior), sin espacios, sin
 /// anotacion `[zona]`, sin segundo 60 (jiff lo aceptaria como 59), fraccion de 1 a 9 digitos
 /// y desplazamiento con horas 00-23 y minutos 00-59. Antes de jiff, que es mas permisivo.
 fn strict_shape(b: &[u8]) -> bool {
