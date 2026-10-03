@@ -232,7 +232,9 @@ public final class UsageClient {
     public static String minimalCookies(String all);
     /** El valor de lastActiveOrg, o null. Es una credencial: no se registra. */
     public static String lastActiveOrg(String all);
-    public List<String> organizations() throws IOException, AuthExpiredException,
+    /** uuid + nombre (name, si no plan_display_name, si no null). */
+    public static final class Org { public final String uuid; public final String name; }
+    public List<Org> organizations() throws IOException, AuthExpiredException,
             BlockedException, RetryLaterException, UnrecognizedFormatException;
     public UsageModel usage(String orgUuid) throws IOException, AuthExpiredException,
             BlockedException, RetryLaterException, UnrecognizedFormatException;
@@ -278,15 +280,15 @@ public final class Snapshot {
 // SnapshotStore.java  (F4)
 public final class SnapshotStore {
     public SnapshotStore(Context ctx);
-    /** Guarda lo minimo para reconstruir el widget sin red. */
-    public void remember(UsageModel model, Instant fetchedAt, List<String> orgs);
-    /** Las organizaciones vistas, como "uuid|nombre". Ajustes las necesita aunque falle el resto. */
-    public void rememberOrgs(List<String> orgs);
+    /** Guarda lo minimo para reconstruir el widget sin red. Las organizaciones van aparte. */
+    public void remember(UsageModel model, Instant fetchedAt);
+    /** Las organizaciones vistas. Ajustes las necesita aunque falle el resto. */
+    public void rememberOrgs(List<UsageClient.Org> orgs);
+    public List<UsageClient.Org> knownOrgs();
     /** El ultimo modelo guardado, o null si nunca hubo uno. */
     public UsageModel lastModel();
     /** Instante de la ultima consulta buena, o null. */
     public Instant lastFetchInstant();
-    public List<String> knownOrgs();
     public void clear();
 }
 
@@ -503,6 +505,24 @@ mkdir -p "$OUT/compiled" "$OUT/gen" "$OUT/classes" "$OUT/dex"
 echo "== 1/6 aapt2 compile =="
 aapt2 compile --dir res -o "$OUT/compiled/res.zip"
 
+# Bloque TEST=1 numero 1: el manifiesto con la instrumentacion tiene que existir ANTES de
+# enlazar. Si se genera despues, nunca entra al APK y `am instrument` falla con
+# "Unable to find instrumentation info".
+MANIFEST="AndroidManifest.xml"
+if [ "${TEST:-0}" = "1" ]; then
+  echo "== extra: manifiesto con instrumentacion =="
+  python3 - "$HERE/AndroidManifest.xml" "$OUT/manifest-test.xml" <<'PYEOF'
+import sys
+src, dst = sys.argv[1], sys.argv[2]
+s = open(src, encoding="utf-8").read()
+tag = ('    <instrumentation android:name=".AppInstrumentation"\n'
+       '        android:targetPackage="com.claulimitswidgets.android" />\n')
+assert "</manifest>" in s, "el manifiesto no tiene </manifest>"
+open(dst, "w", encoding="utf-8").write(s.replace("</manifest>", tag + "</manifest>"))
+PYEOF
+  MANIFEST="$OUT/manifest-test.xml"
+fi
+
 echo "== 2/6 aapt2 link =="
 # versionCode y versionName no van en el manifiesto: los pone aapt2, para que el workflow de
 # release los derive del tag. Sin versionCode creciente, Obtainium no puede actualizar.
@@ -512,7 +532,7 @@ VERSION_NAME="${VERSION_NAME:-0.0.0-dev}"
 aapt2 link \
   -o "$OUT/base.apk" \
   -I "$ANDROID_JAR" \
-  --manifest AndroidManifest.xml \
+  --manifest "$MANIFEST" \
   --java "$OUT/gen" \
   --min-sdk-version "$MIN_SDK" \
   --target-sdk-version "$TARGET_SDK" \
@@ -535,6 +555,17 @@ echo "== 4/6 javac (app) =="
 find src "$OUT/gen" -name '*.java' | sort > "$OUT/app.txt"
 javac -encoding UTF-8 -source 17 -target 17 -bootclasspath "$ANDROID_JAR" \
   -classpath "$OUT/classes" -Xlint:all,-options -Werror -d "$OUT/classes" "@$OUT/app.txt"
+
+# Bloque TEST=1 numero 2: las pruebas de la cascara. Mismas banderas que la app, porque corren
+# en el telefono. De `android/core/test` solo entra `Assert`: el resto (FixtureRunner, TestRunner,
+# AndroidSmoke) es para la JVM, usa APIs que Android no tiene y no tiene por que compilar aqui.
+if [ "${TEST:-0}" = "1" ]; then
+  echo "== extra: javac (pruebas) =="
+  { echo "$CORE/test/com/claudewidgets/core/Assert.java"; find test -name '*.java'; } \
+    | sort > "$OUT/tests.txt"
+  javac -encoding UTF-8 -source 17 -target 17 -bootclasspath "$ANDROID_JAR" \
+    -classpath "$OUT/classes" -Xlint:all,-options -Werror -d "$OUT/classes" "@$OUT/tests.txt"
+fi
 
 echo "== 5/6 d8 =="
 mapfile -t CLASSES < <(find "$OUT/classes" -name '*.class' | sort)
@@ -782,19 +813,20 @@ public final class AppTestRunner {
 
 `Assert` se reutiliza del núcleo: ya es `public` y no tiene dependencias.
 
-- [ ] **Paso 2: Añadir a `build.sh` un modo que dexea también las pruebas**
+- [ ] **Paso 2: Comprobar los dos bloques `TEST=1` de `build.sh`**
 
-En `android/app/build.sh`, justo antes de `echo "== 5/6 d8 =="`, insertar:
+Son **dos** y el orden importa. El manifiesto con la instrumentación tiene que existir **antes**
+de `aapt2 link`; si se genera después, nunca entra al APK y `am instrument` falla con
+`Unable to find instrumentation info`. El `javac` de pruebas va después del de la app.
+
+Ambos están escritos en la Tarea 2.2. Aquí solo se verifica que estén y en ese orden:
 
 ```bash
-# Con TEST=1 se compilan y dexean tambien las pruebas de la cascara, para correrlas bajo ART.
-if [ "${TEST:-0}" = "1" ]; then
-  echo "== extra: javac (pruebas) =="
-  find "$CORE/test" test -name '*.java' | sort > "$OUT/tests.txt"
-  javac -encoding UTF-8 -Xlint:all,-options -Werror \
-    -classpath "$ANDROID_JAR:$OUT/classes" -d "$OUT/classes" "@$OUT/tests.txt"
-fi
+grep -n 'TEST:-0' android/app/build.sh
+grep -n 'aapt2 link\|== 5/6 d8' android/app/build.sh
 ```
+Esperado: dos líneas de `TEST:-0`, la primera **antes** de la de `aapt2 link` y la segunda
+**antes** de la de `d8`.
 
 - [ ] **Paso 3: Commit**
 
@@ -826,8 +858,12 @@ public final class SessionStoreTest {
 
     private static final String COOKIE = "sessionKey=valor-de-prueba; lastActiveOrg=otro-valor";
 
+    /** Archivo y llave propios: una prueba NO puede borrar la sesion real del usuario. */
+    private static final String TEST_FILE = "session-test.bin";
+    private static final String TEST_ALIAS = "cuw-session-test";
+
     public static void run(Assert a, android.content.Context ctx) {
-        SessionStore s = new SessionStore(ctx);
+        SessionStore s = new SessionStore(ctx, TEST_FILE, TEST_ALIAS);
         s.clear();
         a.isTrue("sin sesion al empezar", !s.hasSession());
         a.eq("load sin sesion da null", null, call(a, () -> s.load()));
@@ -837,7 +873,7 @@ public final class SessionStoreTest {
         a.eq("vuelve lo mismo que entro", COOKIE, call(a, () -> s.load()));
 
         // Lo que queda en disco no puede contener el texto claro.
-        File f = new File(ctx.getFilesDir(), SessionStore.FILE_NAME);
+        File f = new File(ctx.getFilesDir(), TEST_FILE);
         String raw = new String(readAll(f), StandardCharsets.ISO_8859_1);
         a.isTrue("el archivo no contiene la cookie en claro", !raw.contains("valor-de-prueba"));
         a.isTrue("el archivo no contiene el nombre sessionKey", !raw.contains("sessionKey"));
@@ -907,44 +943,24 @@ public class AppInstrumentation extends Instrumentation {
     public void onStart() {
         Bundle out = new Bundle();
         Assert a = new Assert();
+        String text;
         try {
-            SessionStoreTest.run(a, getTargetContext());
-            OrgSelectorTest.run(a);
-            SampleStoreTest.run(a, getTargetContext().getCacheDir());
-            BackoffTest.run(a);
-            UsageClientTest.run(a);
+            // La lista de pruebas vive en UN sitio: AppTestRunner. Repetirla aqui garantiza
+            // que algun dia se agregue una prueba y no corra.
+            text = AppTestRunner.run(a, getTargetContext());
         } catch (RuntimeException e) {
             a.fail("excepcion no controlada: " + e);
+            text = "FALLOS (1 de " + a.checks() + "):\n  - " + e;
         }
-        List<String> failures = a.failures();
-        StringBuilder sb = new StringBuilder();
-        sb.append(failures.isEmpty()
-                ? "OK: " + a.checks() + " comprobaciones, 0 fallos"
-                : "FALLOS (" + failures.size() + " de " + a.checks() + "):");
-        for (String f : failures) sb.append("\n  - ").append(f);
-        out.putString("stream", sb.toString());
-        finish(failures.isEmpty() ? 0 : 1, out);
+        out.putString("stream", text);
+        finish(a.failures().isEmpty() ? 0 : 1, out);
     }
 }
 ```
 
-Declararla en el manifiesto **solo cuando `TEST=1`** (en el APK de release no existe). En
-`build.sh`, dentro del bloque `if [ "${TEST:-0}" = "1" ]`, antes de `aapt2 link`:
-
-```bash
-  python3 - "$HERE/AndroidManifest.xml" "$OUT/manifest-test.xml" <<'PYEOF'
-import sys
-src, dst = sys.argv[1], sys.argv[2]
-s = open(src, encoding="utf-8").read()
-tag = ('    <instrumentation android:name=".AppInstrumentation"\n'
-       '        android:targetPackage="com.claulimitswidgets.android" />\n')
-assert "</manifest>" in s
-open(dst, "w", encoding="utf-8").write(s.replace("</manifest>", tag + "</manifest>"))
-PYEOF
-  MANIFEST="$OUT/manifest-test.xml"
-```
-
-y usar `"${MANIFEST:-AndroidManifest.xml}"` en el `--manifest` de `aapt2 link`.
+La declaración en el manifiesto y el `--manifest "$MANIFEST"` ya están en el `build.sh` de la
+Tarea 2.2 (primer bloque `TEST=1`). En el APK de release la instrumentación **no existe**: el
+manifiesto normal no la lleva.
 
 `SessionStoreTest` y `SampleStoreTest` reciben el `Context`/`File` como parámetro en vez de
 pedirlo a un ayudante: sus firmas son `run(Assert a, Context ctx)` y `run(Assert a, File dir)`.
@@ -1000,9 +1016,23 @@ public final class SessionStore {
     private static final int TAG_BITS = 128;
 
     private final Context ctx;
+    private final String fileName;
+    private final String keyAlias;
 
     public SessionStore(Context ctx) {
+        this(ctx, FILE_NAME, KEY_ALIAS);
+    }
+
+    /**
+     * Para las pruebas. Ahora que corren con el uid y el `filesDir` de la app, un
+     * `new SessionStore(ctx).clear()` borraria la sesion de verdad del usuario, y volver a entrar
+     * cuesta un correo con ventana de 10 minutos y limite de reenvios. Las pruebas usan su propio
+     * archivo y su propia llave.
+     */
+    SessionStore(Context ctx, String fileName, String keyAlias) {
         this.ctx = ctx.getApplicationContext() != null ? ctx.getApplicationContext() : ctx;
+        this.fileName = fileName;
+        this.keyAlias = keyAlias;
     }
 
     public boolean hasSession() {
@@ -1055,7 +1085,7 @@ public final class SessionStore {
         try {
             KeyStore ks = KeyStore.getInstance(KEYSTORE);
             ks.load(null);
-            if (ks.containsAlias(KEY_ALIAS)) ks.deleteEntry(KEY_ALIAS);
+            if (ks.containsAlias(keyAlias)) ks.deleteEntry(keyAlias);
         } catch (GeneralSecurityException | IOException ignored) {
             // Si el Keystore no responde, el archivo ya esta borrado: sin llave no se descifra.
         }
@@ -1064,12 +1094,12 @@ public final class SessionStore {
     private SecretKey key() throws GeneralSecurityException, IOException {
         KeyStore ks = KeyStore.getInstance(KEYSTORE);
         ks.load(null);
-        KeyStore.Entry e = ks.getEntry(KEY_ALIAS, null);
+        KeyStore.Entry e = ks.getEntry(keyAlias, null);
         if (e instanceof KeyStore.SecretKeyEntry) {
             return ((KeyStore.SecretKeyEntry) e).getSecretKey();
         }
         KeyGenerator g = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, KEYSTORE);
-        g.init(new KeyGenParameterSpec.Builder(KEY_ALIAS,
+        g.init(new KeyGenParameterSpec.Builder(keyAlias,
                 KeyProperties.PURPOSE_ENCRYPT | KeyProperties.PURPOSE_DECRYPT)
                 .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
                 .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
@@ -1080,7 +1110,7 @@ public final class SessionStore {
         return g.generateKey();
     }
 
-    private File file() { return new File(ctx.getFilesDir(), FILE_NAME); }
+    private File file() { return new File(ctx.getFilesDir(), fileName); }
 
     private static byte[] readAll(File f) throws IOException {
         try (RandomAccessFile r = new RandomAccessFile(f, "r")) {
@@ -1109,7 +1139,10 @@ public final class SessionStore {
 ```bash
 TEST=1 bash android/app/build.sh
 adb install -r android/app/build/claude-usage.apk
-adb shell am instrument -w com.claulimitswidgets.android/.AppInstrumentation
+# `am instrument -w` sale 0 aunque la instrumentacion termine con finish(1): el codigo de salida
+# que devuelve es el de adb, no el de la prueba. Hay que mirar el texto.
+adb shell am instrument -w com.claulimitswidgets.android/.AppInstrumentation \
+  | tee /dev/stderr | grep -q "OK:"
 ```
 Esperado: `OK: N comprobaciones, 0 fallos`.
 
@@ -1221,7 +1254,10 @@ public final class BlockedException extends Exception {
 ```bash
 TEST=1 bash android/app/build.sh \
   && adb install -r android/app/build/claude-usage.apk \
-  && adb shell am instrument -w com.claulimitswidgets.android/.AppInstrumentation
+  && # `am instrument -w` sale 0 aunque la instrumentacion termine con finish(1): el codigo de salida
+# que devuelve es el de adb, no el de la prueba. Hay que mirar el texto.
+adb shell am instrument -w com.claulimitswidgets.android/.AppInstrumentation \
+  | tee /dev/stderr | grep -q "OK:"
 ```
 Esperado: `OK: N comprobaciones, 0 fallos`, con N mayor que antes.
 
@@ -1395,21 +1431,43 @@ public final class UsageClient {
         return null;
     }
 
-    public List<String> organizations() throws IOException, AuthExpiredException,
+    /**
+     * Una organizacion, con lo unico que la app necesita. El `uuid` es un dato de cuenta
+     * privado; el `name` es lo que ve el usuario en Ajustes.
+     */
+    public static final class Org {
+        public final String uuid;
+        public final String name;    // puede ser null: entonces Ajustes muestra el uuid abreviado
+        Org(String uuid, String name) { this.uuid = uuid; this.name = name; }
+    }
+
+    public List<Org> organizations() throws IOException, AuthExpiredException,
             BlockedException, RetryLaterException, UnrecognizedFormatException {
         String body = get(ORGS);
         Object root = parseOrFail(body);
         if (!(root instanceof List)) {
             throw new UnrecognizedFormatException("/api/organizations no devolvio un arreglo");
         }
-        List<String> out = new ArrayList<>();
+        List<Org> out = new ArrayList<>();
         for (Object item : (List<?>) root) {
             if (!(item instanceof Map)) continue;
-            Object uuid = ((Map<?, ?>) item).get("uuid");
-            if (uuid instanceof String && !((String) uuid).isEmpty()) out.add((String) uuid);
+            Map<?, ?> m = (Map<?, ?>) item;
+            Object uuid = m.get("uuid");
+            if (!(uuid instanceof String) || ((String) uuid).isEmpty()) continue;
+            // `name` es el nombre de la organizacion; si falta, `plan_display_name` sirve para
+            // distinguir dos. Si tampoco esta, Ajustes cae al uuid abreviado.
+            String name = str(m.get("name"));
+            if (name == null) name = str(m.get("plan_display_name"));
+            out.add(new Org((String) uuid, name));
         }
         if (out.isEmpty()) throw new UnrecognizedFormatException("ninguna organizacion con uuid");
         return out;
+    }
+
+    private static String str(Object v) {
+        if (!(v instanceof String)) return null;
+        String s = (String) v;
+        return s.isEmpty() ? null : s;
     }
 
     private static final java.util.regex.Pattern UUID_RE =
@@ -1514,7 +1572,10 @@ núcleo: allí `MAX_INPUT` se mide sobre texto ya decodificado y no protege de u
 ```bash
 TEST=1 bash android/app/build.sh \
   && adb install -r android/app/build/claude-usage.apk \
-  && adb shell am instrument -w com.claulimitswidgets.android/.AppInstrumentation
+  && # `am instrument -w` sale 0 aunque la instrumentacion termine con finish(1): el codigo de salida
+# que devuelve es el de adb, no el de la prueba. Hay que mirar el texto.
+adb shell am instrument -w com.claulimitswidgets.android/.AppInstrumentation \
+  | tee /dev/stderr | grep -q "OK:"
 ```
 Esperado: `OK`, con las 11 comprobaciones nuevas de `UsageClientTest`.
 
@@ -1642,7 +1703,10 @@ public final class OrgSelector {
 ```bash
 TEST=1 bash android/app/build.sh \
   && adb install -r android/app/build/claude-usage.apk \
-  && adb shell am instrument -w com.claulimitswidgets.android/.AppInstrumentation
+  && # `am instrument -w` sale 0 aunque la instrumentacion termine con finish(1): el codigo de salida
+# que devuelve es el de adb, no el de la prueba. Hay que mirar el texto.
+adb shell am instrument -w com.claulimitswidgets.android/.AppInstrumentation \
+  | tee /dev/stderr | grep -q "OK:"
 git add android/app/src android/app/test
 git commit -m "feat: regla de seleccion de organizacion (D2)"
 ```
@@ -1666,6 +1730,7 @@ es avisar antes.
         shows a verification code instead of signing you in, type that code here.</string>
     <string name="login_start">Sign in with email</string>
     <string name="login_again">Sign in again</string>
+    <string name="probe_title">Test the connection</string>
     <string name="login_done">Done</string>
     <string name="login_checking">Checking…</string>
     <string name="login_no_session">No session yet. Finish signing in on the page above.</string>
@@ -1684,6 +1749,7 @@ Y a `res/values-es/strings.xml`:
         te muestra un código de verificación en vez de iniciar sesión, escribe ese código aquí.</string>
     <string name="login_start">Entrar con correo</string>
     <string name="login_again">Volver a entrar</string>
+    <string name="probe_title">Probar la conexión</string>
     <string name="login_done">Listo</string>
     <string name="login_checking">Comprobando…</string>
     <string name="login_no_session">Todavía no hay sesión. Termina de entrar en la página de arriba.</string>
@@ -1717,6 +1783,9 @@ Y a `res/values-es/strings.xml`:
             android:textSize="15sp" android:paddingBottom="20dp" />
         <Button android:id="@+id/btn_start" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:text="@string/login_start" />
+        <Button android:id="@+id/btn_probe" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:text="@string/probe_title"
+            android:visibility="gone" />
         <Button android:id="@+id/btn_settings" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:text="@string/settings_title"
             android:visibility="gone" />
@@ -1831,9 +1900,11 @@ public class LoginActivity extends Activity {
         ((TextView) findViewById(R.id.intro_status)).setText(
                 signedIn ? R.string.login_ok : R.string.login_steps);
         findViewById(R.id.btn_settings).setVisibility(signedIn ? View.VISIBLE : View.GONE);
+        findViewById(R.id.btn_probe).setVisibility(signedIn ? View.VISIBLE : View.GONE);
         findViewById(R.id.btn_logout_intro).setVisibility(signedIn ? View.VISIBLE : View.GONE);
         ((Button) findViewById(R.id.btn_logout_intro)).setOnClickListener(v -> {
             Session.logout(this);
+            wipeWebView();        // el WebView pudo quedar con cookies de un login anterior
             recreate();
         });
         ((Button) findViewById(R.id.btn_start)).setText(
@@ -1849,6 +1920,8 @@ public class LoginActivity extends Activity {
     /** El usuario dice que ya entro. Se comprueba leyendo la cookie, no creyendole. */
     private void finishLogin() {
         status.setText(R.string.login_checking);
+        // El UA se lee en el hilo de UI: `web.getSettings()` no se toca desde otro hilo.
+        final String ua = userAgent(web);
         String all = CookieManager.getInstance().getCookie(ORIGIN);
         String minimal = UsageClient.minimalCookies(all);
         if (!minimal.contains("sessionKey=")) {
@@ -1860,7 +1933,9 @@ public class LoginActivity extends Activity {
             // El UA del WebView es el que usaran las consultas nativas: una sola huella hacia
             // claude.ai. Se guarda aqui porque un JobService no puede crear un WebView.
             getSharedPreferences(SettingsActivity.PREFS, MODE_PRIVATE).edit()
-                    .putString("user_agent", userAgent(web)).apply();
+                    .putString("user_agent", ua).apply();
+            // Volver a entrar arregla el problema: la espera acumulada ya no aplica.
+            UsageRefresher.clearBackoff(this);
         } catch (Exception e) {
             // El mensaje de la excepcion podria arrastrar material sensible: no se muestra.
             status.setText(R.string.login_no_session);
@@ -2041,6 +2116,12 @@ public final class Session {
     private Session() {}
 
     public static void logout(Context ctx) {
+        synchronized (UsageRefresher.LOCK) {   // no borrar mientras un refresco escribe
+            logoutLocked(ctx);
+        }
+    }
+
+    private static void logoutLocked(Context ctx) {
         Context app = ctx.getApplicationContext();
         new SessionStore(app).clear();                       // cookie + llave del Keystore
         new SampleStore(app.getFilesDir()).clear();          // samples.jsonl (D5)
@@ -2152,6 +2233,9 @@ public class SettingsActivity extends Activity {
         setContentView(R.layout.activity_settings);
         RadioGroup group = findViewById(R.id.orgs);
         SharedPreferences prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        // La lista cacheada no se refresca sola: si el usuario crea o deja una organizacion,
+        // Ajustes mostraria la de siempre. Abrir esta pantalla es el momento natural de mirar.
+        WidgetUpdateJob.refreshOrgs(this);
         String current = prefs.getString(KEY_ORG, null);
 
         RadioButton auto = new RadioButton(this);
@@ -2162,13 +2246,16 @@ public class SettingsActivity extends Activity {
 
         // Se muestran NOMBRES, no uuid: un uuid no le dice nada al usuario y acabaria en una
         // captura. `SnapshotStore` los guarda como "uuid|nombre" al consultar /organizations.
-        for (String entry : knownOrgs()) {
-            String uuid = entry.contains("|") ? entry.substring(0, entry.indexOf('|')) : entry;
-            String name = entry.contains("|") ? entry.substring(entry.indexOf('|') + 1) : null;
+        for (UsageClient.Org o : knownOrgs()) {
             RadioButton b = new RadioButton(this);
-            b.setText(name != null && !name.isEmpty() ? name : abbreviate(uuid));
-            b.setChecked(uuid.equals(current));
-            b.setOnClickListener(v -> prefs.edit().putString(KEY_ORG, uuid).apply());
+            b.setText(o.name != null ? o.name : abbreviate(o.uuid));
+            b.setChecked(o.uuid.equals(current));
+            b.setOnClickListener(v -> {
+                prefs.edit().putString(KEY_ORG, o.uuid).apply();
+                // Elegir organizacion es una accion del usuario: no debe esperar al backoff.
+                UsageRefresher.clearBackoff(this);
+                WidgetUpdateJob.runNow(this);
+            });
             group.addView(b);
         }
 
@@ -2179,7 +2266,7 @@ public class SettingsActivity extends Activity {
     }
 
     /** Los ultimos uuid vistos, cacheados por el refrescador. Vacio si todavia no consulto. */
-    private List<String> knownOrgs() {
+    private List<UsageClient.Org> knownOrgs() {
         return new SnapshotStore(this).knownOrgs();   // F4
     }
 
@@ -2374,7 +2461,10 @@ public final class SampleStore {
 ```bash
 TEST=1 bash android/app/build.sh \
   && adb install -r android/app/build/claude-usage.apk \
-  && adb shell am instrument -w com.claulimitswidgets.android/.AppInstrumentation
+  && # `am instrument -w` sale 0 aunque la instrumentacion termine con finish(1): el codigo de salida
+# que devuelve es el de adb, no el de la prueba. Hay que mirar el texto.
+adb shell am instrument -w com.claulimitswidgets.android/.AppInstrumentation \
+  | tee /dev/stderr | grep -q "OK:"
 git add android/app/src android/app/test && git commit -m "feat: almacen de muestras con ventana de 15 dias"
 ```
 
@@ -2404,7 +2494,8 @@ public final class Snapshot {
      * varias organizaciones y ninguna pista de cual mira el usuario, asi que elegir por el
      * seria mostrarle una cuota que no es la suya.
      */
-    public enum Problem { NO_SESSION, AUTH_EXPIRED, BLOCKED, OFFLINE, BAD_FORMAT, CHOOSE_ORG }
+    public enum Problem { NO_SESSION, AUTH_EXPIRED, BLOCKED, OFFLINE, BAD_FORMAT, CHOOSE_ORG,
+                          LOADING }
 
     public final UsageModel model;
     public final DayUsage day;
@@ -2480,22 +2571,28 @@ public final class SnapshotStore {
                 .getSharedPreferences(SettingsActivity.PREFS, Context.MODE_PRIVATE);
     }
 
-    public void rememberOrgs(List<String> orgs) {
-        prefs.edit().putString(KEY_ORGS, String.join(",", orgs)).apply();
+    /** Se serializa `uuid|nombre`; el `|` no aparece en un uuid ni se espera en un nombre. */
+    public void rememberOrgs(List<UsageClient.Org> orgs) {
+        StringBuilder sb = new StringBuilder();
+        for (UsageClient.Org o : orgs) {
+            if (sb.length() > 0) sb.append(',');
+            sb.append(o.uuid).append('|').append(o.name == null ? "" : o.name.replace(',', ' '));
+        }
+        prefs.edit().putString(KEY_ORGS, sb.toString()).apply();
     }
 
     /**
      * Guarda lo minimo para volver a pintar el widget sin red. No se guarda `scoped` ni
      * `breakdown`: el widget no los muestra y serian datos de la cuenta en disco sin razon.
      */
-    public void remember(UsageModel model, Instant fetchedAt, List<String> orgs) {
+    public void remember(UsageModel model, Instant fetchedAt) {
+        // No toca KEY_ORGS: de eso se encarga `rememberOrgs`, que corre antes y con otro formato.
         prefs.edit()
                 .putFloat(KEY_SP, (float) model.session.percent)
                 .putString(KEY_SR, model.session.resetsAt == null ? "" : model.session.resetsAt.toString())
                 .putFloat(KEY_WP, (float) model.weekly.percent)
                 .putString(KEY_WR, model.weekly.resetsAt == null ? "" : model.weekly.resetsAt.toString())
                 .putLong(KEY_FETCHED_AT, fetchedAt.getEpochSecond())
-                .putString(KEY_ORGS, String.join(",", orgs))
                 .apply();
     }
 
@@ -2519,10 +2616,17 @@ public final class SnapshotStore {
         try { return Instant.parse(v); } catch (RuntimeException e) { return null; }
     }
 
-    public List<String> knownOrgs() {
+    public List<UsageClient.Org> knownOrgs() {
         String raw = prefs.getString(KEY_ORGS, "");
-        if (raw.isEmpty()) return new ArrayList<>();
-        return new ArrayList<>(Arrays.asList(raw.split(",")));
+        List<UsageClient.Org> out = new ArrayList<>();
+        if (raw.isEmpty()) return out;
+        for (String entry : raw.split(",")) {
+            int bar = entry.indexOf('|');
+            String uuid = bar < 0 ? entry : entry.substring(0, bar);
+            String name = bar < 0 || bar == entry.length() - 1 ? null : entry.substring(bar + 1);
+            if (!uuid.isEmpty()) out.add(new UsageClient.Org(uuid, name));
+        }
+        return out;
     }
 
     public void clear() {
@@ -2579,7 +2683,7 @@ public final class UsageRefresher {
      * Un solo refresco a la vez. `runNow` (toque, login) y el JobService pueden coincidir, y
      * `SampleStore.append` es leer-y-reescribir: sin esto, dos a la vez corrompen samples.jsonl.
      */
-    private static final Object LOCK = new Object();
+    static final Object LOCK = new Object();
 
     public Snapshot refresh() {
         synchronized (LOCK) {
@@ -2602,9 +2706,14 @@ public final class UsageRefresher {
                 SettingsActivity.PREFS, Context.MODE_PRIVATE);
 
         // Backoff: si el ultimo intento fallo, no se vuelve a la red hasta que toque.
+        // Importante: aqui NO se llama a keepOld. Si lo hiciera, cada toque volveria a
+        // incrementar el contador sin haber hecho una sola peticion, y cinco toques en un
+        // minuto dejarian al widget media hora sin consultar.
         long notBefore = prefs.getLong(KEY_NEXT_ALLOWED, 0L);
         if (Instant.now().getEpochSecond() < notBefore) {
-            return keepOld(problemFromName(prefs.getString(KEY_LAST_PROBLEM, null)));
+            Snapshot old = last();
+            Snapshot.Problem p = problemFromName(prefs.getString(KEY_LAST_PROBLEM, null));
+            return old.hasData() ? old.withProblem(p) : Snapshot.of(p);
         }
 
         UsageClient client = new UsageClient(cookies, userAgent());
@@ -2614,29 +2723,42 @@ public final class UsageRefresher {
 
             // Con una pista basta: no se llama a /organizations en cada refresco. Solo cuando
             // no hay pista o todavia no se vio la lista. Son 3 peticiones menos por ciclo.
-            List<String> orgs = (manual != null || lastActive != null) && !meta.knownOrgs().isEmpty()
-                    ? meta.knownOrgs()
-                    : client.organizations();
+            List<UsageClient.Org> orgs =
+                    (manual != null || lastActive != null) && !meta.knownOrgs().isEmpty()
+                            ? meta.knownOrgs()
+                            : client.organizations();
             meta.rememberOrgs(orgs);   // Ajustes los necesita aunque el resto falle
+            // `OrgSelector` recibe solo uuids: si le llegara "uuid|nombre", el probe llamaria a
+            // usage("uuid|nombre") y `UUID_RE` lo rechazaria.
+            List<String> uuids = new ArrayList<>();
+            for (UsageClient.Org o : orgs) uuids.add(o.uuid);
 
             // El probe devuelve el modelo, no un booleano: asi la consulta que decide la
             // organizacion es la misma que se muestra, en vez de tirarla y repetirla.
             final UsageModel[] fetched = new UsageModel[1];
             final Exception[] fatal = new Exception[1];
-            OrgSelector.Choice choice = OrgSelector.choose(orgs, manual, lastActive, uuid -> {
+            OrgSelector.Choice choice = OrgSelector.choose(uuids, manual, lastActive, uuid -> {
                 if (fatal[0] != null) return false;
                 try {
                     fetched[0] = client.usage(uuid);
                     return true;
-                } catch (AuthExpiredException | BlockedException e) {
-                    fatal[0] = e;      // no se traga: se vuelve a lanzar abajo
+                } catch (AuthExpiredException | BlockedException
+                        | UsageClient.RetryLaterException | IOException e) {
+                    // Estas NO son "esta organizacion no sirve": son fallos del intento entero.
+                    // Tragarlas haria que sin red el widget dijera "formato no reconocido" en
+                    // vez de "sin conexion".
+                    fatal[0] = e;
                     return false;
-                } catch (Exception e) {
-                    return false;
+                } catch (UnrecognizedFormatException e) {
+                    return false;   // esta organizacion responde algo raro; se prueba la siguiente
                 }
             });
             if (fatal[0] instanceof AuthExpiredException) throw (AuthExpiredException) fatal[0];
             if (fatal[0] instanceof BlockedException) throw (BlockedException) fatal[0];
+            if (fatal[0] instanceof UsageClient.RetryLaterException) {
+                throw (UsageClient.RetryLaterException) fatal[0];
+            }
+            if (fatal[0] instanceof IOException) throw (IOException) fatal[0];
             if (choice.ambiguous) return keepOld(Snapshot.Problem.CHOOSE_ORG);
             if (choice.orgUuid == null) return keepOld(Snapshot.Problem.BAD_FORMAT);
 
@@ -2666,6 +2788,17 @@ public final class UsageRefresher {
         prefs.edit().remove(KEY_ATTEMPT).remove(KEY_NEXT_ALLOWED).remove(KEY_LAST_PROBLEM).apply();
     }
 
+    /**
+     * Lo llaman el login y el selector de organizacion: cuando el usuario arregla el problema,
+     * la espera acumulada ya no tiene sentido.
+     */
+    public static void clearBackoff(Context ctx) {
+        ctx.getApplicationContext()
+                .getSharedPreferences(SettingsActivity.PREFS, Context.MODE_PRIVATE)
+                .edit().remove(KEY_ATTEMPT).remove(KEY_NEXT_ALLOWED).remove(KEY_LAST_PROBLEM)
+                .apply();
+    }
+
     private static Snapshot.Problem problemFromName(String name) {
         if (name == null) return Snapshot.Problem.OFFLINE;
         try {
@@ -2680,15 +2813,21 @@ public final class UsageRefresher {
      * sin esto `Backoff` quedaria definido y probado pero nunca aplicado.
      */
     private Snapshot keepOld(Snapshot.Problem p) {
-        SharedPreferences prefs = ctx.getSharedPreferences(
-                SettingsActivity.PREFS, Context.MODE_PRIVATE);
-        int attempt = prefs.getInt(KEY_ATTEMPT, 0);
-        prefs.edit()
-                .putInt(KEY_ATTEMPT, attempt + 1)
-                .putLong(KEY_NEXT_ALLOWED,
-                        Instant.now().getEpochSecond() + Backoff.seconds(attempt))
-                .putString(KEY_LAST_PROBLEM, p.name())
-                .apply();
+        // Solo cuentan para el backoff los fallos que se arreglan esperando. Un 401 o una
+        // organizacion por elegir no mejoran con el tiempo: los arregla el usuario, y hacerle
+        // esperar media hora despues de volver a entrar seria absurdo.
+        if (p == Snapshot.Problem.OFFLINE || p == Snapshot.Problem.BLOCKED
+                || p == Snapshot.Problem.BAD_FORMAT) {
+            SharedPreferences prefs = ctx.getSharedPreferences(
+                    SettingsActivity.PREFS, Context.MODE_PRIVATE);
+            int attempt = prefs.getInt(KEY_ATTEMPT, 0);
+            prefs.edit()
+                    .putInt(KEY_ATTEMPT, attempt + 1)
+                    .putLong(KEY_NEXT_ALLOWED,
+                            Instant.now().getEpochSecond() + Backoff.seconds(attempt))
+                    .putString(KEY_LAST_PROBLEM, p.name())
+                    .apply();
+        }
         Snapshot old = last();
         return old.hasData() ? old.withProblem(p) : Snapshot.of(p);
     }
@@ -2703,7 +2842,9 @@ public final class UsageRefresher {
         if (!session.hasSession()) return Snapshot.of(Snapshot.Problem.NO_SESSION);
         UsageModel model = meta.lastModel();
         Instant fetchedAt = meta.lastFetchInstant();
-        if (model == null || fetchedAt == null) return Snapshot.of(Snapshot.Problem.OFFLINE);
+        // Hay sesion pero todavia no se ha consultado nunca. No es "sin conexion": es que
+        // acaba de empezar. Decir OFFLINE aqui seria mentir en el caso mas comun del primer uso.
+        if (model == null || fetchedAt == null) return Snapshot.of(Snapshot.Problem.LOADING);
         List<Sample> all;
         try {
             all = samples.load();
@@ -2736,7 +2877,7 @@ public final class UsageRefresher {
             all = java.util.Collections.emptyList();
         }
         DayUsage day = History.compute(model.weekly, all, now, tz);
-        meta.remember(model, now, meta.knownOrgs());
+        meta.remember(model, now);
         return new Snapshot(
                 model,
                 day,
@@ -2974,6 +3115,7 @@ reintentar.
     <string name="p_offline">No connection</string>
     <string name="p_bad_format">Unexpected response format</string>
     <string name="p_choose_org">Pick an organization in Settings</string>
+    <string name="p_loading">Updating…</string>
 ```
 
 `values-es/strings.xml`:
@@ -2994,6 +3136,7 @@ reintentar.
     <string name="p_offline">Sin conexión</string>
     <string name="p_bad_format">Formato de respuesta no reconocido</string>
     <string name="p_choose_org">Elige organización en Ajustes</string>
+    <string name="p_loading">Actualizando…</string>
 ```
 
 - [ ] **Paso 7: `WidgetRenderer`**
@@ -3138,6 +3281,7 @@ public final class WidgetRenderer {
             case BLOCKED:       return R.string.p_blocked;
             case OFFLINE:       return R.string.p_offline;
             case CHOOSE_ORG:    return R.string.p_choose_org;
+            case LOADING:       return R.string.p_loading;
             default:            return R.string.p_bad_format;
         }
     }
@@ -3179,9 +3323,13 @@ public class Widget4x1Provider extends AppWidgetProvider {
 
     @Override
     public void onUpdate(Context ctx, AppWidgetManager awm, int[] ids) {
-        Snapshot s = new UsageRefresher(ctx).last();
+        UsageRefresher r = new UsageRefresher(ctx);
+        Snapshot s = r.last();
         for (int id : ids) awm.updateAppWidget(id, WidgetRenderer.render(ctx, s, compact()));
         WidgetUpdateJob.schedule(ctx);
+        // Primera vez: hay sesion pero ningun dato todavia. Sin esto el widget se queda en
+        // "Actualizando..." hasta el primer ciclo del job, que puede tardar 15 minutos.
+        if (s.problem == Snapshot.Problem.LOADING) WidgetUpdateJob.runNow(ctx);
     }
 
     @Override
@@ -3291,6 +3439,17 @@ public class WidgetUpdateJob extends JobService {
             }
             pushToWidgets(ctx, s);
         }, "cuw-refresh").start();
+    }
+
+    /** Vuelve a leer /api/organizations en segundo plano. Lo llama Ajustes al abrirse. */
+    public static void refreshOrgs(Context ctx) {
+        new Thread(() -> {
+            try {
+                new UsageRefresher(ctx).refresh();
+            } catch (RuntimeException ignored) {
+                // Ajustes sigue usable con la lista vieja.
+            }
+        }, "cuw-orgs").start();
     }
 
     public static int countAll(Context ctx) {
@@ -3434,7 +3593,7 @@ Cloudflare puntúa huella TLS, ritmo y reputación de IP. Esta fase mide el ritm
 # recorrido.sh - ejercita la app instalada en el telefono y comprueba lo que muestra.
 # Requiere una sesion ya iniciada (el login es lo unico manual).
 # Solo ASCII. Uso: bash android/app/pruebas/recorrido.sh
-set -uo pipefail
+set -euo pipefail
 PKG=com.claulimitswidgets.android
 S="$(adb devices | awk '/\tdevice$/{print $1; exit}')"
 [ -n "$S" ] || { echo "ERROR: sin dispositivo; revisar la depuracion inalambrica"; exit 1; }
@@ -3466,23 +3625,36 @@ comprobar "sigue mostrando datos tras el toque" '(Sesion|Sesión|Session) [0-9]+
 
 echo "== 3. sin red =="
 echo "  (se corta el acceso del paquete, no se apagan las radios del dueno)"
-UID=$(adb -s "$S" shell dumpsys package $PKG | grep -m1 userId= | grep -oE '[0-9]+')
-[ -n "$UID" ] || { echo "  FALLA     no se pudo leer el uid de $PKG"; fallos=$((fallos+1)); }
-adb -s "$S" shell cmd netpolicy add restrict-background-blacklist "$UID"
-adb -s "$S" shell cmd netpolicy set restrict-background true
-# Se VERIFICA que la restriccion entro. Si el comando fallara en silencio, la prueba pasaria
-# siempre sin probar nada: es justo lo que le paso a la primera version de este guion.
-if adb -s "$S" shell cmd netpolicy list restrict-background-blacklist | grep -qw "$UID"; then
-  echo "  OK        la restriccion de red esta activa"
+# OJO: `UID` es de SOLO LECTURA en bash. Asignarla falla en silencio y el guion seguiria con el
+# uid de Termux, restringiendo la app equivocada y pasando igual. Por eso se llama APP_UID.
+APP_UID=$(adb -s "$S" shell dumpsys package $PKG | grep -m1 userId= | grep -oE '[0-9]+')
+if [ -z "$APP_UID" ]; then
+  echo "  FALLA     no se pudo leer el uid de $PKG"; fallos=$((fallos+1))
 else
-  echo "  FALLA     no se pudo restringir la red de $PKG"; fallos=$((fallos+1))
+  adb -s "$S" shell cmd netpolicy add restrict-background-blacklist "$APP_UID"
+  adb -s "$S" shell cmd netpolicy set restrict-background true
+  # Se VERIFICA que la restriccion entro. Si el comando fallara en silencio, la prueba pasaria
+  # siempre sin probar nada: es justo lo que le paso a las dos primeras versiones de este guion.
+  if adb -s "$S" shell cmd netpolicy list restrict-background-blacklist | grep -qw "$APP_UID"; then
+    echo "  OK        la app esta en la lista de restriccion"
+  else
+    echo "  FALLA     no se pudo restringir la red de $PKG"; fallos=$((fallos+1))
+  fi
+  # Y que la red sea MEDIDA: `restrict-background` solo corta datos de fondo en redes medidas.
+  # En la Wi-Fi de casa, sin marcarla como medida, no corta NADA y la prueba no probaria nada.
+  if adb -s "$S" shell dumpsys netpolicy | grep -qiE "metered.*true|mMeteredIfaces.*[a-z]"; then
+    echo "  OK        hay una red medida"
+  else
+    echo "  FALLA     la red no esta marcada como medida: este paso no prueba nada"
+    fallos=$((fallos+1))
+  fi
+  adb -s "$S" shell am broadcast -a $PKG.TAP -n $PKG/.Widget4x2Provider >/dev/null 2>&1
+  sleep 15
+  comprobar "avisa de que no hay conexion" '(Sin conexion|Sin conexión|No connection)'
+  comprobar "conserva el dato viejo con su edad" '(hace [0-9]+|[0-9]+ (min|h) ago|ahora mismo|just now)'
+  adb -s "$S" shell cmd netpolicy set restrict-background false
+  adb -s "$S" shell cmd netpolicy remove restrict-background-blacklist "$APP_UID"
 fi
-adb -s "$S" shell am broadcast -a $PKG.TAP -n $PKG/.Widget4x2Provider >/dev/null 2>&1
-sleep 15
-comprobar "avisa de que no hay conexion" '(Sin conexion|Sin conexión|No connection)'
-comprobar "conserva el dato viejo con su edad" '(hace [0-9]+|[0-9]+ (min|h) ago|ahora mismo|just now)'
-adb -s "$S" shell cmd netpolicy set restrict-background false
-adb -s "$S" shell cmd netpolicy remove restrict-background-blacklist "$UID"
 
 echo "== 4. rotacion =="
 adb -s "$S" shell settings put system accelerometer_rotation 0
@@ -3505,6 +3677,19 @@ echo "recorrido completo sin fallos"
 > **Nota deliberada:** el guion **no apaga el WiFi ni los datos**. Es el teléfono del dueño, lo
 > está usando, y la sesión de trabajo va por esa red. Se restringe el acceso del paquete, que es
 > reversible y local.
+
+- [ ] **Paso 1b: Marcar la Wi-Fi como medida (manual, una sola vez)**
+
+`restrict-background` **solo corta datos de fondo en redes medidas**. En una Wi-Fi normal no corta
+nada, así que sin este paso el "sin red" del guion no prueba nada aunque salga verde.
+
+En el teléfono: Ajustes → Conexiones → Wi-Fi → la red → Uso de datos → **Medida**. Comprobar:
+
+```bash
+adb shell dumpsys netpolicy | grep -iE "metered|mMeteredIfaces" | head -5
+```
+Esperado: la interfaz Wi-Fi aparece entre las medidas. El guion lo verifica y **falla** si no.
+Al terminar las pruebas, volver a dejarla sin medir.
 
 - [ ] **Paso 2: Correrlo** — `bash android/app/pruebas/recorrido.sh`.
   Esperado: `recorrido completo sin fallos`. Cada `FALLA` es un hallazgo que se arregla antes de
@@ -3585,22 +3770,40 @@ trap 'kill $LOGPID 2>/dev/null; command -v termux-wake-unlock >/dev/null 2>&1 &&
 sleep 86400
 echo "fin: $(date -u +%FT%TZ)" >> "$OUT"
 
-# Los contadores los lleva la APP en sus preferencias, no este guion: logcat rota y se pierde,
-# y un `grep -c` sobre un archivo incompleto daria cero sin que nadie lo note.
-echo "== contadores de la app =="
-adb -s "$S" shell run-as com.claulimitswidgets.android \
-  cat shared_prefs/cuw.xml 2>/dev/null | grep -E 'n200|n401|n403|nHtml|nCfMitigated|nRetry' \
-  || echo "  (APK no debuggable: leer los contadores desde Ajustes)"
-echo "== respaldo: lo que alcanzo a quedar en logcat =="
+# Los contadores los lleva la APP y los escribe en UNA linea tras cada ciclo. Se lee la ULTIMA,
+# que trae los totales acumulados: asi no importa que logcat haya rotado por el medio.
+echo "== contadores (ultima linea de totales) =="
+grep -oE 'n200=[0-9]+ n401=[0-9]+ n403=[0-9]+ nHtml=[0-9]+ nCfMitigated=[0-9]+ nRetry=[0-9]+' \
+  "$OUT" | tail -1 || echo "  (ninguna linea de totales: revisar que la app corriera)"
+echo "== respaldo: respuestas individuales que quedaron en el log =="
 grep -oE 'code=[0-9]+' "$OUT" | sort | uniq -c
 ```
 
 - [ ] **Paso 1b: Contadores en la app**
 
-`UsageClient.check` incrementa en las preferencias `cuw` un contador por desenlace: `n200`,
-`n401`, `n403`, `nHtml`, `nCfMitigated`, `nRetry`. Son seis enteros, no llevan ningún dato de la
-cuenta, y son lo que de verdad se lee al final de las 24 h: `logcat` rota y lo que se pierda no
-se recupera.
+`UsageClient.check` es **estática y no tiene `Context`**, así que no puede escribir preferencias.
+Lleva seis contadores estáticos y `UsageRefresher` los vuelca tras cada ciclo:
+
+```java
+    // En UsageClient: seis enteros, ningun dato de la cuenta.
+    static final java.util.concurrent.atomic.AtomicIntegerArray COUNTS =
+            new java.util.concurrent.atomic.AtomicIntegerArray(6);
+    static final int N200 = 0, N401 = 1, N403 = 2, N_HTML = 3, N_CF = 4, N_RETRY = 5;
+
+    /** Una sola linea con los seis totales: la ultima de logcat basta para el reporte. */
+    public static String countsLine() {
+        return "n200=" + COUNTS.get(N200) + " n401=" + COUNTS.get(N401)
+                + " n403=" + COUNTS.get(N403) + " nHtml=" + COUNTS.get(N_HTML)
+                + " nCfMitigated=" + COUNTS.get(N_CF) + " nRetry=" + COUNTS.get(N_RETRY);
+    }
+```
+
+`check(...)` incrementa el que corresponda antes de lanzar, y `UsageRefresher.refreshLocked()`
+termina con `android.util.Log.i("CuwHttp", UsageClient.countsLine())`.
+
+**Por qué así y no con `run-as`:** el APK de release no es depurable, así que
+`adb shell run-as ... cat shared_prefs/...` **siempre** falla. Un guion que lea por ahí daría
+cero sin que nadie lo note, que es el mismo error que ya apareció dos veces en este plan.
 
 - [ ] **Paso 2: Añadir el registro mínimo a `UsageClient`**
 
@@ -3729,6 +3932,11 @@ jobs:
 El `shred` con `if: always()` está a propósito: si el build falla, la llave no puede quedarse en
 el runner.
 
+> **Condición del `versionCode`:** `git rev-list --count HEAD` solo es monótono si los tags
+> `android-v*` se crean **siempre sobre `main`**. Si alguna vez se etiqueta una rama, el número
+> puede bajar y Android rechazaría la actualización con `INSTALL_FAILED_VERSION_DOWNGRADE`, que
+> no explica nada. Etiquetar solo `main`, o pasar a un contador manual.
+
 - [ ] **Paso 2: Verificar que `build.sh` respeta las tres variables** (ya las lee desde F2: `KEYSTORE`,
   `KEYSTORE_PASSWORD`, `KEY_ALIAS`). Probarlo en local con una llave de juguete:
 
@@ -3793,6 +4001,12 @@ Lo que este plan **no** demuestra, escrito en un solo sitio para que nadie lo le
    congelado, no un job real. Si hiciera falta el plan B, hay que medirlo otra vez.
 6. **Que la cookie mínima baste.** Se prueba en la Tarea 3.7 contra el servidor real; hasta que
    esa prueba dé `200`, es una hipótesis.
+7. **`Instrumentation` en este dispositivo.** Es la primera vez que el proyecto la usa. Si
+   `am instrument` falla, el bloqueo va a un memo: no se improvisa otra vía, porque la que había
+   (`app_process`) es justamente la que se descartó por correr con otro uid.
+8. **La prueba "sin red" solo vale con la Wi-Fi marcada como medida.** `restrict-background` no
+   corta nada en una red sin medir. El guion lo verifica y falla si no lo está, pero depende de un
+   ajuste manual del teléfono que hay que acordarse de deshacer.
 
 ## Dependencias entre fases
 
