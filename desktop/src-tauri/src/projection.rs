@@ -173,6 +173,37 @@ mod tests {
     }
 
     #[test]
+    fn ritmo_24h_desde_una_hora_justa() {
+        // R6 paso 2: `now - ref.t >= 1 h` es literal. Ningun fixture cae en este borde.
+        let now = ts("2026-10-06T12:00:00-06:00");
+        let week = Some(ts("2026-10-09T18:00:00-06:00"));
+        let with_ref = |t: &str| {
+            let samples = [
+                Sample {
+                    t: ts(t),
+                    percent: 30.0,
+                    resets_at: week,
+                },
+                Sample {
+                    t: now,
+                    percent: 31.0,
+                    resets_at: week,
+                },
+            ];
+            project_weekly(now, &win(31.0, week), &samples)
+        };
+        let p = with_ref("2026-10-06T11:00:00-06:00");
+        assert_eq!(p.basis, Some(Basis::Last24h));
+        // 1 %/h: faltan 69 h -> 2026-10-09T09:00-06:00, antes del reinicio.
+        assert_eq!(p.hits_at, Some(ts("2026-10-09T09:00:00-06:00")));
+        assert_eq!(p.before_reset, Some(true));
+        assert_eq!(
+            with_ref("2026-10-06T11:00:01-06:00").basis,
+            Some(Basis::Window)
+        );
+    }
+
+    #[test]
     fn ritmo_minusculo_da_nulo() {
         let now = ts("2026-10-06T12:00:00-06:00");
         let soon = Some(ts("2026-10-06T15:00:00-06:00"));
