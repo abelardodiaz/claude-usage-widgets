@@ -113,8 +113,8 @@ o si `|a.resets_at − b.resets_at| < 3600 s`.
    si no `"window"`.
 4. Con ritmo 24h: `rate = (percent − ref.percent) / (now − ref.t)`, `basis = "24h"`.
    Si `rate ≤ 0` → `hits_at = null`, `before_reset = null` (`basis` sigue siendo `"24h"`).
-5. Sin ritmo 24h: `start = resets_at − 7 días`, `elapsed = now − start`. Si `percent ≤ 0`,
-   `elapsed < 60 s` o `now ≥ resets_at` → `hits_at = null`, `before_reset = null`, `basis = null`.
+5. Sin ritmo 24h: `start = resets_at − 7 días`, `elapsed = now − start`. Si `percent ≤ 0` o
+   `elapsed < 60 s` → `hits_at = null`, `before_reset = null`, `basis = null`.
    Si no: `rate = percent / elapsed`, `basis = "window"`.
 6. `hits_at = now + (100 − percent) / rate`, `before_reset = hits_at < resets_at`.
 
@@ -123,14 +123,29 @@ o si `|a.resets_at − b.resets_at| < 3600 s`.
 Los fixtures de `spec/fixtures/colors/` fijan esta regla. Los colores viajan como
 `"green"`, `"amber"`, `"red"` y `"gray"`; el nombre que se muestre al usuario es cosa de la UI.
 
+Cada fixture trae `input.bar`, que dice qué se está pintando y qué más lleva la entrada:
+
+| `bar` | resto de `input` | `expected` |
+|---|---|---|
+| `session`, `weekly`, `scoped` | `percent` | `color` |
+| `today` | `today_used`, `quota_today` (puede ser nulo) | `color` |
+| `pace_mark` | `now`, `resets_at` (puede ser nulo) | `mark`: número en [0, 1] o nulo |
+
 - Barras de sesión, semana y limitados, por `percent`: verde `< 60`, ámbar `< 85`, rojo `≥ 85`.
   `percent` se usa crudo (R0): uno negativo cae en verde y uno mayor que 100 en rojo; ninguno
   de los dos es error.
-- Barra de hoy, en este orden:
-  1. `quota_today < 0` → **rojo**. La cuota semanal ya se agotó, así que hoy no queda nada.
+- Barra de hoy, **en este orden** (el nulo va primero a propósito: en Java `quota_today` es un
+  `Double` y compararlo antes de descartar el nulo lanzaría `NullPointerException` al desenvolver):
+  1. `quota_today` nulo → gris.
+  2. `quota_today < 0` → **rojo**. La cuota semanal ya se agotó, así que hoy no queda nada.
      Sin este paso el cociente saldría negativo y caería en "verde", diciendo que todo va bien
      justo cuando no es así.
-  2. `quota_today` nulo o 0 → gris.
-  3. Si no, por `today_used / quota_today`: verde `< 0.7`, ámbar `< 1`, rojo `≥ 1`.
+  3. `quota_today` igual a 0 → gris.
+  4. Si no, por `today_used / quota_today`: verde `< 0.7`, ámbar `< 1`, rojo `≥ 1`.
+     Los umbrales se comparan **sobre el cociente en doble precisión**, no con multiplicación
+     cruzada: `today_used / quota_today < 0.7`, nunca `today_used < 0.7 * quota_today`. Con
+     `quota_today` negativo las dos formas difieren, y el paso 2 ya cubre ese caso.
 - Marca de ritmo parejo en la barra semanal: `1 − (resets_at − now) / 7 días`, acotada a [0, 1];
-  sin marca si `resets_at` es nulo.
+  sin marca (nula) solo si `resets_at` es nulo. **Con el reinicio ya pasado la marca es 1, no
+  nula**: aquí el dato rancio no se descarta como en R4, R5 y R6, porque la marca solo dice cuánto
+  de la ventana transcurrió y una ventana vencida transcurrió entera. Lo fija `colors/16`.
