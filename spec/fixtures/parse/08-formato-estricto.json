@@ -60,6 +60,24 @@
         "scope": null
       },
       {
+        "kind": "minusculas",
+        "percent": 11,
+        "resets_at": "2026-10-02t12:00:00z",
+        "scope": null
+      },
+      {
+        "kind": "desplazamiento_mayor_que_18h",
+        "percent": 12,
+        "resets_at": "2026-10-02T12:00:00+19:00",
+        "scope": null
+      },
+      {
+        "kind": "desplazamiento_de_18h_exactas",
+        "percent": 13,
+        "resets_at": "2026-10-02T12:00:00+18:00",
+        "scope": null
+      },
+      {
         "kind": "canonica_con_fraccion",
         "percent": 7,
         "resets_at": "2026-10-02T12:00:00.123-06:00",
@@ -92,6 +110,9 @@
       { "label": "segundo_60", "percent": 6, "resets_at": null },
       { "label": "fraccion_de_10_digitos", "percent": 9, "resets_at": null },
       { "label": "fraccion_de_9_digitos", "percent": 10, "resets_at": "2026-10-02T12:00:00.123456789Z" },
+      { "label": "minusculas", "percent": 11, "resets_at": null },
+      { "label": "desplazamiento_mayor_que_18h", "percent": 12, "resets_at": null },
+      { "label": "desplazamiento_de_18h_exactas", "percent": 13, "resets_at": "2026-10-02T12:00:00+18:00" },
       { "label": "canonica_con_fraccion", "percent": 7, "resets_at": "2026-10-02T12:00:00.123-06:00" },
       { "label": "canonica_sin_fraccion", "percent": 8, "resets_at": "2026-10-09T18:00:00Z" }
     ],

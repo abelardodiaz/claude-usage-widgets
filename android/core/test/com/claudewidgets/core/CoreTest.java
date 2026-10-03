@@ -40,6 +40,9 @@ public final class CoreTest {
             "2026-10-02T12:00:00",          // sin desplazamiento
             "26-10-02T12:00:00Z",           // anio de dos digitos
             "2026-10-02T12:00:00.1234567890Z", // fraccion de 10 digitos
+            "2026-10-02t12:00:00z",         // minusculas: la regex es sensible
+            "2026-10-02T12:00:00+19:00",    // desplazamiento mayor que +-18:00
+            "2026-10-02T12:00:00-23:59",
         };
         for (String m : malas) a.eq("se rechaza " + m, null, Parser.instant(m));
 
@@ -49,6 +52,8 @@ public final class CoreTest {
             "2026-10-02T12:00:00.614725-06:00",
             "2026-10-02T12:00:00+05:30",
             "2026-10-02T12:00:00.123456789Z",  // nueve digitos: el maximo
+            "2026-10-02T12:00:00+18:00",       // el limite, valido
+            "2026-10-02T12:00:00-18:00",
         };
         for (String b : buenas) a.isTrue("se acepta " + b, Parser.instant(b) != null);
     }

@@ -126,6 +126,14 @@ public final class Parser {
      * 1-9 digitos: es lo maximo que representan Java y Rust (nanosegundos), y mas digitos se
      * truncarian en silencio, cada uno a su manera. Sin esta puerta, Java y Rust darian
      * instantes distintos con el mismo JSON.
+     *
+     * `T` y `Z` van en MAYUSCULA: la regex es sensible a mayusculas, asi que `...t12:00:00z` se
+     * rechaza aqui aunque `OffsetDateTime` lo aceptaria (su parseo por omision es
+     * parseCaseInsensitive).
+     *
+     * El desplazamiento de +-18:00 NO lo impone esta regex, que admitiria `+23:59`: lo impone
+     * `OffsetDateTime`, que lanza por encima de ese limite y cae en el `catch`. El contrato lo
+     * dice explicito para que la otra implementacion no acepte mas.
      */
     private static final Pattern RFC3339 = Pattern.compile(
             "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?(Z|[+-]\\d{2}:\\d{2})$");

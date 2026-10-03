@@ -17,7 +17,8 @@ Las reglas con pasos numerados se evalúan **en ese orden**: la primera que apli
   YYYY-MM-DDTHH:MM:SS(.fracción)?(Z|+HH:MM|-HH:MM)
   ```
 
-  Año de **exactamente cuatro dígitos sin signo**, `T` como separador, segundos **obligatorios**,
+  Año de **exactamente cuatro dígitos sin signo**, `T` como separador **en mayúscula**, segundos
+  **obligatorios**,
   fracción de **1 a 9 dígitos** si lleva punto (lo máximo que representan Java y Rust;
   más dígitos se truncarían en silencio, cada uno a su manera), desplazamiento con minutos y
   **sin segundos**. Todo lo
@@ -31,6 +32,13 @@ Las reglas con pasos numerados se evalúan **en ese orden**: la primera que apli
   `+00:00:30` desplaza el instante treinta segundos respecto de otra que lo rechace. Esta regla
   vale **solo** para instantes leídos de la respuesta; `t` y `now` de los fixtures no pasan por
   ella.
+
+  `T` y `Z` van **en mayúscula**. RFC 3339 permite minúsculas pero no las exige, y las bibliotecas
+  difieren: `2026-10-02t12:00:00z` lo acepta el parseo por omisión de Java y lo rechaza el de Rust.
+  Se fija la mayúscula para que no haya duda.
+
+  El **desplazamiento está acotado a ±18:00**. Ninguna zona real pasa de +14:00, y es el límite
+  que impone `OffsetDateTime` de Java; Rust aceptaba hasta ±23:59. `+18:00` es válido, `+19:00` no.
 - Números: sin redondeo interno; los fixtures muestran hasta 6 decimales. Tolerancia: 0.001.
 - "h" y "días" en restas de instantes (5 h, 7 días, 24 h, 1 h) son duraciones fijas de
   3600 s y 86 400 s. `days_left` = segundos / 86 400.
