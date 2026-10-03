@@ -339,7 +339,7 @@ Lo que este spike obliga a cambiar o fijar en la especificación de Android:
 6. **`zipalign` no hace falta** en el `build.sh` de W3/F2, y no existe en Termux. `aapt2 link`
    deja `resources.arsc` como `Stored` y añadir `classes.dex` al final con `zip` no mueve su
    desplazamiento, así que conserva la alineación a 4 bytes de `targetSdk >= 30`.
-7. **Las consultas periódicas no usan el WebView.** Van por `HttpURLConnection` desde el`
+7. **Las consultas periódicas no usan el WebView.** Van por `HttpURLConnection` desde el
    `JobScheduler`, que es lo que A2.3 mostró que funciona. Con `postDelayed` en segundo plano el
    WebView no corrió (Freecess en Samsung); bajo `JobScheduler` no se probó (ver A2.4).
 8. **Manejar el reto aunque hoy no aparezca.** La consulta nativa debe tratar `403`, la cabecera

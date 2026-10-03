@@ -147,14 +147,15 @@ El prototipo hace algunas simplificaciones; la versión definitiva las corrige:
   - Un `401` en cualquier consulta lleva a la pantalla de login (la duración de la sesión no es
     medible desde la app).
 - **Widget:** `AppWidgetProvider` con `RemoteViews` (tamaños 4×1 compacto y 4×2 con barras), con
-  `android:exported="false"` (verificado: el sistema entrega las actualizaciones y el toque) y
+  `android:exported="false"` (verificado en One UI: el sistema entrega las actualizaciones y el toque; otros lanzadores sin probar) y
   `previewLayout` obligatorio. El contenido llena la celda. Tocar = actualizar; mantener = abrir la app.
 - **Burbuja:** servicio en primer plano (`foregroundServiceType="specialUse"`) con una vista en
   `TYPE_APPLICATION_OVERLAY` que muestra el % de sesión en un círculo de color; al tocarla se
   expande al panel completo. Requiere permiso de superposición, pedido con explicación previa.
 - **Build:** `android/build.sh` con `aapt2` + `javac` + `d8` + `apksigner`, el mismo script en el
   teléfono (Termux) y en Ubuntu (CI). `minSdk 29`, `targetSdk 34`. Sin `zipalign` (no existe en
-  Termux y no hace falta: verificado en W0). Base probada: `android/spikes/w0/`.
+  Termux y no hace falta: verificado en W0). Referencia (no base): `android/spikes/w0/`, desechable; W3 no lo hereda (ver "Lo que W3 NO debe
+  copiar" en el reporte del spike A2).
 - **Firma:** builds de prueba con llave de debug en el teléfono; el APK de release se firma
   solo en GitHub Actions con la llave en un secret del repositorio.
 
