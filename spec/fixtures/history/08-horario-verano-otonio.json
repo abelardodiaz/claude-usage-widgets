@@ -1,0 +1,32 @@
+{
+  "description": "Dia de 25 h (termina el horario de verano): el reparto de R3 sigue el tiempo real, no el reloj",
+  "input": {
+    "tz": "America/New_York",
+    "now": "2026-11-01T12:00:00-05:00",
+    "weekly": {
+      "percent": 35,
+      "resets_at": "2026-11-05T00:00:00-05:00"
+    },
+    "samples": [
+      {
+        "t": "2026-10-31T12:00:00-04:00",
+        "percent": 10,
+        "resets_at": "2026-11-05T00:00:00-05:00"
+      },
+      {
+        "t": "2026-11-01T12:00:00-05:00",
+        "percent": 35,
+        "resets_at": "2026-11-05T00:00:00-05:00"
+      }
+    ]
+  },
+  "expected": {
+    "per_day": {
+      "2026-10-31": 12,
+      "2026-11-01": 13
+    },
+    "today_used": 13,
+    "quota_today": 19.298969,
+    "partial": false
+  }
+}

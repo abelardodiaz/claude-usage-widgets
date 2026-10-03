@@ -14,7 +14,17 @@ from jsonschema import Draft202012Validator, FormatChecker
 
 ROOT = Path(__file__).parent
 DAY = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+# R0 exige zona IANA con horario de verano para "dia local". Se admite tambien el
+# desplazamiento fijo que usan los fixtures sin cambio de horario.
+TZ_OFFSET = re.compile(r"^[+-]\d{2}:\d{2}$")
+TZ_IANA = re.compile(r"^[A-Za-z][A-Za-z0-9_+-]*(?:/[A-Za-z0-9_+-]+)+$")
 errors = []
+
+
+def is_tz(s):
+    """Solo comprueba la forma. No resuelve la zona: este validador no calcula nada,
+    y la base IANA no esta disponible en todas las plataformas donde se corre."""
+    return isinstance(s, str) and bool(TZ_OFFSET.match(s) or TZ_IANA.match(s))
 
 
 def is_instant(s):
@@ -103,8 +113,11 @@ for p in sorted((ROOT / "fixtures" / "history").glob("*.json")):
     inp, exp = fx.get("input", {}), fx.get("expected", {})
     need(p, inp, ["tz", "now", "weekly", "samples"])
     need(p, exp, ["per_day", "today_used", "quota_today", "partial"])
-    if not isinstance(inp.get("tz"), str) or not re.match(r"^[+-]\d{2}:\d{2}$", inp.get("tz", "")):
-        errors.append(f"{p}: 'tz' debe ser un desplazamiento fijo tipo -06:00")
+    if not is_tz(inp.get("tz")):
+        errors.append(
+            f"{p}: 'tz' debe ser un desplazamiento fijo (-06:00) "
+            "o una zona IANA (America/New_York)"
+        )
     check_instant(p, "now", inp.get("now"))
     need(p, inp.get("weekly", {}), ["percent", "resets_at"])
     check_num(p, "weekly.percent", inp.get("weekly", {}).get("percent"))
