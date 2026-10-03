@@ -15,3 +15,6 @@ jobs:
           python-version: "3.12"
       - run: pip install --require-hashes -r spec/requirements.txt
       - run: python spec/validate.py
+        env:
+          # Resolver siempre con el tzdata fijado, no con /usr/share/zoneinfo del runner.
+          PYTHONTZPATH: ""
