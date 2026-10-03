@@ -25,7 +25,8 @@ fn parse_fixed_offset(spec: &str) -> Option<Offset> {
         _ => return None,
     };
     let (hh, mm) = rest.split_once(':')?;
-    if hh.len() != 2 || mm.len() != 2 {
+    let two_digits = |p: &str| p.len() == 2 && p.bytes().all(|b| b.is_ascii_digit());
+    if !two_digits(hh) || !two_digits(mm) {
         return None;
     }
     let hours: i32 = hh.parse().ok()?;
@@ -146,6 +147,12 @@ mod tests {
         assert!(zone_from_spec("Marte/Olympus").is_err());
         assert!(zone_from_spec("America/Nueva_York").is_err());
         assert!(zone_from_spec("-6").is_err());
+        // Horas y minutos solo con digitos ASCII: `i32::parse` aceptaria el signo.
+        assert!(zone_from_spec("-+1:00").is_err());
+        assert!(zone_from_spec("+-1:00").is_err());
+        assert!(zone_from_spec("+06:+1").is_err());
+        assert!(zone_from_spec("+24:00").is_err());
+        assert!(zone_from_spec("+05:30").is_ok());
     }
 
     #[test]
