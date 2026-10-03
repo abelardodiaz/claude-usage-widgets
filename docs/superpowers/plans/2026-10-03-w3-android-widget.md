@@ -1252,11 +1252,11 @@ public final class BlockedException extends Exception {
 - [ ] **Paso 4: Verla pasar**
 
 ```bash
+# `am instrument -w` sale 0 aunque la instrumentacion termine con finish(1): el codigo que
+# devuelve es el de adb, no el de la prueba. Por eso se mira el texto.
 TEST=1 bash android/app/build.sh \
   && adb install -r android/app/build/claude-usage.apk \
-  && # `am instrument -w` sale 0 aunque la instrumentacion termine con finish(1): el codigo de salida
-# que devuelve es el de adb, no el de la prueba. Hay que mirar el texto.
-adb shell am instrument -w com.claulimitswidgets.android/.AppInstrumentation \
+  && adb shell am instrument -w com.claulimitswidgets.android/.AppInstrumentation \
   | tee /dev/stderr | grep -q "OK:"
 ```
 Esperado: `OK: N comprobaciones, 0 fallos`, con N mayor que antes.
@@ -1570,11 +1570,11 @@ núcleo: allí `MAX_INPUT` se mide sobre texto ya decodificado y no protege de u
 - [ ] **Paso 4: Verla pasar**
 
 ```bash
+# `am instrument -w` sale 0 aunque la instrumentacion termine con finish(1): el codigo que
+# devuelve es el de adb, no el de la prueba. Por eso se mira el texto.
 TEST=1 bash android/app/build.sh \
   && adb install -r android/app/build/claude-usage.apk \
-  && # `am instrument -w` sale 0 aunque la instrumentacion termine con finish(1): el codigo de salida
-# que devuelve es el de adb, no el de la prueba. Hay que mirar el texto.
-adb shell am instrument -w com.claulimitswidgets.android/.AppInstrumentation \
+  && adb shell am instrument -w com.claulimitswidgets.android/.AppInstrumentation \
   | tee /dev/stderr | grep -q "OK:"
 ```
 Esperado: `OK`, con las 11 comprobaciones nuevas de `UsageClientTest`.
@@ -1701,11 +1701,11 @@ public final class OrgSelector {
 - [ ] **Paso 4: Verla pasar y commit**
 
 ```bash
+# `am instrument -w` sale 0 aunque la instrumentacion termine con finish(1): el codigo que
+# devuelve es el de adb, no el de la prueba. Por eso se mira el texto.
 TEST=1 bash android/app/build.sh \
   && adb install -r android/app/build/claude-usage.apk \
-  && # `am instrument -w` sale 0 aunque la instrumentacion termine con finish(1): el codigo de salida
-# que devuelve es el de adb, no el de la prueba. Hay que mirar el texto.
-adb shell am instrument -w com.claulimitswidgets.android/.AppInstrumentation \
+  && adb shell am instrument -w com.claulimitswidgets.android/.AppInstrumentation \
   | tee /dev/stderr | grep -q "OK:"
 git add android/app/src android/app/test
 git commit -m "feat: regla de seleccion de organizacion (D2)"
@@ -2248,6 +2248,8 @@ public class SettingsActivity extends Activity {
      * cuando `refreshOrgs` termina, porque la lista pudo cambiar.
      */
     private void paintOrgs() {
+        // `refreshOrgs` vuelve de un hilo de red: la pantalla pudo cerrarse mientras tanto.
+        if (isFinishing() || isDestroyed()) return;
         RadioGroup group = findViewById(R.id.orgs);
         group.removeAllViews();
         SharedPreferences prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE);
@@ -2256,7 +2258,12 @@ public class SettingsActivity extends Activity {
         RadioButton auto = new RadioButton(this);
         auto.setText(R.string.settings_org_auto);
         auto.setChecked(current == null);
-        auto.setOnClickListener(v -> prefs.edit().remove(KEY_ORG).apply());
+        auto.setOnClickListener(v -> {
+            prefs.edit().remove(KEY_ORG).apply();
+            // Volver a automatica es tan accion del usuario como elegir una: mismo trato.
+            UsageRefresher.clearBackoff(this);
+            WidgetUpdateJob.runNow(this);
+        });
         group.addView(auto);
 
         // Se muestran NOMBRES, no uuid: un uuid no le dice nada al usuario y acabaria en una
@@ -2469,11 +2476,11 @@ public final class SampleStore {
 - [ ] **Paso 4: Verla pasar y commit**
 
 ```bash
+# `am instrument -w` sale 0 aunque la instrumentacion termine con finish(1): el codigo que
+# devuelve es el de adb, no el de la prueba. Por eso se mira el texto.
 TEST=1 bash android/app/build.sh \
   && adb install -r android/app/build/claude-usage.apk \
-  && # `am instrument -w` sale 0 aunque la instrumentacion termine con finish(1): el codigo de salida
-# que devuelve es el de adb, no el de la prueba. Hay que mirar el texto.
-adb shell am instrument -w com.claulimitswidgets.android/.AppInstrumentation \
+  && adb shell am instrument -w com.claulimitswidgets.android/.AppInstrumentation \
   | tee /dev/stderr | grep -q "OK:"
 git add android/app/src android/app/test && git commit -m "feat: almacen de muestras con ventana de 15 dias"
 ```
@@ -3405,6 +3412,7 @@ usuario no tiene forma de saber por qué.
 ```java
 package com.claulimitswidgets.android;
 
+import android.app.Activity;
 import android.app.job.JobInfo;
 import android.app.job.JobParameters;
 import android.app.job.JobScheduler;
@@ -3468,6 +3476,8 @@ public class WidgetUpdateJob extends JobService {
     public static void refreshOrgs(Activity activity, Runnable onDone) {
         Context app = activity.getApplicationContext();
         new Thread(() -> {
+            // El LOCK es a proposito y no sobra: `rememberOrgs` escribe las mismas preferencias
+            // que un refresco en curso, y los dos pueden coincidir.
             synchronized (UsageRefresher.LOCK) {
                 try {
                     SessionStore store = new SessionStore(app);
@@ -3702,6 +3712,11 @@ else
   if ! adb -s "$S" shell cmd netpolicy remove restrict-background-blacklist "$APP_UID"; then
     echo "  FALLA     no se pudo sacar la app de la lista"; fallos=$((fallos+1))
   fi
+  # El TAP de vuelta tiene que esperar a que pase el backoff: la ida dejo el widget en OFFLINE,
+  # y eso persiste `next_allowed = now + 60 s`. Sin esta espera el gate bloquea la consulta y
+  # "ahora mismo" no aparece NUNCA, asi que la comprobacion fallaria siempre por una razon que
+  # no tiene nada que ver con la red. De paso, esto mide tambien que el backoff expire bien.
+  sleep 70
   adb -s "$S" shell am broadcast -a $PKG.TAP -n $PKG/.Widget4x2Provider >/dev/null 2>&1
   sleep 15
   comprobar "al volver la red, vuelve a estar al dia" '(ahora mismo|just now)'
