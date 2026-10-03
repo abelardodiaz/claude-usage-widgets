@@ -4,3 +4,8 @@ updates:
     directory: /
     schedule:
       interval: weekly
+  # tzdata caduca de verdad: la base IANA cambia varias veces al anio.
+  - package-ecosystem: pip
+    directory: /spec
+    schedule:
+      interval: weekly

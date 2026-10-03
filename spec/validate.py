@@ -18,7 +18,7 @@ DAY = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 # R0 exige zona IANA con horario de verano para "dia local". Se admite tambien el
 # desplazamiento fijo que usan los fixtures sin cambio de horario.
 TZ_OFFSET = re.compile(r"^[+-]\d{2}:\d{2}$")
-TZ_IANA = re.compile(r"^[A-Za-z][A-Za-z0-9_+-]*(?:/[A-Za-z0-9_+-]+)+$")
+TZ_IANA = re.compile(r"^[A-Za-z][A-Za-z0-9_+-]*(?:/[A-Za-z0-9_+-]+)*$")
 errors = []
 
 
