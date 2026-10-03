@@ -11,7 +11,10 @@ import java.util.List;
  */
 public final class CoreTest {
 
-    /** Centinela habitual de "sin limite" en una respuesta: valido, y antes tumbaba el widget. */
+    /**
+     * Centinela habitual de "sin limite". Ya no pasa el parseo (R1 lo anula), pero el nucleo
+     * tampoco puede lanzar si le llega como Instant directo; antes tumbaba el widget.
+     */
     private static final String LEJANO = "9999-12-31T23:59:59Z";
 
     public static void run(Assert a) {

@@ -1,5 +1,5 @@
 {
-  "description": "R1: un resets_at con anio 9999 o mayor (centinela de 'sin limite') es nulo; 9998 es valido",
+  "description": "R1: el anio que cuenta es el de la cadena (no el UTC): 9999 o mayor es nulo, 9998 es valido aunque en UTC caiga en 9999",
   "source": "claude_code",
   "input": {
     "five_hour": {
@@ -20,6 +20,18 @@
             "display_name": "Fable"
           }
         }
+      },
+      {
+        "kind": "scoped_a",
+        "percent": 6,
+        "resets_at": "9998-12-31T23:00:00-05:00",
+        "scope": null
+      },
+      {
+        "kind": "scoped_b",
+        "percent": 7,
+        "resets_at": "9999-01-01T00:00:00+14:00",
+        "scope": null
       }
     ]
   },
@@ -37,6 +49,16 @@
       {
         "label": "Fable",
         "percent": 5,
+        "resets_at": null
+      },
+      {
+        "label": "scoped_a",
+        "percent": 6,
+        "resets_at": "9998-12-31T23:00:00-05:00"
+      },
+      {
+        "label": "scoped_b",
+        "percent": 7,
         "resets_at": null
       }
     ],
