@@ -1,0 +1,12 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Ventana main: escuchar eventos, ajustar su alto, arrastrarla y cerrarla",
+  "windows": ["main"],
+  "permissions": [
+    "core:event:default",
+    "core:window:allow-set-size",
+    "core:window:allow-start-dragging",
+    "core:window:allow-close"
+  ]
+}

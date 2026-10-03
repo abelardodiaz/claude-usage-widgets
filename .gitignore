@@ -25,3 +25,6 @@ android/**/build/
 
 # Area de trabajo de superpowers (bitacora de ejecucion de planes)
 .superpowers/
+
+# Tauri: esquemas generados y salida de build
+desktop/src-tauri/gen/

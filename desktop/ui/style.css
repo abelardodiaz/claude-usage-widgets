@@ -1,0 +1,16 @@
+:root {
+  --bg: #16181d; --panel: #1d2027; --line: #2a2e37; --track: #262a32;
+  --text: #e7e9ee; --muted: #8b919c; --dim: #5f6570;
+  --green: #3fbf6f; --amber: #e8b03f; --red: #e5534b;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { background: var(--bg); color: var(--text); overflow: hidden;
+  font: 13px/1.3 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; user-select: none; }
+.card { padding: 12px 14px 12px; }
+.head { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; cursor: default; }
+.head .lbl { font-weight: 700; letter-spacing: .06em; font-size: 12px; color: var(--muted); pointer-events: none; }
+.head .sp { flex: 1; pointer-events: none; }
+.ico { width: 24px; height: 22px; display: grid; place-items: center; border-radius: 6px;
+  color: var(--muted); cursor: pointer; border: 1px solid transparent; }
+.ico:hover { color: var(--text); background: var(--panel); }
+.note { font-size: 10px; color: var(--dim); margin-top: 6px; }
