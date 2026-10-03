@@ -40,19 +40,72 @@ fn parse_window(v: Option<&Value>) -> Result<Window, ParseError> {
     })
 }
 
-/// Instante RFC 3339; ausente, nulo, no cadena o no parseable -> None.
-///
-/// RFC 3339 solo admite anios de cuatro digitos (0000-9999). jiff acepta ademas anios
-/// extendidos con signo (`+010000`, `-000001`); eso no es un dato sino una entrada hostil, y se
-/// degrada a None igual que en el nucleo Java. Un instante que jiff no puede representar
-/// (su `Timestamp::MAX` es 9999-12-30T22:00:00Z) tambien sale None.
+/// Ultimo anio admitido en el texto de un instante (R1). 9999 es el centinela de "sin limite"
+/// y jiff no lo representa completo (`Timestamp::MAX` = 9999-12-30T22:00:00Z); con el anio
+/// del texto acotado a 9998 el instante nunca pasa de 9999-01-01T23:59:59Z.
+const MAX_TEXT_YEAR: u32 = 9998;
+
+/// Instante de la respuesta (R1): ausente, nulo, no cadena, fuera del formato estricto o con
+/// anio del texto fuera de 0000-9998 -> None.
 pub fn parse_instant(v: Option<&Value>) -> Option<Timestamp> {
     let s = v?.as_str()?;
-    let year = s.get(..4)?;
-    if !year.bytes().all(|b| b.is_ascii_digit()) {
+    if !strict_shape(s.as_bytes()) {
         return None;
     }
+    // La forma ya garantiza cuatro digitos ASCII al principio.
+    let year: u32 = s[..4].parse().ok()?;
+    if year > MAX_TEXT_YEAR {
+        return None;
+    }
+    // jiff valida el calendario (mes, dia del mes, hora) y convierte a instante.
     s.parse().ok()
+}
+
+/// Forma exacta `YYYY-MM-DDTHH:MM:SS(.fraccion)?(Z|+HH:MM|-HH:MM)` (perfil de RFC 3339):
+/// anio de exactamente cuatro digitos sin signo, `T` y `Z` solo en mayuscula (RFC 3339 5.6
+/// permite minusculas pero no las exige; el nucleo Java hace lo mismo), sin espacios, sin
+/// anotacion `[zona]`, sin segundo 60 (jiff lo aceptaria como 59), fraccion de 1 a 9 digitos
+/// y desplazamiento con horas 00-23 y minutos 00-59. Antes de jiff, que es mas permisivo.
+fn strict_shape(b: &[u8]) -> bool {
+    fn digits(b: &[u8], from: usize, n: usize) -> Option<u32> {
+        let part = b.get(from..from + n)?;
+        if !part.iter().all(u8::is_ascii_digit) {
+            return None;
+        }
+        Some(part.iter().fold(0, |acc, d| acc * 10 + u32::from(d - b'0')))
+    }
+    let date_time_ok = digits(b, 0, 4).is_some()
+        && b.get(4) == Some(&b'-')
+        && digits(b, 5, 2).is_some()
+        && b.get(7) == Some(&b'-')
+        && digits(b, 8, 2).is_some()
+        && b.get(10) == Some(&b'T')
+        && digits(b, 11, 2).is_some()
+        && b.get(13) == Some(&b':')
+        && digits(b, 14, 2).is_some()
+        && b.get(16) == Some(&b':')
+        && digits(b, 17, 2).is_some_and(|sec| sec <= 59);
+    if !date_time_ok {
+        return false;
+    }
+    let mut i = 19;
+    if b.get(i) == Some(&b'.') {
+        let frac = b[i + 1..].iter().take_while(|c| c.is_ascii_digit()).count();
+        if frac == 0 || frac > 9 {
+            return false;
+        }
+        i += 1 + frac;
+    }
+    match b.get(i) {
+        Some(b'Z') => b.len() == i + 1,
+        Some(b'+' | b'-') => {
+            b.len() == i + 6
+                && digits(b, i + 1, 2).is_some_and(|h| h <= 23)
+                && b[i + 3] == b':'
+                && digits(b, i + 4, 2).is_some_and(|m| m <= 59)
+        }
+        _ => false,
+    }
 }
 
 fn non_empty_str(v: Option<&Value>) -> Option<&str> {
@@ -123,7 +176,7 @@ mod tests {
     }
 
     #[test]
-    fn anio_fuera_de_0000_9999_es_nulo() {
+    fn anio_extendido_con_signo_es_nulo() {
         assert_eq!(instant("+010000-01-01T00:00:00Z"), None);
         assert_eq!(instant("-000001-01-01T00:00:00Z"), None);
         assert_eq!(instant("+002026-10-02T12:00:00Z"), None);
@@ -139,8 +192,8 @@ mod tests {
 
     #[test]
     fn reinicio_lejano_no_explota() {
-        // 9999-12-31T23:59:59Z es RFC 3339 valido pero queda fuera del rango de jiff: se degrada
-        // a nulo en vez de entrar en panico.
+        // 9999-12-31T23:59:59Z (centinela de "sin limite") tiene anio de texto > 9998: nulo (R1),
+        // sin panico aunque jiff tampoco lo representaria.
         assert_eq!(instant("9999-12-31T23:59:59Z"), None);
         let raw = json!({
             "five_hour": { "utilization": 10, "resets_at": "9999-12-31T23:59:59Z" },
@@ -149,6 +202,84 @@ mod tests {
         let usage = parse_usage(&raw, Source::ClaudeCode).unwrap();
         assert_eq!(usage.session.resets_at, None);
         assert_eq!(usage.weekly.resets_at, None);
+    }
+
+    fn some(s: &str) -> Option<Timestamp> {
+        Some(s.parse().unwrap())
+    }
+
+    #[test]
+    fn anio_del_texto_hasta_9998() {
+        // R1: cuenta el anio escrito en la cadena, no el del instante en UTC (parse/07).
+        assert_eq!(
+            instant("9998-12-31T23:00:00-05:00"),
+            some("9999-01-01T04:00:00Z")
+        );
+        assert_eq!(instant("9999-01-01T00:00:00+14:00"), None);
+        assert_eq!(instant("9999-01-01T00:00:00Z"), None);
+        assert_eq!(
+            instant("9998-06-01T00:00:00Z"),
+            some("9998-06-01T00:00:00Z")
+        );
+    }
+
+    #[test]
+    fn formato_estricto() {
+        // Solo YYYY-MM-DDTHH:MM:SS(.fraccion)?(Z|+HH:MM|-HH:MM); todo lo demas es nulo.
+        for bad in [
+            "2026-10-02 12:00:00Z",
+            "2026-10-02T12:00:00Z[UTC]",
+            "2026-10-02T12:00:00-06:00[America/Mexico_City]",
+            "2026-06-30T23:59:60Z",
+            "+002026-10-02T12:00:00Z",
+            "2026-10-02T12:00Z",
+            "12:00:00.Z",
+            "2026-10-02T12:00:00.Z",
+            "2026-10-02t12:00:00Z",
+            "2026-10-02T12:00:00z",
+            "2026-10-02T12:00:00",
+            "2026-10-02T12:00:00+0600",
+            "2026-10-02T12:00:00+06",
+            "2026-10-02T12:00:00+24:00",
+            "2026-10-02T12:00:00+06:60",
+            "2026-10-02T12:00:00 Z",
+            " 2026-10-02T12:00:00Z",
+            "2026-10-02T12:00:00Z ",
+            "2026-1-02T12:00:00Z",
+            "2026-10-02T1:00:00Z",
+            "2026-13-02T12:00:00Z",
+            "2026-02-30T12:00:00Z",
+            "2026-10-02T24:00:00Z",
+            "2026-10-02T12:00:00.1234567890Z",
+            "2026-10-02T12:00:00,5Z",
+            "2026-10-02T12:00:00.5.5Z",
+            "2026-10-02T12:00:00.-5Z",
+            "2026\u{2011}10-02T12:00:00Z",
+            "\u{FF12}026-10-02T12:00:00Z",
+            "20261002T120000Z",
+        ] {
+            assert_eq!(instant(bad), None, "{bad}");
+        }
+        assert_eq!(
+            instant("2026-10-02T12:00:00Z"),
+            some("2026-10-02T12:00:00Z")
+        );
+        assert_eq!(
+            instant("2026-10-02T12:00:00.5Z"),
+            some("2026-10-02T12:00:00.5Z")
+        );
+        assert_eq!(
+            instant("2026-10-02T12:00:00.123456789+05:30"),
+            some("2026-10-02T06:30:00.123456789Z")
+        );
+        assert_eq!(
+            instant("2026-10-02T12:00:00-00:00"),
+            some("2026-10-02T12:00:00Z")
+        );
+        assert_eq!(
+            instant("2026-06-30T23:59:59Z"),
+            some("2026-06-30T23:59:59Z")
+        );
     }
 
     #[test]
