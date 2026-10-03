@@ -143,7 +143,7 @@ activa, así que puede evitar una llamada a `/api/organizations` — pero su val
 debe tratarse con el mismo cuidado que la cookie de sesión.
 
 Las dos cookies de Cloudflare (`__cf_bm`, `_cfuvid`) existen desde antes del login: hay gestión
-de bots delante, pero no bloquea (ver A2.3).
+de bots delante, pero no bloqueó en esta prueba (ver A2.3).
 
 ## A2.3 — Consulta nativa: PASA (sin reto observado)
 
@@ -156,7 +156,8 @@ A2.3 nativo /usage:         HTTP=200 ctype=application/json server=cloudflare
 
 ### Hasta dónde llega esta evidencia
 
-**No se observó reto anti-bots en 2 peticiones nativas y 6 por el WebView**, todas `200`, en unos
+**No se observó reto anti-bots en 2 peticiones nativas y en las del WebView** (todas las que obtuvieron
+respuesta dieron `200`; un intento en segundo plano no obtuvo respuesta, ver A2.4), en unos
 tres minutos, desde **un** dispositivo, **una** IP doméstica y **una** sesión recién emitida, con
 el jarro de cookies completo que acababa de dejar el login.
 
@@ -338,9 +339,9 @@ Lo que este spike obliga a cambiar o fijar en la especificación de Android:
 6. **`zipalign` no hace falta** en el `build.sh` de W3/F2, y no existe en Termux. `aapt2 link`
    deja `resources.arsc` como `Stored` y añadir `classes.dex` al final con `zip` no mueve su
    desplazamiento, así que conserva la alineación a 4 bytes de `targetSdk >= 30`.
-7. **Las consultas periódicas no pueden usar el WebView.** El proceso se congela en segundo
-   plano (Freecess en Samsung) y `evaluateJavascript` no corre. Van por `HttpURLConnection`
-   desde el `JobScheduler`, que es justo lo que A2.3 demuestra que funciona.
+7. **Las consultas periódicas no usan el WebView.** Van por `HttpURLConnection` desde el
+   `JobScheduler`, que es lo que A2.3 mostró que funciona. Con `postDelayed` en segundo plano el
+   WebView no corrió (Freecess en Samsung); bajo `JobScheduler` no se probó (ver A2.4).
 8. **Manejar el reto aunque hoy no aparezca.** La consulta nativa debe tratar `403`, la cabecera
    `cf-mitigated` y una respuesta `text/html` donde se esperaba JSON como "hay reto": backoff
    exponencial, no reintentar en bucle, y avisar al usuario de volver a iniciar sesión si persiste.
@@ -349,7 +350,8 @@ Lo que este spike obliga a cambiar o fijar en la especificación de Android:
    UUID: mismo trato que la cookie de sesión.
 10. **La regla de selección de organización queda abierta.** Hay 2 en esta cuenta; el selector
     manual en ajustes no es opcional.
-11. **El contenido del widget debe llenar la celda.**
+11. **El contenido del widget debe llenar la celda.** El widget del spike dejó el texto arriba a la
+    izquierda y media celda vacía: se ve sin terminar. Centrar o repartir el contenido.
 
 ### Lo que W3 NO debe copiar del spike
 
@@ -360,5 +362,4 @@ El spike es permisivo a propósito, para poder observar. El producto no:
 - **Mandar el mínimo de cookies.** El spike reenvía el jarro entero de claude.ai. W3 debe mandar
   solo `sessionKey` y, si la regla de organización acaba usándola, `lastActiveOrg`.
 - **`setAcceptThirdPartyCookies(false)`.** El spike lo pone en `true` porque tanteaba el login de
-  Google; descartado ése, W3 no lo necesita. El widget del spike dejó el texto arriba a la
-   izquierda y media celda vacía: se ve sin terminar. Centrar o repartir el contenido.
+  Google; descartado ése, W3 no lo necesita.
