@@ -59,9 +59,14 @@ Una interfaz `UsageSource` con dos implementaciones; ambas entregan el mismo mod
    y muestra el último dato con su hora.
 2. **`ClaudeAiSessionSource`** (Android siempre; escritorio como respaldo para quien usa Claude
    sin Claude Code). El usuario inicia sesión en `https://claude.ai` real dentro de un WebView;
-   la app toma la cookie de sesión y consulta el endpoint de uso de claude.ai. **El endpoint
-   exacto y su forma se confirman en el spike de W0** (candidato: `/api/organizations/{org}/usage`).
-   Si el spike falla, la Android vuelve a diseño antes de construir nada encima.
+   la app toma la cookie de sesión y consulta `GET https://claude.ai/api/organizations/{org_uuid}/usage`
+   (misma forma que OAuth, regla R1b). **Observado en W0** (spikes A1 y A2): basta la cookie, y en
+   las peticiones nativas probadas (`HttpURLConnection`) no hubo reto anti-bots. Vía principal:
+   nativa; **plan B documentado:** consulta dentro del WebView. Toda respuesta 403, con cabecera
+   `cf-mitigated` o con HTML en vez de JSON se trata como bloqueo: backoff y aviso de re-login.
+   Una cuenta puede tener varias organizaciones (`GET /api/organizations`): la regla de selección
+   automática se define en W3 (candidatos: cookie `lastActiveOrg`, `capabilities`,
+   `rate_limit_tier`) y hay **selector manual obligatorio** en ajustes.
 
 Ambos endpoints son **no documentados**: el cliente parsea a la defensiva (campos opcionales,
 claves desconocidas ignoradas, `null` tolerado) y un cambio de forma se reporta como
@@ -97,9 +102,10 @@ El prototipo hace algunas simplificaciones; la versión definitiva las corrige:
   las **últimas 24 h** (o desde el inicio de la ventana si lleva menos), porque el promedio de
   toda la semana esconde un día intenso. *Corrección respecto al prototipo,* que usaba el
   promedio de toda la ventana. Salida: hora estimada de 100 % y si cae antes del reinicio.
-- **Colores:** verde < 60 %, ámbar < 85 %, rojo ≥ 85 %. La barra "hoy" usa el cociente consumido/cupo
-  (< 0.7 verde, < 1 ámbar, ≥ 1 rojo). En la barra semanal, una marca indica el ritmo parejo
-  (fracción transcurrida de la ventana).
+- **Colores (R7, con fixtures propios en `spec/fixtures/colors/`):** verde < 60 %, ámbar < 85 %,
+  rojo ≥ 85 %. La barra "hoy" usa el cociente consumido/cupo (< 0.7 verde, < 1 ámbar, ≥ 1 rojo);
+  gris si no hay cupo (nulo o 0) y **rojo si el cupo es negativo** (cuota semanal ya rebasada).
+  En la barra semanal, una marca indica el ritmo parejo (fracción transcurrida de la ventana).
 
 ### 3.4 Sondeo y errores
 
@@ -124,14 +130,31 @@ El prototipo hace algunas simplificaciones; la versión definitiva las corrige:
 
 - **Login:** Activity con WebView en `https://claude.ai/login`; al detectar sesión, lee la cookie
   con `CookieManager`, la cifra con una llave AES-GCM del **Android Keystore** (no exportable) y
-  borra el WebView. Botón "cerrar sesión" que borra la llave y los datos.
-- **Widget:** `AppWidgetProvider` con `RemoteViews` (tamaños 4×1 compacto y 4×2 con barras).
-  Tocar = actualizar; mantener = abrir la app.
+  borra el WebView. Botón "cerrar sesión" que borra la llave y los datos. Hallazgos de W0 (spike A2):
+  - **Solo acceso por correo.** "Continuar con Google" dentro de un WebView provoca un bloqueo de
+    Google de 48 h; la app no controla esa página, así que una pantalla previa explica que solo
+    funciona el correo.
+  - `setAcceptThirdPartyCookies(false)`; a `claude.ai` se envía el mínimo de cookies
+    (`sessionKey` y, si aplica, `lastActiveOrg`). Nunca se registran cuerpos de respuesta: solo
+    código, `content-type` y longitud.
+  - El enlace del correo vence en **10 minutos** y claude.ai limita los reenvíos: la pantalla lo
+    dice, deja el campo del código a la vista y no invita a reenviar en bucle.
+  - Las consultas periódicas van por `HttpURLConnection` desde `JobScheduler`. El WebView queda
+    para el login y como plan B en primer plano (en segundo plano Samsung congela el proceso y
+    `evaluateJavascript` con `postDelayed` no corrió; no se probó bajo `JobScheduler`).
+  - La cookie `lastActiveOrg` (un UUID) puede ahorrar la llamada a `/api/organizations`; se trata
+    como credencial.
+  - Un `401` en cualquier consulta lleva a la pantalla de login (la duración de la sesión no es
+    medible desde la app).
+- **Widget:** `AppWidgetProvider` con `RemoteViews` (tamaños 4×1 compacto y 4×2 con barras), con
+  `android:exported="false"` (verificado: el sistema entrega las actualizaciones y el toque) y
+  `previewLayout` obligatorio. El contenido llena la celda. Tocar = actualizar; mantener = abrir la app.
 - **Burbuja:** servicio en primer plano (`foregroundServiceType="specialUse"`) con una vista en
   `TYPE_APPLICATION_OVERLAY` que muestra el % de sesión en un círculo de color; al tocarla se
   expande al panel completo. Requiere permiso de superposición, pedido con explicación previa.
 - **Build:** `android/build.sh` con `aapt2` + `javac` + `d8` + `apksigner`, el mismo script en el
-  teléfono (Termux) y en Ubuntu (CI). `minSdk 29`, `targetSdk 34`.
+  teléfono (Termux) y en Ubuntu (CI). `minSdk 29`, `targetSdk 34`. Sin `zipalign` (no existe en
+  Termux y no hace falta: verificado en W0). Base probada: `android/spikes/w0/`.
 - **Firma:** builds de prueba con llave de debug en el teléfono; el APK de release se firma
   solo en GitHub Actions con la llave en un secret del repositorio.
 
@@ -158,7 +181,7 @@ del usuario. Reglas no negociables, revisadas en cada oleada:
 
 ## 7. Pruebas
 
-- **Contrato:** `spec/fixtures/{parse,history,projection}/*.json`, cada uno con su `input`
+- **Contrato:** `spec/fixtures/{parse,history,projection,colors}/*.json`, cada uno con su `input`
   (respuestas reales anonimizadas o series de muestras) y su `expected` calculado a mano.
   Rust (`cargo test`) y Java (`android/core`, en JVM de escritorio) deben producir exactamente
   los esperados. Corre en CI en cada PR.
@@ -196,7 +219,9 @@ del usuario. Reglas no negociables, revisadas en cada oleada:
 | Riesgo | Mitigación |
 |---|---|
 | Anthropic cambia o cierra el endpoint | Parseo defensivo, fixtures que lo detectan, aviso de "formato no reconocido"; los dos orígenes son independientes |
-| claude.ai no expone el uso por cookie | Spike A en W0 antes de construir Android |
+| claude.ai no expone el uso por cookie | **Cerrado en W0:** lo expone; sin reto anti-bots en las pruebas nativas |
+| Cloudflare empieza a retar la vía nativa | Detección (403, `cf-mitigated`, HTML) + plan B por WebView en primer plano |
+| La sesión de claude.ai vence sin aviso | `401` → pantalla de login; el widget muestra el último dato con su hora |
 | Antivirus/SmartScreen marcan el instalador sin firma de código | Documentarlo; evaluar firma (p. ej. SignPath para OSS) en W5 |
 | Robo de la cookie de claude.ai en Android | Keystore no exportable, sin bridge JS, sin backups (`allowBackup=false`) |
 | Un fork malicioso distribuye una versión que roba credenciales | Releases firmados, checksums, README indica la única fuente oficial |
