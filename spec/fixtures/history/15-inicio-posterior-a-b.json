@@ -1,0 +1,31 @@
+{
+  "description": "R3: si el inicio de la ventana nueva queda despues de b.t se acota a b.t y todo va al dia de b (ocurre cuando la API reporta un resets_at a mas de 7 d de la muestra)",
+  "input": {
+    "tz": "-06:00",
+    "now": "2026-10-03T12:00:00-06:00",
+    "weekly": {
+      "percent": 5,
+      "resets_at": "2026-10-11T18:00:00-06:00"
+    },
+    "samples": [
+      {
+        "t": "2026-10-02T12:00:00-06:00",
+        "percent": 70,
+        "resets_at": "2026-10-02T18:00:00-06:00"
+      },
+      {
+        "t": "2026-10-03T12:00:00-06:00",
+        "percent": 5,
+        "resets_at": "2026-10-11T18:00:00-06:00"
+      }
+    ]
+  },
+  "expected": {
+    "per_day": {
+      "2026-10-03": 5
+    },
+    "today_used": 5,
+    "quota_today": 11.428571,
+    "partial": false
+  }
+}

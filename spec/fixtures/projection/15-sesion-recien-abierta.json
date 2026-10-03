@@ -1,0 +1,15 @@
+{
+  "description": "R5: ventana de sesion con menos de 60 s: no se proyecta",
+  "input": {
+    "kind": "session",
+    "now": "2026-10-02T10:00:30-06:00",
+    "percent": 5,
+    "resets_at": "2026-10-02T15:00:00-06:00",
+    "samples": []
+  },
+  "expected": {
+    "hits_at": null,
+    "before_reset": null,
+    "basis": null
+  }
+}
