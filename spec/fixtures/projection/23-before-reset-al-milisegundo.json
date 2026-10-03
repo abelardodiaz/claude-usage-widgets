@@ -1,0 +1,26 @@
+{
+  "description": "before_reset se decide en MILISEGUNDOS con piso: a nanosegundos daria lo contrario",
+  "input": {
+    "kind": "weekly",
+    "now": "2026-10-02T12:00:00Z",
+    "percent": 50,
+    "resets_at": "2026-10-02T14:46:40.0005Z",
+    "samples": [
+      {
+        "t": "2026-10-02T09:13:20Z",
+        "percent": 0,
+        "resets_at": "2026-10-02T14:46:40.0005Z"
+      },
+      {
+        "t": "2026-10-02T12:00:00Z",
+        "percent": 50,
+        "resets_at": "2026-10-02T14:46:40.0005Z"
+      }
+    ]
+  },
+  "expected": {
+    "hits_at": "2026-10-02T14:46:40Z",
+    "before_reset": false,
+    "basis": "24h"
+  }
+}

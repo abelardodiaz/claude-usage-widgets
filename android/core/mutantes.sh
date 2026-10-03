@@ -73,6 +73,13 @@ probar "R1: inventa 0% cuando falta utilization" $SRC/Parser.java \
             return new Window(0, null);
         }'
 
+probar "R0: sin la puerta de formato estricto" $SRC/Parser.java \
+  "if (!RFC3339.matcher((String) v).matches()) return null;" \
+  "if (false) return null;"
+probar "R0: before_reset en nanos en vez de ms" $SRC/Projection.java \
+  "return new Forecast(hitsAt, hitsAt.toEpochMilli() < resetsAt.toEpochMilli(), basis);" \
+  "return new Forecast(hitsAt, hitsAt.isBefore(resetsAt), basis);"
+
 echo "== arbol restaurado =="
 bash build.sh 2>&1 | tail -2
 if [ "$fallidas" -gt 0 ]; then

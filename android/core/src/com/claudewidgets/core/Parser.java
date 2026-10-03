@@ -2,6 +2,7 @@ package com.claudewidgets.core;
 
 import java.time.Instant;
 import java.time.OffsetDateTime;
+import java.util.regex.Pattern;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -116,6 +117,29 @@ public final class Parser {
     }
 
     /**
+     * Forma canonica de R0: `YYYY-MM-DDTHH:MM:SS(.fraccion)?(Z|+HH:MM|-HH:MM)`.
+     *
+     * `OffsetDateTime.parse` es mas permisivo que RFC 3339 y acepta cosas que otras
+     * implementaciones del contrato rechazan: anio con signo (`+002026-...`), segundos omitidos
+     * (`12:00Z`), desplazamiento sin minutos (`+00`) o con segundos (`+00:00:30`, que ademas
+     * desplaza el instante medio minuto) y fraccion vacia (`12:00:00.`). La fraccion se acota a
+     * 1-9 digitos: es lo maximo que representan Java y Rust (nanosegundos), y mas digitos se
+     * truncarian en silencio, cada uno a su manera. Sin esta puerta, Java y Rust darian
+     * instantes distintos con el mismo JSON.
+     *
+     * `T` y `Z` van en MAYUSCULA: la regex es sensible a mayusculas, asi que `...t12:00:00z` se
+     * rechaza aqui aunque `OffsetDateTime` lo aceptaria (su parseo por omision es
+     * parseCaseInsensitive).
+     *
+     * El desplazamiento de +-18:00 lo acota la propia regex. `OffsetDateTime` tambien lo
+     * rechazaria por encima de ese limite, pero dejarselo a la biblioteca haria que la regla
+     * dependiera de un detalle de implementacion en vez de estar escrita aqui.
+     */
+    private static final Pattern RFC3339 = Pattern.compile(
+            "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?"
+            + "(Z|[+-](0\\d|1[0-7]):[0-5]\\d|[+-]18:00)$");
+
+    /**
      * RFC 3339 con desplazamiento. Lo que no se pueda leer se degrada a nulo (R1).
      *
      * Defensa en profundidad: RFC 3339 solo admite anio de cuatro digitos, pero
@@ -126,6 +150,7 @@ public final class Parser {
      */
     static Instant instant(Object v) {
         if (!(v instanceof String)) return null;
+        if (!RFC3339.matcher((String) v).matches()) return null;
         try {
             OffsetDateTime t = OffsetDateTime.parse((String) v);
             if (t.getYear() < 0 || t.getYear() > 9998) return null;

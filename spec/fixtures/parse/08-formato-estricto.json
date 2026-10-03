@@ -1,0 +1,121 @@
+{
+  "description": "Forma de R0: once cadenas mal formadas a null y cuatro validas (incluidas +18:00 y nueve digitos de fraccion)",
+  "source": "claude_code",
+  "input": {
+    "five_hour": {
+      "utilization": 10,
+      "resets_at": "+002026-10-02T12:00:00Z"
+    },
+    "seven_day": {
+      "utilization": 20,
+      "resets_at": "2026-10-02T12:00Z"
+    },
+    "limits": [
+      {
+        "kind": "sin_segundos_en_desplazamiento",
+        "percent": 1,
+        "resets_at": "2026-10-02T12:00:00+00",
+        "scope": null
+      },
+      {
+        "kind": "desplazamiento_con_segundos",
+        "percent": 2,
+        "resets_at": "2026-10-02T12:00:00+00:00:30",
+        "scope": null
+      },
+      {
+        "kind": "fraccion_vacia",
+        "percent": 3,
+        "resets_at": "2026-10-02T12:00:00.Z",
+        "scope": null
+      },
+      {
+        "kind": "espacio_en_vez_de_T",
+        "percent": 4,
+        "resets_at": "2026-10-02 12:00:00Z",
+        "scope": null
+      },
+      {
+        "kind": "anotacion_de_zona",
+        "percent": 5,
+        "resets_at": "2026-10-02T12:00:00Z[UTC]",
+        "scope": null
+      },
+      {
+        "kind": "segundo_60",
+        "percent": 6,
+        "resets_at": "2026-06-30T23:59:60Z",
+        "scope": null
+      },
+      {
+        "kind": "fraccion_de_10_digitos",
+        "percent": 9,
+        "resets_at": "2026-10-02T12:00:00.1234567890Z",
+        "scope": null
+      },
+      {
+        "kind": "fraccion_de_9_digitos",
+        "percent": 10,
+        "resets_at": "2026-10-02T12:00:00.123456789Z",
+        "scope": null
+      },
+      {
+        "kind": "minusculas",
+        "percent": 11,
+        "resets_at": "2026-10-02t12:00:00z",
+        "scope": null
+      },
+      {
+        "kind": "desplazamiento_mayor_que_18h",
+        "percent": 12,
+        "resets_at": "2026-10-02T12:00:00+19:00",
+        "scope": null
+      },
+      {
+        "kind": "desplazamiento_de_18h_exactas",
+        "percent": 13,
+        "resets_at": "2026-10-02T12:00:00+18:00",
+        "scope": null
+      },
+      {
+        "kind": "canonica_con_fraccion",
+        "percent": 7,
+        "resets_at": "2026-10-02T12:00:00.123-06:00",
+        "scope": null
+      },
+      {
+        "kind": "canonica_sin_fraccion",
+        "percent": 8,
+        "resets_at": "2026-10-09T18:00:00Z",
+        "scope": null
+      }
+    ]
+  },
+  "expected": {
+    "source": "claude_code",
+    "session": {
+      "percent": 10,
+      "resets_at": null
+    },
+    "weekly": {
+      "percent": 20,
+      "resets_at": null
+    },
+    "scoped": [
+      { "label": "sin_segundos_en_desplazamiento", "percent": 1, "resets_at": null },
+      { "label": "desplazamiento_con_segundos", "percent": 2, "resets_at": null },
+      { "label": "fraccion_vacia", "percent": 3, "resets_at": null },
+      { "label": "espacio_en_vez_de_T", "percent": 4, "resets_at": null },
+      { "label": "anotacion_de_zona", "percent": 5, "resets_at": null },
+      { "label": "segundo_60", "percent": 6, "resets_at": null },
+      { "label": "fraccion_de_10_digitos", "percent": 9, "resets_at": null },
+      { "label": "fraccion_de_9_digitos", "percent": 10, "resets_at": "2026-10-02T12:00:00.123456789Z" },
+      { "label": "minusculas", "percent": 11, "resets_at": null },
+      { "label": "desplazamiento_mayor_que_18h", "percent": 12, "resets_at": null },
+      { "label": "desplazamiento_de_18h_exactas", "percent": 13, "resets_at": "2026-10-02T12:00:00+18:00" },
+      { "label": "canonica_con_fraccion", "percent": 7, "resets_at": "2026-10-02T12:00:00.123-06:00" },
+      { "label": "canonica_sin_fraccion", "percent": 8, "resets_at": "2026-10-09T18:00:00Z" }
+    ],
+    "breakdown": []
+  }
+}

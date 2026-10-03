@@ -7,7 +7,49 @@ Las reglas con pasos numerados se evalúan **en ese orden**: la primera que apli
 ## R0. Convenciones
 
 - Instantes: RFC 3339 con desplazamiento. Se comparan como instantes (misma hora UTC = iguales),
-  no como texto. Tolerancia en fixtures: 1 s.
+  no como texto, **a resolución de milisegundos**, y de una forma concreta porque cualquier otra
+  hace divergir a las implementaciones:
+  - Los dos operandos se llevan a **milisegundos desde la época con piso** (`toEpochMilli` en
+    Java, `div_euclid` en Rust) antes de comparar. Vale para `same_window` (R2) y para
+    `before_reset` (R5, R6).
+  - `hits_at` se materializa como **piso en ms de `now`** más el **redondeo al milisegundo más
+    cercano** de la duración en segundos.
+  - `before_reset` compara esos dos enteros de milisegundos.
+
+  No es un detalle: con `resets_at = ...T14:46:40.0005Z` y `hits_at = ...T14:46:40.000Z`, comparar
+  en nanosegundos da `true` y en milisegundos con piso da `false`. Lo fija
+  `projection/23-before-reset-al-milisegundo`. Tolerancia en fixtures: 1 s.
+- **Forma aceptada de un instante leído de la respuesta** (R1): exactamente
+
+  ```
+  YYYY-MM-DDTHH:MM:SS(.fracción)?(Z|+HH:MM|-HH:MM)
+  ```
+
+  Año de **exactamente cuatro dígitos sin signo**, `T` como separador **en mayúscula**, segundos
+  **obligatorios**,
+  fracción de **1 a 9 dígitos** si lleva punto (nanosegundos, lo máximo que representan Java y
+  Rust; con más dígitos las bibliotecas difieren en qué hacen), desplazamiento con minutos y
+  **sin segundos**. Todo lo
+  demás → `null`. Se rechazan, entre otras: `+002026-10-02T12:00:00Z` (año con signo),
+  `2026-10-02T12:00Z` (sin segundos), `+00` y `+00:00:30` (desplazamiento mal formado),
+  `2026-10-02T12:00:00.Z` (fracción vacía),
+  `2026-10-02T12:00:00.1234567890Z` (diez dígitos), `2026-10-02 12:00:00Z` (espacio en vez de `T`),
+  `2026-10-02T12:00:00Z[UTC]` (anotación de zona) y `2026-06-30T23:59:60Z` (segundo 60).
+
+  No es quisquillosidad: las bibliotecas de fecha difieren justo en estos casos, y una que acepte
+  `+00:00:30` desplaza el instante treinta segundos respecto de otra que lo rechace. Esta regla
+  vale **solo** para instantes leídos de la respuesta; `t` y `now` de los fixtures no pasan por
+  ella.
+
+  `T` y `Z` van **en mayúscula**. RFC 3339 permite minúsculas pero no las exige, y las bibliotecas
+  difieren: `2026-10-02t12:00:00z` lo acepta el parseo por omisión de Java y lo rechaza el de Rust.
+  Se fija la mayúscula para que no haya duda.
+
+  El **desplazamiento está acotado a ±18:00**: ninguna zona real pasa de +14:00. `+18:00` es
+  válido, `+19:00` no.
+
+  Además, la cadena debe ser una **fecha de calendario válida**: `2026-13-01`, `2026-02-30`,
+  `2026-10-02T24:00:00Z` y `12:60:00` → `null`, aunque encajen en la forma.
 - Números: sin redondeo interno; los fixtures muestran hasta 6 decimales. Tolerancia: 0.001.
 - "h" y "días" en restas de instantes (5 h, 7 días, 24 h, 1 h) son duraciones fijas de
   3600 s y 86 400 s. `days_left` = segundos / 86 400.
@@ -36,7 +78,7 @@ Entrada: JSON de `GET https://api.anthropic.com/api/oauth/usage`.
 - `weekly` ← `seven_day`: igual.
 - Si `five_hour` o `seven_day` falta, no es objeto, o su `utilization` no es número →
   error `unrecognized_format` (nunca se inventa un 0 %).
-- `resets_at` ausente, nulo, no cadena, no parseable como RFC 3339, o cuyo **año en la propia
+- `resets_at` ausente, nulo, no cadena, **no conforme a la forma de R0** o no válida como fecha de calendario, o cuyo **año en la propia
   cadena** (los cuatro dígitos tal como vienen, con su desplazamiento; **no** el año del instante
   en UTC) esté fuera de 0000-9998 → `null`. Así `9998-12-31T23:00:00-05:00` es válido (aunque en
   UTC cae en 9999) y `9999-01-01T00:00:00+14:00` es nulo (aunque en UTC cae en 9998). El año 9999

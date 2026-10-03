@@ -79,17 +79,24 @@ public final class Projection {
         if (!Double.isFinite(secondsToFull)) return Forecast.NONE;
         // Se suma en segundos y nanos aparte: `plusNanos(round(s * 1e9))` saturaria el long y
         // daria una fecha falsa en silencio con ritmos minusculos.
+        // R0: todo esto ocurre a resolucion de MILISEGUNDOS, y de una forma concreta, porque
+        // cualquier otra hace divergir a las dos implementaciones del contrato:
+        //   - el instante se materializa desde el PISO en ms de `now`;
+        //   - la duracion se redondea al ms mas cercano;
+        //   - `before_reset` compara los dos instantes llevados a ms POR PISO.
+        // Con nanosegundos, un `resets_at` con fraccion por debajo del ms da otra respuesta:
+        // lo fija `projection/23`.
         long whole = (long) secondsToFull;
-        long nanos = Math.round((secondsToFull - whole) * 1e9);
+        long millis = Math.round((secondsToFull - whole) * 1000.0);
         Instant hitsAt;
         try {
-            hitsAt = now.plusSeconds(whole).plusNanos(nanos);
+            hitsAt = Instant.ofEpochMilli(now.toEpochMilli()).plusSeconds(whole).plusMillis(millis);
         } catch (RuntimeException e) {
             // Fuera del rango de Instant: no se puede decir cuando, como en los demas
             // casos imposibles de R5 y R6.
             return Forecast.NONE;
         }
-        return new Forecast(hitsAt, hitsAt.isBefore(resetsAt), basis);
+        return new Forecast(hitsAt, hitsAt.toEpochMilli() < resetsAt.toEpochMilli(), basis);
     }
 
     /**

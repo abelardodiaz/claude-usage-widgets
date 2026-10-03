@@ -63,9 +63,9 @@ pub fn parse_instant(v: Option<&Value>) -> Option<Timestamp> {
 
 /// Forma exacta `YYYY-MM-DDTHH:MM:SS(.fraccion)?(Z|+HH:MM|-HH:MM)` (perfil de RFC 3339):
 /// anio de exactamente cuatro digitos sin signo, `T` y `Z` solo en mayuscula (RFC 3339 5.6
-/// permite minusculas pero no las exige; el nucleo Java se alinea en un PR de contrato posterior), sin espacios, sin
-/// anotacion `[zona]`, sin segundo 60 (jiff lo aceptaria como 59), fraccion de 1 a 9 digitos
-/// y desplazamiento con horas 00-23 y minutos 00-59. Antes de jiff, que es mas permisivo.
+/// permite minusculas pero no las exige; el contrato R0 lo fija asi para los dos nucleos), sin
+/// espacios, sin anotacion `[zona]`, sin segundo 60 (jiff lo aceptaria como 59), fraccion de 1
+/// a 9 digitos y desplazamiento acotado a +-18:00. Antes de jiff, que es mas permisivo.
 fn strict_shape(b: &[u8]) -> bool {
     fn digits(b: &[u8], from: usize, n: usize) -> Option<u32> {
         let part = b.get(from..from + n)?;
@@ -99,10 +99,13 @@ fn strict_shape(b: &[u8]) -> bool {
     match b.get(i) {
         Some(b'Z') => b.len() == i + 1,
         Some(b'+' | b'-') => {
+            // Desplazamiento acotado a +-18:00 (R1; el limite de OffsetDateTime en Java).
             b.len() == i + 6
-                && digits(b, i + 1, 2).is_some_and(|h| h <= 23)
                 && b[i + 3] == b':'
-                && digits(b, i + 4, 2).is_some_and(|m| m <= 59)
+                && match (digits(b, i + 1, 2), digits(b, i + 4, 2)) {
+                    (Some(h), Some(m)) => m <= 59 && (h < 18 || (h == 18 && m == 0)),
+                    _ => false,
+                }
         }
         _ => false,
     }
