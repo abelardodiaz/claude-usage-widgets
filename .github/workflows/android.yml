@@ -1,7 +1,4 @@
-# Job del APK de Android (W3 F2).
-#
-# Vive aqui y NO en .github/workflows/ porque el token de la sesion TEL no tiene el scope
-# `workflow` y GitHub rechaza el push. La sesion PC lo mueve con un commit suyo.
+# Job del APK de Android (W3 F2): construye el APK y corre lint NewApi (minSdk 29).
 name: android
 on:
   pull_request:
@@ -14,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: temurin
           java-version: "17"
