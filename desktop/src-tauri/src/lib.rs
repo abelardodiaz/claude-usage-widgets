@@ -10,6 +10,7 @@ pub mod projection;
 pub mod source_claude_code;
 pub mod store;
 pub mod timez;
+pub mod view;
 
 use tauri::{Manager, PhysicalPosition};
 
