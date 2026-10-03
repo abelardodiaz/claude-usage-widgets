@@ -5,6 +5,7 @@ pub mod history;
 pub mod model;
 pub mod parse;
 pub mod projection;
+pub mod store;
 pub mod timez;
 
 use tauri::{Manager, PhysicalPosition};
