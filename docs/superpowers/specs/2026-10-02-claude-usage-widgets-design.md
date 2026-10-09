@@ -166,8 +166,9 @@ del usuario. Reglas no negociables, revisadas en cada oleada:
 
 1. La credencial no sale del dispositivo, nunca se escribe en logs, ni en el historial, ni en
    mensajes de error.
-2. Red: lista blanca de dominios (`api.anthropic.com`, `claude.ai`). Cero telemetría, cero
-   analíticas, cero servidores propios.
+2. Red: solo `api.anthropic.com` y `claude.ai`. Excepción única: `github.com` y el CDN al que
+   GitHub redirige sus Releases (`*.githubusercontent.com`), **solo cuando el usuario pulsa
+   "Buscar actualizaciones"**; nunca al arrancar ni de forma periódica. Cero telemetría, cero analíticas, cero servidores del proyecto.
 3. Almacenamiento solo en el almacén seguro del sistema; el token de Claude Code no se copia,
    se lee en cada consulta.
 4. Tauri: CSP estricta, sin `shell`/`fs` expuestos a la UI; la UI no ve credenciales, solo el
