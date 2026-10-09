@@ -5,6 +5,7 @@ pub mod colors;
 pub mod commands;
 pub mod credentials;
 pub mod history;
+pub mod i18n;
 pub mod model;
 pub mod parse;
 pub mod projection;
