@@ -645,7 +645,7 @@ git commit -m "feat: build.sh del APK, sin Gradle"
 
 ### Tarea 2.3: Instalar y comprobar en el teléfono
 
-- [ ] **Paso 1: Comprobar que ADB responde**
+- [x] **Paso 1: Comprobar que ADB responde**
 
 ```bash
 adb devices -l
@@ -654,14 +654,14 @@ Esperado: una línea con `device` y el modelo. Si sale vacío, la depuración in
 puerto: escanear `127.0.0.1` en el rango 30000-65535 y `adb connect` a cada candidato (el
 procedimiento está en el `CLAUDE.md` global del aparato).
 
-- [ ] **Paso 2: Instalar**
+- [x] **Paso 2: Instalar**
 
 ```bash
 adb install -r android/app/build/claude-usage.apk
 ```
 Esperado: `Success`.
 
-- [ ] **Paso 3: Arrancar y leer lo que muestra**
+- [x] **Paso 3: Arrancar y leer lo que muestra**
 
 ```bash
 adb shell monkey -p com.claulimitswidgets.android -c android.intent.category.LAUNCHER 1
@@ -673,7 +673,7 @@ Esperado: entre los textos aparece `Núcleo enlazado: red` (o `Core linked: red`
 está en inglés). `red` es el color que R7 da a 85, así que esa palabra demuestra que el núcleo
 se ejecutó de verdad dentro de la app, no que solo compiló.
 
-- [ ] **Paso 4: Comprobar que no hay errores de carga de clases**
+- [x] **Paso 4: Comprobar que no hay errores de carga de clases**
 
 ```bash
 adb logcat -d -s AndroidRuntime:E | tail -5
@@ -681,12 +681,19 @@ adb logcat -d -s AndroidRuntime:E | tail -5
 Esperado: ninguna línea de `com.claudewidgets`. Si aparece `NoClassDefFoundError`, el `d8` no
 metió el núcleo: revisar que el paso 5 de `build.sh` recoja `$OUT/classes` **entero**.
 
-- [ ] **Paso 5: Commit (si hubo ajustes)**
+- [x] **Paso 5: Commit (si hubo ajustes)**
 
 ```bash
 git add -A android/app
 git commit -m "test: APK instalado y comprobado en el telefono"
 ```
+
+**Resultado (2026-10-09, SM-S948B por depuracion inalambrica):** APK de 20958 bytes instalado con
+`adb install -r` (`Success`). La app arranca y muestra `Uso de Claude` y **`Núcleo enlazado: red`**
+—la palabra `red` es la que R7 asigna a 85, asi que el nucleo corrio dentro de la app—. Sin ajustes
+en el codigo: no hizo falta tocar nada. `adb logcat -d -s AndroidRuntime:E` salio **vacio** y no hay
+`NoClassDefFoundError`, de modo que `d8` si metio el nucleo entero. `dumpsys` confirma
+`minSdk=29 targetSdk=34 versionName=0.0.0-dev`.
 
 ### Tarea 2.4: Job de CI
 
