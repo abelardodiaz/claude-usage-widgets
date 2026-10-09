@@ -48,6 +48,10 @@ impl UsageService {
         &self.store
     }
 
+    pub fn lang(&self) -> &str {
+        &self.lang
+    }
+
     /// Consultas reales hechas hasta ahora (diagnostico y tests).
     pub fn attempts(&self) -> u32 {
         self.lock().attempts
@@ -138,6 +142,7 @@ mod tests {
 
         let view = service.get_at(now, true);
         assert_eq!(view.lang, "es");
+        assert_eq!(service.lang(), "es");
         assert_eq!(view.error, Some(ErrorCode::NoCredentials));
         assert_eq!(
             view.retry_at, None,
