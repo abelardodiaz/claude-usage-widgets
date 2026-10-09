@@ -23,6 +23,7 @@ public final class AppTestRunner {
         BackoffTest.run(a);
         UsageClientTest.run(a);
         OrgSelectorTest.run(a);
+        SessionTest.run(a, ctx);
         List<String> failures = a.failures();
         if (failures.isEmpty()) return "OK: " + a.checks() + " comprobaciones, 0 fallos";
         StringBuilder sb = new StringBuilder("FALLOS (" + failures.size()

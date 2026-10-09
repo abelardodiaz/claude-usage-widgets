@@ -7,4 +7,6 @@
     <string name="settings_org_auto">Automatic</string>
     <string name="settings_org_help">Your account has more than one organization. Pick the one the widget should show.</string>
     <string name="logout">Log out</string>
+    <string name="logout_failed">Could not fully log out</string>
+    <string name="settings_org_unnamed">Organization %1$d</string>
 </resources>

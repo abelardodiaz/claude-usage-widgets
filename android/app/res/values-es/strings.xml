@@ -7,4 +7,6 @@
     <string name="settings_org_auto">Automática</string>
     <string name="settings_org_help">Tu cuenta tiene más de una organización. Elige cuál debe mostrar el widget.</string>
     <string name="logout">Cerrar sesión</string>
+    <string name="logout_failed">No se pudo cerrar la sesión del todo</string>
+    <string name="settings_org_unnamed">Organización %1$d</string>
 </resources>
