@@ -26,10 +26,10 @@ public final class Session {
     }
 
     /**
-     * Para las pruebas: almacen y preferencias inyectados, y sin tocar WebView ni cache, para no
-     * borrar la sesion ni los datos reales del dueno.
+     * Para las pruebas: almacen y preferencias inyectados; con realDevice=false no toca WebView, cache,
+     * job ni widgets, para no afectar la sesion ni el aparato reales del dueno.
      */
-    static boolean logout(Context ctx, SessionStore store, String prefsName, boolean webData) {
+    static boolean logout(Context ctx, SessionStore store, String prefsName, boolean realDevice) {
         // F4: envolver esto en synchronized (UsageRefresher.LOCK) para no borrar mientras un
         // refresco escribe.
         Context app = ctx.getApplicationContext() != null ? ctx.getApplicationContext() : ctx;
@@ -43,16 +43,22 @@ public final class Session {
                 .edit().clear().commit();
         ok &= app.deleteSharedPreferences(prefsName);             // y el archivo mismo
 
-        if (webData) {
+        if (realDevice) {
             ok &= clearWebData(app);
             ok &= deleteContents(app.getCacheDir());              // cache (incluye la del WebView)
         }
 
         // F4: borrar aqui samples.jsonl (SampleStore.clear()) y el ultimo modelo/orgs/hora
         // (SnapshotStore.clear()).
-        ok &= attempt(() -> WidgetUpdateJob.cancel(app));
+        // cancel y push tocan el job y los widgets REALES del dueno: la prueba (realDevice=false)
+        // no debe cancelarlos ni repintarlos cuando F4 los llene.
+        if (realDevice) {
+            ok &= attempt(() -> WidgetUpdateJob.cancel(app));
+        }
         // F4: pasar Snapshot.of(Snapshot.Problem.NO_SESSION) para que los widgets muestren "sin sesion".
-        ok &= attempt(() -> WidgetUpdateJob.pushToWidgets(app));
+        if (realDevice) {
+            ok &= attempt(() -> WidgetUpdateJob.pushToWidgets(app));
+        }
         return ok;
     }
 

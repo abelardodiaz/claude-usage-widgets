@@ -1,13 +1,14 @@
 package com.claulimitswidgets.android;
 
 import android.content.Context;
+import android.content.ContextWrapper;
 import android.content.SharedPreferences;
 
 import com.claudewidgets.core.Assert;
 
 /**
  * Prueba de logout con almacen y preferencias PROPIOS: no toca la sesion real del dueno.
- * Sin WebView ni cache (webData=false) por la misma razon.
+ * Sin WebView, cache, job ni widgets (realDevice=false) por la misma razon.
  */
 public final class SessionTest {
 
@@ -37,5 +38,21 @@ public final class SessionTest {
         a.isTrue("logout vacia las preferencias",
                 ctx.getSharedPreferences(TEST_PREFS, Context.MODE_PRIVATE).getAll().isEmpty());
         a.isTrue("logout es repetible", Session.logout(ctx, s, TEST_PREFS, false));
+
+        // Rama de fallo: deleteSharedPreferences falla -> false, pero sigue y borra la sesion.
+        try {
+            s.save("sessionKey=falsa");
+        } catch (Exception e) {
+            a.fail("no se pudo preparar la segunda sesion: " + e.getClass().getSimpleName());
+            return;
+        }
+        a.isTrue("antes del fallo: hay sesion", s.hasSession());
+        Context failing = new ContextWrapper(ctx) {
+            @Override public Context getApplicationContext() { return this; }
+            @Override public boolean deleteSharedPreferences(String name) { return false; }
+        };
+        boolean ok2 = Session.logout(failing, s, TEST_PREFS, false);
+        a.isTrue("si un borrado falla, logout devuelve false", !ok2);
+        a.isTrue("aun asi borro la sesion", !s.hasSession());
     }
 }
