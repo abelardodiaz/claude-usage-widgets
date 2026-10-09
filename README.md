@@ -16,8 +16,9 @@ cuándo llegarías al límite.
 
 ## Instalar en Windows
 
-Requisito: tener [Claude Code](https://docs.claude.com/en/docs/claude-code) instalado y con
-sesión iniciada en esta PC. El widget lee el token que Claude Code guarda en
+Requisitos: un plan **Pro o Max** de Claude y [Claude Code](https://docs.claude.com/en/docs/claude-code)
+instalado y con sesión iniciada en esta PC con esa cuenta. Si usas Claude Code con una clave de
+API no hay límites de uso del plan que mostrar, así que el widget no sirve en ese caso. El widget lee el token que Claude Code guarda en
 `%USERPROFILE%\.claude\.credentials.json`; nunca lo copia ni lo renueva. Si el token vence, el
 widget lo avisa y basta con abrir Claude Code.
 
@@ -79,8 +80,9 @@ limits, today's budget, a weekly breakdown and a projection of when you would hi
 
 - **Windows 11:** download the installer from
   [Releases](https://github.com/abelardodiaz/claude-usage-widgets/releases) and check it against
-  `SHA256SUMS.txt`. Requires Claude Code installed and signed in; the widget only reads its
-  token and never refreshes it. The installer is not code-signed, so SmartScreen may warn you:
+  `SHA256SUMS.txt`. Requires a Claude **Pro or Max** plan and Claude Code installed and signed
+  in with that account (with an API key there are no plan usage limits to show). The widget only
+  reads the Claude Code token and never refreshes it. The installer is not code-signed, so SmartScreen may warn you:
   "More info" then "Run anyway". Updates are signed and verified by the app.
 - **Android:** on the way. **Linux / macOS:** planned.
 - **Privacy:** the only host is `api.anthropic.com`, plus `github.com` and
