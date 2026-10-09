@@ -208,7 +208,7 @@ async function load(force = false) {
 
 document.querySelectorAll(".ico[data-p]").forEach((el) => el.addEventListener("click", () => toggle(el.dataset.p)));
 $("btnRefresh").addEventListener("click", () => load(true));
-$("btnClose").addEventListener("click", () => getCurrentWindow().close());
+$("btnClose").addEventListener("click", () => getCurrentWindow().hide());
 listen("refresh", () => load(true));
 setLang("es");
 load();
