@@ -2065,7 +2065,7 @@ git commit -m "feat: login por correo con pantalla previa que explica lo de Goog
 
 **Archivos:** crear `src/.../WidgetUpdateJob.java` (esqueleto)
 
-- [ ] **Paso 1: Esqueleto que compila**
+- [x] **Paso 1: Esqueleto que compila**
 
 ```java
 package com.claulimitswidgets.android;
@@ -2081,7 +2081,7 @@ public final class WidgetUpdateJob {
 }
 ```
 
-- [ ] **Paso 2: Construir, instalar y hacer el login de verdad**
+- [x] **Paso 2: Construir, instalar y hacer el login de verdad**
 
 ```bash
 bash android/app/build.sh
@@ -2103,7 +2103,7 @@ adb logcat -d | grep -i "sessionKey\|lastActiveOrg" | grep -v "nombres=" || echo
 ```
 Esperado: `limpio`. Si aparece algo, es un fallo de seguridad y bloquea el PR.
 
-- [ ] **Paso 4: Probar la cookie MÍNIMA contra claude.ai real**
+- [x] **Paso 4: Probar la cookie MÍNIMA contra claude.ai real**
 
 Esta es **la hipótesis central de la fase y no está demostrada**. El spike A2 mandó el jarro
 entero, incluidas `__cf_bm` y `_cfuvid`, que son de gestión de bots de Cloudflare. Que
@@ -2140,6 +2140,27 @@ Esperado: `HTTP 200, N organizacion(es)`.
 probablemente `__cf_bm` y `_cfuvid`— lo cual cambia la restricción global 7. **Eso es un memo a
 PC, no una decisión de quien ejecute.** Y si el resultado no se puede obtener (sin sesión, sin
 red), se declara como riesgo abierto en el reporte de la fase, no se da por bueno.
+
+**Resultado del Paso 4 (2026-10-09, sesion real del duenio, SM-S948B):** la hipotesis central del
+diseno queda **CONFIRMADA**. Lo guardado en el almacen cifrado era **solo** `sessionKey` y
+`lastActiveOrg` —la cookie minima, ningun otro nombre— y claude.ai respondio **200 con JSON** a
+`organizations()` y a `usage()`: ni 401, ni 403, ni `cf-mitigated`, ni HTML donde se esperaba JSON.
+El **nucleo parseo la respuesta real** sin `UnrecognizedFormatException`, no solo los fixtures. La
+cuenta tiene 2 organizaciones y D2 eligio sin ambiguedad con `lastActiveOrg` en el primer sondeo.
+Valores que saldrian en el widget: sesion **64.0% (amber)**, semana **96.0% (red)** — y la app
+oficial de Claude mostraba en ese mismo momento "Cerca del limite", lo que confirma el calculo de
+forma independiente.
+
+Tambien queda confirmado, de paso, que `CookieManager.getCookie` **si devuelve la `sessionKey`**
+pese a ser HttpOnly: hasta hoy eso solo lo respaldaba el spike de W0.
+
+La sonda que hizo la comprobacion es de diagnostico y **no se commitea**: necesita red y una sesion
+real, asi que romperia CI. Queda guardada en el espacio de trabajo de la fase
+(`RealSessionProbe.java` y `build-probe.sh`), junto con su reporte.
+
+**Pendiente, deliberadamente aplazado al Paso 3 / F5:** comprobar que cerrar sesion no deja la
+cookie en `app_webview/Default/Cookies`. Exige **borrar la sesion del duenio**, que acaba de
+iniciarla y que hace falta para F4. Se hara cuando toque probar en dispositivo.
 
 - [ ] **Paso 5: Commit, PR y memo**
 
