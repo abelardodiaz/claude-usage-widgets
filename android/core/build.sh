@@ -21,11 +21,11 @@ mkdir -p "$OUT/classes"
 # APIs de Java 9+ que revientan en un telefono real. Las pruebas no corren en Android, asi
 # que se compilan aparte y pueden usar lo que quieran.
 echo "== javac (produccion, --release 8) =="
-find "$HERE/src" -name '*.java' | sort > "$OUT/src.txt"
+find "$HERE/src" -name '*.java' | sort | sed 's/.*/"&"/' > "$OUT/src.txt"
 javac -encoding UTF-8 --release 8 -Xlint:all,-options -Werror -d "$OUT/classes" "@$OUT/src.txt"
 
 echo "== javac (pruebas) =="
-find "$HERE/test" -name '*.java' | sort > "$OUT/test.txt"
+find "$HERE/test" -name '*.java' | sort | sed 's/.*/"&"/' > "$OUT/test.txt"
 javac -encoding UTF-8 -Xlint:all -Werror -cp "$OUT/classes" -d "$OUT/classes" "@$OUT/test.txt"
 
 echo "== pruebas =="
