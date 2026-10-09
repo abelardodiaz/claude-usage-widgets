@@ -39,9 +39,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # rama stable
         with:
           toolchain: stable
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          workspaces: desktop/src-tauri -> target
+      # Sin rust-cache a proposito: los binarios publicados se compilan desde cero.
       - name: Dependencias npm
         working-directory: desktop
         run: pnpm install --frozen-lockfile
@@ -95,6 +93,25 @@ jobs:
           '
           cat latest.json
           gh release upload "$GITHUB_REF_NAME" latest.json --clobber --repo "$GITHUB_REPOSITORY"
+      # requireSignedVersion (tauri.conf.json) rechaza firmas sin "version:" en el comentario
+      # firmado; si el CLI no la grabara, el updater fallaria en todos los equipos. Se comprueba
+      # aqui, antes de que el duenio publique el borrador.
+      - name: Las firmas llevan la version del tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          want="version:${GITHUB_REF_NAME#v}"
+          found=0
+          for sig in desktop/src-tauri/target/release/bundle/msi/*.sig desktop/src-tauri/target/release/bundle/nsis/*.sig; do
+            comment="$(base64 -d "$sig" | sed -n 's/^trusted comment: //p')"
+            echo "$(basename "$sig"): $comment"
+            if ! printf '%s\n' "$comment" | tr '\t' '\n' | grep -qx "$want"; then
+              echo "la firma $sig no lleva $want"
+              exit 1
+            fi
+            found=$((found + 1))
+          done
+          [ "$found" -ge 2 ] || { echo "faltan firmas (.msi.sig y .exe.sig)"; exit 1; }
       - name: Checksums SHA-256
         shell: bash
         run: |
