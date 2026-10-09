@@ -66,6 +66,21 @@ public class LoginActivity extends Activity {
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest req) {
                 return !isClaude(req.getUrl());   // false: lo carga el WebView; true: no se carga
             }
+
+            // Red de seguridad: shouldOverrideUrlLoading NO se invoca para la carga inicial, ni
+            // para las redirecciones del servidor, ni para los POST de formularios. Esto cubre
+            // la navegacion principal por esas rutas.
+            // A PROPOSITO no se bloquean subrecursos ni subframes (nada de shouldInterceptRequest):
+            // el reto de Cloudflare vive en un iframe de otro dominio y bloquearlo romperia el
+            // login en silencio. Que hosts de terceros hay que permitir se decide en la Tarea 3.7,
+            // con el login real delante. No es un olvido.
+            @Override
+            public void onPageStarted(WebView view, String url, android.graphics.Bitmap icon) {
+                if (!isClaude(url == null ? null : Uri.parse(url)) && !"about:blank".equals(url)) {
+                    view.stopLoading();
+                    view.loadUrl("about:blank");
+                }
+            }
         });
 
         ((Button) findViewById(R.id.btn_start)).setOnClickListener(v -> startLogin());
@@ -78,6 +93,11 @@ public class LoginActivity extends Activity {
         // si no, Ajustes queda inalcanzable y "cerrar sesion" escondido tras el WebView.
         // btn_probe queda oculto: la prueba de conexion necesita la consulta de F4.
         boolean signedIn = store.hasSession();
+        // Si el sistema mato el proceso a medias de un login, sin onDestroy, el jarro del WebView
+        // pudo quedarse con la sessionKey. Sin sesion guardada no hay nada que conservar: limpiar.
+        if (!signedIn) {
+            wipeWebView();
+        }
         ((TextView) findViewById(R.id.intro_status)).setText(
                 signedIn ? R.string.login_ok : R.string.login_steps);
         findViewById(R.id.btn_settings).setVisibility(signedIn ? View.VISIBLE : View.GONE);
@@ -101,6 +121,11 @@ public class LoginActivity extends Activity {
         // Si el usuario se va a medio login, el jarro del WebView no se queda con su sesion.
         if (webUsed) {
             wipeWebView();
+            // Patron habitual: sacarlo de su padre y destruirlo evita fugar el contexto.
+            if (web.getParent() instanceof android.view.ViewGroup) {
+                ((android.view.ViewGroup) web.getParent()).removeView(web);
+            }
+            web.destroy();
         }
         super.onDestroy();
     }
@@ -125,17 +150,23 @@ public class LoginActivity extends Activity {
         }
         try {
             store.save(minimal);           // se guarda YA reducida al minimo
+        } catch (Exception e) {
+            // Entro bien pero la sesion se perdio al guardarla. El mensaje de la excepcion podria
+            // arrastrar material sensible: no se muestra.
+            status.setText(R.string.login_save_failed);
+            return;
+        }
+        // Con la sesion ya guardada, un fallo aqui NO es un fallo del login.
+        try {
             // El UA del WebView es el que usaran las consultas nativas: una sola huella hacia
             // claude.ai. Se guarda aqui porque un JobService no puede crear un WebView.
             getSharedPreferences(SettingsActivity.PREFS, MODE_PRIVATE).edit()
                     .putString("user_agent", ua).apply();
-            // F4: aqui engancha UsageRefresher.clearBackoff(this): volver a entrar arregla el
-            // problema y la espera acumulada ya no aplica.
-        } catch (Exception e) {
-            // El mensaje de la excepcion podria arrastrar material sensible: no se muestra.
-            status.setText(R.string.login_no_session);
-            return;
+        } catch (RuntimeException ignored) {
+            // F4 usara su UA por omision.
         }
+        // F4: aqui engancha UsageRefresher.clearBackoff(this): volver a entrar arregla el
+        // problema y la espera acumulada ya no aplica.
         wipeWebView();
         status.setText(R.string.login_ok);
         // F3: ambos son esqueleto y no hacen nada hasta F4.
@@ -150,7 +181,7 @@ public class LoginActivity extends Activity {
     }
 
     /** Solo https hacia claude.ai o un subdominio suyo. */
-    private static boolean isClaude(Uri u) {
+    static boolean isClaude(Uri u) {
         if (u == null || !"https".equals(u.getScheme())) return false;
         String h = u.getHost();
         return h != null && (h.equals("claude.ai") || h.endsWith(".claude.ai"));

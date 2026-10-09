@@ -22,4 +22,5 @@
     <string name="login_checking">Comprobando…</string>
     <string name="login_no_session">Todavía no hay sesión. Termina de entrar en la página de arriba.</string>
     <string name="login_ok">Sesión iniciada. Ya puedes añadir el widget a la pantalla de inicio.</string>
+    <string name="login_save_failed">Entraste, pero no se pudo guardar la sesión. Vuelve a iniciar sesión.</string>
 </resources>
