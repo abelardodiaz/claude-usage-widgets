@@ -44,7 +44,8 @@ const I18N = {
     },
     ago: "; dato de hace ",
     minutes: " min",
-    hours: " h"
+    hours: " h",
+    update: { checking: "Buscando actualizaciones...", up_to_date: "Estás al día", installing: "Instalando actualización...", failed: "No se pudo comprobar actualizaciones" }
   },
   en: {
     locale: "en-US",
@@ -89,6 +90,7 @@ const I18N = {
     },
     ago: "; data from ",
     minutes: " min ago",
-    hours: " h ago"
+    hours: " h ago",
+    update: { checking: "Checking for updates...", up_to_date: "You are up to date", installing: "Installing update...", failed: "Could not check for updates" }
   }
 };

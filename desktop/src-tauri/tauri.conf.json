@@ -31,6 +31,7 @@
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": ["msi", "nsis"],
     "icon": [
       "icons/32x32.png",
@@ -43,6 +44,17 @@
       "nsis": {
         "installMode": "currentUser",
         "languages": ["Spanish", "English"]
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDhENEJEMzMyOUFFQ0E2MkEKUldRcXB1eWFNdE5MamJ4MUpuZkR5Snk2VURiUy9xZ09pWjJVYUhIRVFUcXFmNTdaeGY4RmdwV3IK",
+      "endpoints": [
+        "https://github.com/abelardodiaz/claude-usage-widgets/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
       }
     }
   }

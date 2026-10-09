@@ -14,6 +14,7 @@ pub mod source_claude_code;
 pub mod store;
 pub mod timez;
 pub mod tray;
+pub mod updater;
 pub mod view;
 
 use std::sync::Arc;
@@ -91,6 +92,8 @@ pub fn run() {
             MacosLauncher::LaunchAgent,
             None,
         ))
+        // Sin red al registrarse: solo consulta cuando la bandeja llama a `updater` (D1).
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![commands::get_usage])
         // Cerrar la ventana la oculta; salir de verdad es el item de la bandeja.
         .on_window_event(|window, event| {
