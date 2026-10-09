@@ -9,4 +9,17 @@
     <string name="logout">Cerrar sesión</string>
     <string name="logout_failed">No se pudo cerrar la sesión del todo</string>
     <string name="settings_org_unnamed">Organización %1$d</string>
+    <string name="login_title">Inicia sesión en Claude</string>
+    <string name="login_email_only">En Android <b>solo funciona el acceso por correo</b>. El botón
+        "Continuar con Google" falla dentro de un navegador incrustado: Google bloquea el intento
+        durante 48 horas.</string>
+    <string name="login_steps">Te llegará un enlace por correo. Vence en 10 minutos. Si al abrirlo
+        te muestra un código de verificación en vez de iniciar sesión, escribe ese código aquí.</string>
+    <string name="login_start">Entrar con correo</string>
+    <string name="login_again">Volver a entrar</string>
+    <string name="probe_title">Probar la conexión</string>
+    <string name="login_done">Listo</string>
+    <string name="login_checking">Comprobando…</string>
+    <string name="login_no_session">Todavía no hay sesión. Termina de entrar en la página de arriba.</string>
+    <string name="login_ok">Sesión iniciada. Ya puedes añadir el widget a la pantalla de inicio.</string>
 </resources>
