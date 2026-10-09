@@ -9,10 +9,8 @@ import android.view.WindowManager;
 import android.webkit.CookieManager;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
-import android.webkit.WebStorage;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
-import android.webkit.WebViewDatabase;
 import android.widget.Button;
 import android.widget.TextView;
 
@@ -89,31 +87,43 @@ public class LoginActivity extends Activity {
         ((Button) findViewById(R.id.btn_settings)).setOnClickListener(
                 v -> startActivity(new Intent(this, SettingsActivity.class)));
 
-        // Con sesion, la intro deja de ser un tutorial y pasa a ser el panel de la cuenta:
-        // si no, Ajustes queda inalcanzable y "cerrar sesion" escondido tras el WebView.
-        // btn_probe queda oculto: la prueba de conexion necesita la consulta de F4.
-        boolean signedIn = store.hasSession();
+        ((Button) findViewById(R.id.btn_logout_intro)).setOnClickListener(v -> logout());
         // Si el sistema mato el proceso a medias de un login, sin onDestroy, el jarro del WebView
         // pudo quedarse con la sessionKey. Sin sesion guardada no hay nada que conservar: limpiar.
-        if (!signedIn) {
+        if (!store.hasSession()) {
             wipeWebView();
         }
+        paintIntro();
+    }
+
+    /** Al volver (p. ej. desde Ajustes) la pantalla vuelve a reflejar el estado real. */
+    @Override
+    protected void onResume() {
+        super.onResume();
+        paintIntro();
+    }
+
+    /**
+     * Pinta la intro segun el estado REAL de la sesion. Con sesion deja de ser un tutorial y pasa
+     * a ser el panel de la cuenta: si no, Ajustes queda inalcanzable y "cerrar sesion" escondido
+     * tras el WebView. Solo cambia textos y botones, no cual panel se ve: eso lo decide
+     * {@link #showIntro()}, para que un onResume a medias de un login no tire el WebView.
+     * btn_probe queda oculto: la prueba de conexion necesita la consulta de F4.
+     */
+    private void paintIntro() {
+        boolean signedIn = store.hasSession();
         ((TextView) findViewById(R.id.intro_status)).setText(
                 signedIn ? R.string.login_ok : R.string.login_steps);
         findViewById(R.id.btn_settings).setVisibility(signedIn ? View.VISIBLE : View.GONE);
         findViewById(R.id.btn_logout_intro).setVisibility(signedIn ? View.VISIBLE : View.GONE);
-        ((Button) findViewById(R.id.btn_logout_intro)).setOnClickListener(v -> {
-            boolean ok = Session.logout(this);
-            wipeWebView();        // el WebView pudo quedar con cookies de un login anterior
-            if (ok) {
-                recreate();
-            } else {
-                // No se cierra la pantalla como si hubiera salido bien.
-                ((TextView) findViewById(R.id.intro_status)).setText(R.string.logout_failed);
-            }
-        });
         ((Button) findViewById(R.id.btn_start)).setText(
                 signedIn ? R.string.login_again : R.string.login_start);
+    }
+
+    /** Vuelve de la pagina web a la intro. */
+    private void showIntro() {
+        findViewById(R.id.web_pane).setVisibility(View.GONE);
+        findViewById(R.id.intro).setVisibility(View.VISIBLE);
     }
 
     @Override
@@ -143,8 +153,8 @@ public class LoginActivity extends Activity {
         // El UA se lee en el hilo de UI: `web.getSettings()` no se toca desde otro hilo.
         final String ua = userAgent(web);
         String all = CookieManager.getInstance().getCookie(ORIGIN);
-        String minimal = UsageClient.minimalCookies(all);
-        if (!hasSessionKey(minimal)) {
+        final String minimal = cookiesToSave(all);
+        if (minimal == null) {
             status.setText(R.string.login_no_session);
             return;
         }
@@ -178,8 +188,12 @@ public class LoginActivity extends Activity {
                     return;
                 }
                 if (!ok) {
-                    // Entro bien pero la sesion se perdio al guardarla.
-                    status.setText(R.string.login_save_failed);
+                    // Entro bien pero la sesion se perdio al guardarla. El mensaje promete que no
+                    // quedo sesion: el WebView tampoco debe conservar la cookie.
+                    wipeWebView();
+                    showIntro();
+                    paintIntro();
+                    ((TextView) findViewById(R.id.intro_status)).setText(R.string.login_save_failed);
                     return;
                 }
                 afterSaved(ua);
@@ -194,14 +208,15 @@ public class LoginActivity extends Activity {
             // El UA del WebView es el que usaran las consultas nativas: una sola huella hacia
             // claude.ai. Se guarda aqui porque un JobService no puede crear un WebView.
             getSharedPreferences(SettingsActivity.PREFS, MODE_PRIVATE).edit()
-                    .putString("user_agent", ua).apply();
+                    .putString(SettingsActivity.KEY_UA, ua).apply();
         } catch (RuntimeException ignored) {
             // F4 usara su UA por omision.
         }
         // F4: aqui engancha UsageRefresher.clearBackoff(this): volver a entrar arregla el
         // problema y la espera acumulada ya no aplica.
         wipeWebView();
-        status.setText(R.string.login_ok);
+        showIntro();
+        paintIntro();      // ahora hay sesion: aparecen Ajustes y cerrar sesion
         scheduleAfterLogin();
     }
 
@@ -213,8 +228,22 @@ public class LoginActivity extends Activity {
 
     private void logout() {
         boolean ok = Session.logout(this);
-        wipeWebView();
-        status.setText(ok ? R.string.login_no_session : R.string.logout_failed);
+        wipeWebView();        // el WebView pudo quedar con cookies de un login anterior
+        showIntro();
+        paintIntro();         // refleja el estado real, no el que se esperaba
+        if (!ok) {
+            // No se cierra la pantalla como si hubiera salido bien.
+            ((TextView) findViewById(R.id.intro_status)).setText(R.string.logout_failed);
+        }
+    }
+
+    /**
+     * Lo unico que se guarda del jarro, o null si no hay sesion que guardar (sin `sessionKey`
+     * con valor no se escribe nada en el almacen).
+     */
+    static String cookiesToSave(String all) {
+        String minimal = UsageClient.minimalCookies(all);
+        return hasSessionKey(minimal) ? minimal : null;
     }
 
     /**
@@ -246,12 +275,12 @@ public class LoginActivity extends Activity {
      * `flush` va DENTRO del callback o se escribe en disco lo que se acaba de borrar.
      * Y con DOM storage activado hay que borrar tambien localStorage e IndexedDB.
      */
-    @SuppressWarnings("deprecation")   // clearFormData y clearHttpAuth...: sin sustituto
+    @SuppressWarnings("deprecation")   // clearFormData: sin sustituto
     private void wipeWebView() {
-        CookieManager cm = CookieManager.getInstance();
-        cm.removeAllCookies(ok -> cm.flush());
-        WebStorage.getInstance().deleteAllData();          // localStorage e IndexedDB
-        WebViewDatabase.getInstance(this).clearHttpAuthUsernamePassword();
+        // Lo que no necesita instancia (cookies, almacenamiento web, HTTP auth) vive en Session,
+        // para que los dos caminos de logout borren lo mismo.
+        Session.clearWebData(this);
+        // Lo que SI necesita la instancia solo se puede borrar aqui.
         web.clearCache(true);
         web.clearHistory();
         web.clearFormData();

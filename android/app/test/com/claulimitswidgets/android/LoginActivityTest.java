@@ -39,6 +39,15 @@ public final class LoginActivityTest {
         a.eq("sessionKey vacia no es sesion", false, LoginActivity.hasSessionKey(
                 com.claulimitswidgets.android.UsageClient.minimalCookies("lastActiveOrg=B; sessionKey=")));
         a.eq("hasSessionKey nulo", false, LoginActivity.hasSessionKey(null));
+
+        // finishLogin sin sessionKey: no hay nada que guardar (cookiesToSave devuelve null).
+        a.eq("jarro sin sessionKey: no se guarda nada", null,
+                LoginActivity.cookiesToSave("lastActiveOrg=B; cf_clearance=Z"));
+        a.eq("jarro nulo: no se guarda nada", null, LoginActivity.cookiesToSave(null));
+        a.eq("jarro con senuelos y sin la real: no se guarda nada", null,
+                LoginActivity.cookiesToSave("x_sessionKey=Z;sessionKeyExtra=Z"));
+        a.eq("control: con sessionKey se guarda solo lo minimo", "sessionKey=A",
+                LoginActivity.cookiesToSave("cf_clearance=Z; sessionKey=A"));
     }
 
     private static boolean ok(String url) {

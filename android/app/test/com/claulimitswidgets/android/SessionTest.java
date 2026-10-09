@@ -47,11 +47,37 @@ public final class SessionTest {
             return;
         }
         a.isTrue("antes del fallo: hay sesion", s.hasSession());
+        // Control: el mismo envoltorio SIN inyectar el fallo da true. Asi el false de abajo solo
+        // puede venir de deleteSharedPreferences, no del envoltorio ni de otro borrado.
+        final String[] deleted = {null};
+        Context passthrough = new ContextWrapper(ctx) {
+            @Override public Context getApplicationContext() { return this; }
+            @Override public boolean deleteSharedPreferences(String name) {
+                return super.deleteSharedPreferences(name);
+            }
+        };
+        SessionStore s2 = new SessionStore(ctx, TEST_FILE + "2", TEST_ALIAS + "2");
+        s2.clear();
+        try {
+            s2.save("sessionKey=falsa");
+        } catch (Exception e) {
+            a.fail("no se pudo preparar la sesion de control: " + e.getClass().getSimpleName());
+            return;
+        }
+        a.isTrue("control: el envoltorio sin fallo devuelve true",
+                Session.logout(passthrough, s2, TEST_PREFS, false));
+        s2.clear();
+
         Context failing = new ContextWrapper(ctx) {
             @Override public Context getApplicationContext() { return this; }
-            @Override public boolean deleteSharedPreferences(String name) { return false; }
+            @Override public boolean deleteSharedPreferences(String name) {
+                deleted[0] = name;
+                return false;
+            }
         };
         boolean ok2 = Session.logout(failing, s, TEST_PREFS, false);
+        a.eq("el unico fallo inyectado fue deleteSharedPreferences de las prefs de prueba",
+                TEST_PREFS, deleted[0]);
         a.isTrue("si un borrado falla, logout devuelve false", !ok2);
         a.isTrue("aun asi borro la sesion", !s.hasSession());
     }

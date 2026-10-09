@@ -3,6 +3,7 @@ package com.claulimitswidgets.android;
 import android.content.Context;
 import android.webkit.CookieManager;
 import android.webkit.WebStorage;
+import android.webkit.WebViewDatabase;
 
 import java.io.File;
 
@@ -10,7 +11,10 @@ import java.io.File;
  * Cerrar sesion. Un solo sitio, llamado desde el login y desde los ajustes.
  *
  * Borra TODO lo que la app sabe del usuario y existe hoy: la cookie cifrada y su llave, las
- * preferencias (organizacion manual incluida), los datos del WebView y la cache. Si manana se
+ * preferencias (organizacion manual incluida), los datos del WebView que no necesitan una
+ * instancia (cookies, almacenamiento web, credenciales de HTTP auth) y la cache de la app.
+ * Lo que SI necesita una instancia de WebView (su cache propia, historial y datos de formulario)
+ * lo borra LoginActivity.wipeWebView, que tiene la instancia; Ajustes no puede. Si manana se
  * guarda algo nuevo del usuario, se borra aqui o el "cerrar sesion" se vuelve mentira.
  */
 public final class Session {
@@ -62,14 +66,20 @@ public final class Session {
         return ok;
     }
 
-    /** Cookies y almacenamiento del WebView. Puede lanzar si el WebView no esta disponible. */
-    private static boolean clearWebData(Context app) {
+    /**
+     * Todo lo del WebView que se borra SIN una instancia: cookies, almacenamiento web y
+     * credenciales de HTTP auth. NO cubre `clearCache`, `clearHistory` ni `clearFormData`, que son
+     * metodos de instancia: los hace LoginActivity.wipeWebView. Nunca lanza.
+     */
+    @SuppressWarnings("deprecation")   // clearHttpAuthUsernamePassword: sin sustituto
+    static boolean clearWebData(Context app) {
         boolean ok = attempt(() -> {
             CookieManager cm = CookieManager.getInstance();
             // removeAllCookies es asincrono: el flush va DENTRO del callback, cuando ya borro.
             cm.removeAllCookies(removed -> cm.flush());
         });
         ok &= attempt(() -> WebStorage.getInstance().deleteAllData());
+        ok &= attempt(() -> WebViewDatabase.getInstance(app).clearHttpAuthUsernamePassword());
         return ok;
     }
 

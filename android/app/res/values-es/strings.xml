@@ -5,7 +5,7 @@
     <string name="settings_title">Ajustes</string>
     <string name="settings_org">Organización</string>
     <string name="settings_org_auto">Automática</string>
-    <string name="settings_org_help">Tu cuenta tiene más de una organización. Elige cuál debe mostrar el widget.</string>
+    <string name="settings_org_help">Tu cuenta tiene más de una organización. Elige cuál debe mostrar el widget. La elección automática se fija al iniciar sesión: si después cambias de organización en la web, el widget seguirá con la anterior hasta que elijas aquí la nueva.</string>
     <string name="logout">Cerrar sesión</string>
     <string name="logout_failed">No se pudo cerrar la sesión del todo</string>
     <string name="settings_org_unnamed">Organización %1$d</string>
@@ -21,6 +21,6 @@
     <string name="login_done">Listo</string>
     <string name="login_checking">Comprobando…</string>
     <string name="login_no_session">Todavía no hay sesión. Termina de entrar en la página de arriba.</string>
-    <string name="login_ok">Sesión iniciada. Ya puedes añadir el widget a la pantalla de inicio.</string>
+    <string name="login_ok">Sesión iniciada. Tu sesión quedó guardada. El widget llega en la próxima actualización.</string>
     <string name="login_save_failed">Entraste, pero no se pudo guardar la sesión. Vuelve a iniciar sesión.</string>
 </resources>

@@ -5,7 +5,7 @@
     <string name="settings_title">Settings</string>
     <string name="settings_org">Organization</string>
     <string name="settings_org_auto">Automatic</string>
-    <string name="settings_org_help">Your account has more than one organization. Pick the one the widget should show.</string>
+    <string name="settings_org_help">Your account has more than one organization. Pick the one the widget should show. The automatic choice is fixed when you sign in: if you later switch organization on the website, the widget keeps watching the old one until you pick the new one here.</string>
     <string name="logout">Log out</string>
     <string name="logout_failed">Could not fully log out</string>
     <string name="settings_org_unnamed">Organization %1$d</string>
@@ -20,6 +20,6 @@
     <string name="login_done">Done</string>
     <string name="login_checking">Checking…</string>
     <string name="login_no_session">No session yet. Finish signing in on the page above.</string>
-    <string name="login_ok">Signed in. You can add the widget to your home screen.</string>
+    <string name="login_ok">Signed in. Your session is saved. The widget arrives in the next update.</string>
     <string name="login_save_failed">Signed in, but the session could not be saved. Try signing in again.</string>
 </resources>

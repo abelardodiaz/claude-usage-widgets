@@ -12,79 +12,119 @@ import java.util.List;
 public final class OrgSelectorTest {
 
     /** Probador que cuenta cuantas veces se le pregunta: cada sondeo es una peticion real. */
-    private static final class Contador implements OrgSelector.Probe {
-        private final java.util.function.Predicate<String> responde;
-        int llamadas = 0;
+    private static final class Counter implements OrgSelector.Probe {
+        private final java.util.function.Function<String, OrgSelector.Answer> answers;
+        int calls = 0;
 
-        Contador(java.util.function.Predicate<String> responde) { this.responde = responde; }
+        Counter(java.util.function.Function<String, OrgSelector.Answer> answers) {
+            this.answers = answers;
+        }
 
-        @Override public boolean responds(String orgUuid) {
-            llamadas++;
-            return responde.test(orgUuid);
+        @Override public OrgSelector.Answer probe(String orgUuid) {
+            calls++;
+            return answers.apply(orgUuid);
         }
     }
 
+    private static OrgSelector.Answer yn(boolean responds) {
+        return responds ? OrgSelector.Answer.RESPONDS : OrgSelector.Answer.NO;
+    }
+
+    /** Atajo: true -> RESPONDS, false -> NO (el servidor contesto y no sirve). */
+    private static OrgSelector.Probe p(java.util.function.Predicate<String> responds) {
+        return u -> responds.test(u) ? OrgSelector.Answer.RESPONDS : OrgSelector.Answer.NO;
+    }
+
     public static void run(Assert a) {
-        List<String> dos = Arrays.asList("org-a", "org-b");
+        List<String> two = Arrays.asList("org-a", "org-b");
 
         a.eq("el manual gana siempre", "org-z",
-                OrgSelector.choose(dos, "org-z", "org-a", u -> true).orgUuid);
+                OrgSelector.choose(two, "org-z", "org-a", p(u -> true)).orgUuid);
         a.eq("el manual gana aunque no responda", "org-z",
-                OrgSelector.choose(dos, "org-z", "org-a", u -> false).orgUuid);
+                OrgSelector.choose(two, "org-z", "org-a", p(u -> false)).orgUuid);
 
         a.eq("sin manual, lastActiveOrg si responde", "org-b",
-                OrgSelector.choose(dos, null, "org-b", u -> true).orgUuid);
+                OrgSelector.choose(two, null, "org-b", p(u -> true)).orgUuid);
         a.eq("lastActiveOrg que no responde cae a la unica que si", "org-a",
-                OrgSelector.choose(dos, null, "org-b", u -> u.equals("org-a")).orgUuid);
+                OrgSelector.choose(two, null, "org-b", p(u -> u.equals("org-a"))).orgUuid);
         a.eq("lastActiveOrg ajeno a la lista igual se intenta", "org-c",
-                OrgSelector.choose(dos, null, "org-c", u -> true).orgUuid);
+                OrgSelector.choose(two, null, "org-c", p(u -> true)).orgUuid);
 
         a.eq("sin pistas y solo una responde", "org-b",
-                OrgSelector.choose(dos, null, null, u -> u.equals("org-b")).orgUuid);
+                OrgSelector.choose(two, null, null, p(u -> u.equals("org-b"))).orgUuid);
         // Lo que NO debe hacer: elegir por el usuario.
         a.eq("sin pistas y varias responden, no elige", null,
-                OrgSelector.choose(dos, null, null, u -> true).orgUuid);
+                OrgSelector.choose(two, null, null, p(u -> true)).orgUuid);
         a.isTrue("sin pistas y varias responden, pide elegir",
-                OrgSelector.choose(dos, null, null, u -> true).ambiguous);
+                OrgSelector.choose(two, null, null, p(u -> true)).ambiguous);
         a.eq("si ninguna responde, null", null,
-                OrgSelector.choose(dos, null, null, u -> false).orgUuid);
+                OrgSelector.choose(two, null, null, p(u -> false)).orgUuid);
         a.isTrue("si ninguna responde no es ambiguo",
-                !OrgSelector.choose(dos, null, null, u -> false).ambiguous);
+                !OrgSelector.choose(two, null, null, p(u -> false)).ambiguous);
         a.eq("lista vacia sin manual, null", null,
-                OrgSelector.choose(Arrays.asList(), null, null, u -> true).orgUuid);
+                OrgSelector.choose(Arrays.asList(), null, null, p(u -> true)).orgUuid);
 
         // Llamadas a la sonda: cada una es una peticion de red real.
-        Contador manual = new Contador(u -> true);
-        OrgSelector.choose(dos, "org-z", "org-a", manual);
-        a.eq("con manual no se sondea nada", 0, manual.llamadas);
+        Counter manual = new Counter(u -> yn(true));
+        OrgSelector.choose(two, "org-z", "org-a", manual);
+        a.eq("con manual no se sondea nada", 0, manual.calls);
 
-        Contador activa = new Contador(u -> true);
-        OrgSelector.choose(dos, null, "org-b", activa);
-        a.eq("lastActiveOrg que responde: una sola sonda", 1, activa.llamadas);
+        Counter active = new Counter(u -> yn(true));
+        OrgSelector.choose(two, null, "org-b", active);
+        a.eq("lastActiveOrg que responde: una sola sonda", 1, active.calls);
 
-        Contador activaNoResponde = new Contador(u -> u.equals("org-a"));
-        OrgSelector.choose(dos, null, "org-b", activaNoResponde);
+        Counter activeFails = new Counter(u -> yn(u.equals("org-a")));
+        OrgSelector.choose(two, null, "org-b", activeFails);
         a.eq("lastActiveOrg que falla no se vuelve a sondear en la lista",
-                2, activaNoResponde.llamadas);
+                2, activeFails.calls);
 
         a.eq("lastActiveOrg que falla y quedan varias: ambiguo, no la unica que sobra", null,
                 OrgSelector.choose(Arrays.asList("a", "b", "c"), null, "c",
-                        u -> !u.equals("c")).orgUuid);
+                        p(u -> !u.equals("c"))).orgUuid);
         a.isTrue("lastActiveOrg que falla y quedan varias: pide elegir",
                 OrgSelector.choose(Arrays.asList("a", "b", "c"), null, "c",
-                        u -> !u.equals("c")).ambiguous);
+                        p(u -> !u.equals("c"))).ambiguous);
         a.eq("manual vacio se trata como ausente", "org-b",
-                OrgSelector.choose(dos, "", "org-b", u -> true).orgUuid);
+                OrgSelector.choose(two, "", "org-b", p(u -> true)).orgUuid);
         a.eq("manual vacio sin pistas: se sigue la regla normal", "org-a",
-                OrgSelector.choose(dos, "", null, u -> u.equals("org-a")).orgUuid);
+                OrgSelector.choose(two, "", null, p(u -> u.equals("org-a"))).orgUuid);
 
-        Contador varias = new Contador(u -> true);
-        OrgSelector.choose(Arrays.asList("org-a", "org-b", "org-c", "org-d"), null, null, varias);
+        Counter several = new Counter(u -> yn(true));
+        OrgSelector.choose(Arrays.asList("org-a", "org-b", "org-c", "org-d"), null, null, several);
         a.eq("varias responden: se corta al segundo sin sondear el resto",
-                2, varias.llamadas);
+                2, several.calls);
 
-        Contador ninguna = new Contador(u -> false);
-        OrgSelector.choose(dos, null, null, ninguna);
-        a.eq("ninguna responde: se sondea cada una una vez", 2, ninguna.llamadas);
+        Counter none = new Counter(u -> yn(false));
+        OrgSelector.choose(two, null, null, none);
+        a.eq("ninguna responde: se sondea cada una una vez", 2, none.calls);
+
+        // Politica: un fallo de red (UNKNOWN) NO es un descarte.
+        OrgSelector.Choice oneUnknown = OrgSelector.choose(Arrays.asList("a", "b"), null, null,
+                u -> u.equals("a") ? OrgSelector.Answer.RESPONDS : OrgSelector.Answer.UNKNOWN);
+        a.eq("una responde y otra falla por red: no se elige la que quedo", null, oneUnknown.orgUuid);
+        a.isTrue("una responde y otra falla por red: que elija el usuario", oneUnknown.ambiguous);
+        OrgSelector.Choice allUnknown = OrgSelector.choose(two, null, null,
+                u -> OrgSelector.Answer.UNKNOWN);
+        a.isTrue("todas fallan por red: que elija el usuario, no 'ninguna sirve'",
+                allUnknown.ambiguous && allUnknown.orgUuid == null);
+        OrgSelector.Choice activeUnknown = OrgSelector.choose(Arrays.asList("a", "b", "c"), null, "c",
+                u -> u.equals("c") ? OrgSelector.Answer.UNKNOWN
+                        : u.equals("a") ? OrgSelector.Answer.RESPONDS : OrgSelector.Answer.NO);
+        a.isTrue("lastActiveOrg falla por red y otra responde: que elija el usuario",
+                activeUnknown.ambiguous && activeUnknown.orgUuid == null);
+        a.eq("el manual gana aunque todo falle por red", "org-z",
+                OrgSelector.choose(two, "org-z", null, u -> OrgSelector.Answer.UNKNOWN).orgUuid);
+        a.eq("lastActiveOrg que responde gana aunque otras fallarian", "org-b",
+                OrgSelector.choose(two, null, "org-b", u -> u.equals("org-b")
+                        ? OrgSelector.Answer.RESPONDS : OrgSelector.Answer.UNKNOWN).orgUuid);
+        a.eq("NO explicito en todas sigue siendo 'ninguna sirve' (no ambiguo)", false,
+                OrgSelector.choose(two, null, null, p(u -> false)).ambiguous);
+
+        // ambiguous es false en los caminos que deciden.
+        a.eq("manual: no ambiguo", false, OrgSelector.choose(two, "org-z", null, p(u -> true)).ambiguous);
+        a.eq("lastActiveOrg: no ambiguo", false,
+                OrgSelector.choose(two, null, "org-b", p(u -> true)).ambiguous);
+        a.eq("una sola responde: no ambiguo", false,
+                OrgSelector.choose(two, null, null, p(u -> u.equals("org-a"))).ambiguous);
     }
 }

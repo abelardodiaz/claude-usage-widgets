@@ -65,7 +65,9 @@ Valen para **todas** las tareas. Son de `SECURITY.md` §5, de la spec §5 y §6,
 6. `setAcceptThirdPartyCookies(web, false)`.
 7. **A `claude.ai` se manda el mínimo de cookies**: `sessionKey` y, si aplica, `lastActiveOrg`.
    No el jarro entero (eso lo hacía el spike; ver "Lo que W3 NO debe copiar").
-8. **Red: solo `claude.ai`.** Ningún otro host. Cero telemetría.
+8. **Red: las peticiones nativas van solo a `claude.ai`.** Ningún otro host, cero telemetría. El
+   WebView de login carga los subrecursos e iframes que el reto de Cloudflare exige (de terceros);
+   la navegación principal sí se restringe a `claude.ai`.
 9. **El núcleo es la única implementación de R0–R7.** `android/app/` no calcula colores, ni
    proyecciones, ni reparto por día.
 10. **Identificadores en inglés, comentarios y documentos en español.** Los scripts (`.sh`) solo en

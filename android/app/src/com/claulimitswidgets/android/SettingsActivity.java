@@ -22,6 +22,8 @@ public class SettingsActivity extends Activity {
 
     static final String PREFS = "cuw";
     static final String KEY_ORG = "manual_org";
+    /** User-Agent del WebView, guardado en el login para que las consultas nativas lo reusen. */
+    static final String KEY_UA = "user_agent";
 
     @Override
     protected void onCreate(Bundle state) {

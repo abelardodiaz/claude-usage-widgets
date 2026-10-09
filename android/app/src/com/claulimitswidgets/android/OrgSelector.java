@@ -15,41 +15,72 @@ import java.util.List;
  */
 public final class OrgSelector {
 
-    /** Dice si `/usage` de esa organizacion responde bien. */
-    public interface Probe { boolean responds(String orgUuid); }
+    /** Resultado de sondear una organizacion. */
+    public enum Answer {
+        /** `/usage` respondio bien. */
+        RESPONDS,
+        /** El servidor contesto y esa organizacion NO sirve (p. ej. 403 o 404 de esa org). */
+        NO,
+        /** No se pudo saber: timeout, sin red, 429, 5xx, reto de Cloudflare. */
+        UNKNOWN
+    }
+
+    /**
+     * Sondea `/usage` de una organizacion.
+     *
+     * POLITICA (no negociable): un fallo de red NO es un descarte. Quien implemente la sonda
+     * devuelve {@link Answer#NO} SOLO cuando el servidor contesto y esa organizacion no sirve;
+     * todo lo demas (timeout, sin conexion, 429, 5xx, reto) es {@link Answer#UNKNOWN}. Mapear un
+     * timeout a NO convertiria "responden varias" en "responde una sola" y el widget elegiria en
+     * silencio una organizacion ajena, que es justo lo que D2 prohibe.
+     */
+    public interface Probe { Answer probe(String orgUuid); }
 
     private OrgSelector() {}
 
     /** Lo que decidio la regla: una organizacion, "ninguna sirve", o "que elija el usuario". */
     public static final class Choice {
         public final String orgUuid;      // null si hay que preguntar o si ninguna sirve
-        public final boolean ambiguous;   // true: varias responden y no hay pista
+        public final boolean ambiguous;   // true: varias responden, o un sondeo fallo; que elija el usuario
         Choice(String orgUuid, boolean ambiguous) {
             this.orgUuid = orgUuid;
             this.ambiguous = ambiguous;
         }
     }
 
+    /**
+     * Aplica D2. Politica ante fallos de red: si algun sondeo dio {@link Answer#UNKNOWN} y no hay
+     * seleccion manual, el resultado es "que elija el usuario" (`ambiguous`), salvo que la
+     * `lastActiveOrg` responda, que gana antes de mirar nada mas. Un UNKNOWN nunca cuenta como
+     * descarte: no se puede afirmar que "solo una responde" sin haber visto a las demas.
+     */
     public static Choice choose(List<String> organizations, String manual,
                                 String lastActiveOrg, Probe probe) {
         if (manual != null && !manual.isEmpty()) return new Choice(manual, false);
 
-        String yaSondeada = null;
+        boolean unknown = false;   // algun sondeo no pudo decidir: no se descarta nada
+        String probedAlready = null;
         if (lastActiveOrg != null && !lastActiveOrg.isEmpty()) {
-            if (probe.responds(lastActiveOrg)) return new Choice(lastActiveOrg, false);
-            yaSondeada = lastActiveOrg;
+            Answer first = probe.probe(lastActiveOrg);
+            if (first == Answer.RESPONDS) return new Choice(lastActiveOrg, false);
+            if (first == Answer.UNKNOWN) unknown = true;
+            probedAlready = lastActiveOrg;
         }
 
-        List<String> responden = new ArrayList<>();
+        List<String> responding = new ArrayList<>();
         for (String uuid : organizations) {
-            if (uuid.equals(yaSondeada)) continue;
-            if (probe.responds(uuid)) {
-                responden.add(uuid);
-                if (responden.size() == 2) break;   // ya es ambiguo: no hace falta el resto
+            if (uuid.equals(probedAlready)) continue;
+            Answer answer = probe.probe(uuid);
+            if (answer == Answer.UNKNOWN) {
+                unknown = true;
+            } else if (answer == Answer.RESPONDS) {
+                responding.add(uuid);
+                if (responding.size() == 2) break;   // ya es ambiguo: no hace falta el resto
             }
         }
-        if (responden.size() == 1) return new Choice(responden.get(0), false);
-        if (responden.isEmpty()) return new Choice(null, false);
+        if (unknown) return new Choice(null, true);   // fallo de red: que elija el usuario
+        if (responding.size() == 1) return new Choice(responding.get(0), false);
+        if (responding.isEmpty()) return new Choice(null, false);
         return new Choice(null, true);   // varias responden y ninguna pista: no se adivina
     }
 }

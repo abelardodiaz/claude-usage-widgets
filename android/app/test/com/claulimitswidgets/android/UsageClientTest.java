@@ -81,6 +81,15 @@ public final class UsageClientTest {
         a.eq("minimal vacia no arrastra a la buena", "sessionKey=A",
                 UsageClient.minimalCookies("sessionKey=; sessionKey=A"));
         a.eq("minimal sin ninguna", "", UsageClient.minimalCookies("x=1; y=2"));
+        a.eq("minimal: prefijo senuelo x_sessionKey", "",
+                UsageClient.minimalCookies("x_sessionKey=Z"));
+        a.eq("minimal: sufijo senuelo sessionKeyExtra", "",
+                UsageClient.minimalCookies("sessionKeyExtra=Z"));
+        a.eq("minimal: jarro sin espacio tras ;", "sessionKey=A; lastActiveOrg=B",
+                UsageClient.minimalCookies("x=1;sessionKey=A;lastActiveOrg=B"));
+        a.eq("minimal: senuelos junto a la real", "sessionKey=A",
+                UsageClient.minimalCookies("x_sessionKey=Z;sessionKeyExtra=Z;sessionKey=A"));
+        readCheckedOrder(a);
         a.eq("org", "B", UsageClient.lastActiveOrg("sessionKey=A; lastActiveOrg=B"));
         a.eq("org ausente", null, UsageClient.lastActiveOrg("sessionKey=A"));
         a.eq("org vacia", null, UsageClient.lastActiveOrg("lastActiveOrg="));
@@ -122,6 +131,79 @@ public final class UsageClientTest {
             return sb.toString();
         } catch (com.claudewidgets.core.UnrecognizedFormatException e) {
             return "format";
+        }
+    }
+
+    /** Un cuerpo que explota si alguien lo abre o lo lee: prueba el ORDEN de operaciones de get(). */
+    private static final class Tripwire implements UsageClient.BodySource {
+        int opened = 0;
+        @Override public java.io.InputStream open() {
+            opened++;
+            return new java.io.InputStream() {
+                @Override public int read() throws java.io.IOException {
+                    throw new java.io.IOException("se leyo el cuerpo");
+                }
+            };
+        }
+    }
+
+    private static String readCheckedKind(int code, String ctype, String cf,
+                                          UsageClient.BodySource src) {
+        try {
+            UsageClient.readChecked(code, ctype, cf, src);
+            return "ok";
+        } catch (AuthExpiredException e) {
+            return "auth";
+        } catch (BlockedException e) {
+            return "blocked";
+        } catch (UsageClient.RetryLaterException e) {
+            return "retry";
+        } catch (com.claudewidgets.core.UnrecognizedFormatException e) {
+            return "format";
+        } catch (java.io.IOException e) {
+            return "io";
+        }
+    }
+
+    private static void readCheckedOrder(Assert a) {
+        // Control: el cable de tropiezo SI dispara si se lee (si no, las pruebas de abajo serian vacias).
+        Tripwire control = new Tripwire();
+        a.eq("control: 200 json valido lee el cuerpo y el cable dispara", "io",
+                readCheckedKind(200, "application/json", null, control));
+        a.eq("control: se abrio el cuerpo", 1, control.opened);
+
+        Tripwire t403 = new Tripwire();
+        a.eq("403 html con cuerpo enorme: blocked", "blocked",
+                readCheckedKind(403, "text/html", null, t403));
+        a.eq("403: nadie abrio el cuerpo", 0, t403.opened);
+
+        Tripwire tCf = new Tripwire();
+        a.eq("200 json con cf-mitigated: blocked", "blocked",
+                readCheckedKind(200, "application/json", "challenge", tCf));
+        a.eq("cf-mitigated: nadie abrio el cuerpo", 0, tCf.opened);
+
+        Tripwire t200html = new Tripwire();
+        a.eq("200 text/html: blocked sin leer", "blocked",
+                readCheckedKind(200, "text/html; charset=utf-8", null, t200html));
+        a.eq("200 html: nadie abrio el cuerpo", 0, t200html.opened);
+
+        Tripwire t401 = new Tripwire();
+        a.eq("401: auth sin leer", "auth", readCheckedKind(401, "application/json", null, t401));
+        a.eq("401: nadie abrio el cuerpo", 0, t401.opened);
+
+        // HTML sin content-type: solo se ve con el cuerpo, asi que ahi SI se lee.
+        a.eq("200 sin content-type y cuerpo html: blocked tras leer", "blocked",
+                readCheckedKind(200, null, null,
+                        () -> new java.io.ByteArrayInputStream("<!DOCTYPE html><p>".getBytes())));
+        a.eq("200 json: devuelve el cuerpo", "{}", readCheckedBody(200, "application/json", "{}"));
+    }
+
+    private static String readCheckedBody(int code, String ctype, String body) {
+        try {
+            return UsageClient.readChecked(code, ctype, null,
+                    () -> new java.io.ByteArrayInputStream(body.getBytes()));
+        } catch (Exception e) {
+            return "excepcion:" + e.getClass().getSimpleName();
         }
     }
 

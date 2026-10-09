@@ -96,7 +96,7 @@ public final class UsageClient {
      */
     public static final class Org {
         public final String uuid;
-        public final String name;    // puede ser null: entonces Ajustes muestra el uuid abreviado
+        public final String name;    // puede ser null: Ajustes pinta un generico numerado, nunca el uuid
         Org(String uuid, String name) { this.uuid = uuid; this.name = name; }
     }
 
@@ -118,7 +118,8 @@ public final class UsageClient {
             Object uuid = m.get("uuid");
             if (!(uuid instanceof String) || ((String) uuid).isEmpty()) continue;
             // `name` es el nombre de la organizacion; si falta, `plan_display_name` sirve para
-            // distinguir dos. Si tampoco esta, Ajustes cae al uuid abreviado.
+            // distinguir dos. Si tampoco esta, queda null y Ajustes pinta
+            // un generico numerado: el uuid no se muestra nunca.
             String name = str(m.get("name"));
             if (name == null) name = str(m.get("plan_display_name"));
             out.add(new Org((String) uuid, name));
@@ -176,15 +177,7 @@ public final class UsageClient {
             int code = c.getResponseCode();
             String ctype = c.getHeaderField("content-type");
             String cfMitigated = c.getHeaderField("cf-mitigated");
-            // Primero por codigo y cabeceras, sin leer el cuerpo: un reto grande (con 403 o con
-            // 200) no puede convertirse en un fallo de red. Si no es 200, check() siempre lanza;
-            // si es 200 lanza ante cf-mitigated o content-type html. El HTML sin content-type
-            // solo se ve con el cuerpo, por eso se vuelve a revisar tras leerlo.
-            check(code, ctype, "", cfMitigated);
-            InputStream in = c.getInputStream();
-            String body = in == null ? "" : read(in);
-            check(code, ctype, body, cfMitigated);
-            return body;
+            return readChecked(code, ctype, cfMitigated, c::getInputStream);
         } catch (TooLargeException e) {
             throw e;
         } catch (IOException e) {
@@ -194,6 +187,26 @@ public final class UsageClient {
         } finally {
             c.disconnect();
         }
+    }
+
+    /** De donde sale el cuerpo; se pide solo cuando ya se sabe que vale la pena leerlo. */
+    interface BodySource { InputStream open() throws IOException; }
+
+    /**
+     * El orden de operaciones de `get`, sin red para poder probarlo. Primero por codigo y
+     * cabeceras, SIN abrir ni leer el cuerpo: un reto grande (con 403 o con 200) no puede
+     * convertirse en un fallo de red. Si no es 200, check() siempre lanza; si es 200 lanza ante
+     * cf-mitigated o content-type html. El HTML sin content-type solo se ve con el cuerpo, por
+     * eso se vuelve a revisar tras leerlo.
+     */
+    static String readChecked(int code, String ctype, String cfMitigated, BodySource source)
+            throws IOException, AuthExpiredException, BlockedException, RetryLaterException,
+            UnrecognizedFormatException {
+        check(code, ctype, "", cfMitigated);
+        InputStream in = source.open();
+        String body = in == null ? "" : read(in);
+        check(code, ctype, body, cfMitigated);
+        return body;
     }
 
     /**
