@@ -76,6 +76,10 @@ public final class UsageClientTest {
         a.eq("minimal", "sessionKey=A; lastActiveOrg=B",
                 UsageClient.minimalCookies("x=1; sessionKey=A; cf_clearance=Z; lastActiveOrg=B"));
         a.eq("minimal nulo", "", UsageClient.minimalCookies(null));
+        a.eq("minimal sessionKey vacia", "", UsageClient.minimalCookies("sessionKey="));
+        a.eq("minimal sessionKey vacia con espacios", "", UsageClient.minimalCookies("x=1; sessionKey= ; lastActiveOrg="));
+        a.eq("minimal vacia no arrastra a la buena", "sessionKey=A",
+                UsageClient.minimalCookies("sessionKey=; sessionKey=A"));
         a.eq("minimal sin ninguna", "", UsageClient.minimalCookies("x=1; y=2"));
         a.eq("org", "B", UsageClient.lastActiveOrg("sessionKey=A; lastActiveOrg=B"));
         a.eq("org ausente", null, UsageClient.lastActiveOrg("sessionKey=A"));

@@ -67,7 +67,9 @@ public final class UsageClient {
         StringBuilder out = new StringBuilder();
         for (String piece : all.split(";")) {
             String p = piece.trim();
-            if (p.startsWith("sessionKey=") || p.startsWith("lastActiveOrg=")) {
+            // Con valor no vacio: una cookie "sessionKey=" sin valor no es una sesion.
+            if ((p.startsWith("sessionKey=") && p.length() > "sessionKey=".length())
+                    || (p.startsWith("lastActiveOrg=") && p.length() > "lastActiveOrg=".length())) {
                 if (out.length() > 0) out.append("; ");
                 out.append(p);
             }
@@ -153,7 +155,7 @@ public final class UsageClient {
         } catch (Json.JsonException e) {
             // Ojo: el mensaje de la causa (JsonException) puede llevar un fragmento corto de la
             // entrada (un caracter de escape, hasta 32 de un numero). Se encadena para depurar,
-            // pero nadie debe registrar la cadena de causas.
+            // pero nadie debe registrar la cadena de causas: solo se registra su tipo.
             throw new UnrecognizedFormatException("la respuesta no es JSON valido", e);
         }
     }

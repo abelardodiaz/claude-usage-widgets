@@ -26,6 +26,9 @@ public class SettingsActivity extends Activity {
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
+        // La pantalla muestra datos de la cuenta: que no salga en capturas ni en recientes.
+        getWindow().setFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE,
+                android.view.WindowManager.LayoutParams.FLAG_SECURE);
         setContentView(R.layout.activity_settings);
         paintOrgs();
         // La lista cacheada no se refresca sola: abrir esta pantalla es el momento natural de

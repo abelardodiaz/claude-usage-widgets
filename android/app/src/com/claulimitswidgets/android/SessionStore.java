@@ -98,6 +98,9 @@ public final class SessionStore {
             if (all.length < 2) { clear(); return null; }
             int ivLen = all[0] & 0xFF;
             if (ivLen <= 0 || all.length < 1 + ivLen + 1) { clear(); return null; }
+            // Forma valida pero IV que no es el de 12 bytes que escribe save(): GCMParameterSpec
+            // lanzaria InvalidAlgorithmParameterException y load() fallaria para siempre.
+            if (ivLen != 12) { clear(); return null; }
             byte[] iv = new byte[ivLen];
             System.arraycopy(all, 1, iv, 0, ivLen);
             byte[] body = new byte[all.length - 1 - ivLen];

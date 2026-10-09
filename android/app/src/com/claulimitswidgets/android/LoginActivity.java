@@ -144,18 +144,43 @@ public class LoginActivity extends Activity {
         final String ua = userAgent(web);
         String all = CookieManager.getInstance().getCookie(ORIGIN);
         String minimal = UsageClient.minimalCookies(all);
-        if (!minimal.contains("sessionKey=")) {
+        if (!minimal.startsWith("sessionKey=")) {
             status.setText(R.string.login_no_session);
             return;
         }
-        try {
-            store.save(minimal);           // se guarda YA reducida al minimo
-        } catch (Exception e) {
-            // Entro bien pero la sesion se perdio al guardarla. El mensaje de la excepcion podria
-            // arrastrar material sensible: no se muestra.
-            status.setText(R.string.login_save_failed);
-            return;
-        }
+        // Keystore y sync() no van en el hilo principal. Mientras tanto el boton queda inactivo
+        // para que un segundo toque no lance un segundo guardado.
+        final View done = findViewById(R.id.btn_done);
+        done.setEnabled(false);
+        new Thread(() -> {
+            boolean saved;
+            try {
+                store.save(minimal);       // se guarda YA reducida al minimo
+                saved = true;
+            } catch (Exception e) {
+                // El mensaje de la excepcion podria arrastrar material sensible: no se muestra.
+                saved = false;
+            }
+            final boolean ok = saved;
+            runOnUiThread(() -> {
+                done.setEnabled(true);
+                // Si la pantalla se cerro mientras se guardaba, onDestroy ya limpio el WebView.
+                if (isFinishing() || isDestroyed()) {
+                    if (ok) scheduleAfterLogin();
+                    return;
+                }
+                if (!ok) {
+                    // Entro bien pero la sesion se perdio al guardarla.
+                    status.setText(R.string.login_save_failed);
+                    return;
+                }
+                afterSaved(ua);
+            });
+        }, "login-save").start();
+    }
+
+    /** En el hilo principal y SOLO con la sesion ya guardada: ahora si se limpia el WebView. */
+    private void afterSaved(String ua) {
         // Con la sesion ya guardada, un fallo aqui NO es un fallo del login.
         try {
             // El UA del WebView es el que usaran las consultas nativas: una sola huella hacia
@@ -169,6 +194,10 @@ public class LoginActivity extends Activity {
         // problema y la espera acumulada ya no aplica.
         wipeWebView();
         status.setText(R.string.login_ok);
+        scheduleAfterLogin();
+    }
+
+    private void scheduleAfterLogin() {
         // F3: ambos son esqueleto y no hacen nada hasta F4.
         WidgetUpdateJob.schedule(this);
         WidgetUpdateJob.runNow(this);
@@ -183,8 +212,12 @@ public class LoginActivity extends Activity {
     /** Solo https hacia claude.ai o un subdominio suyo. */
     static boolean isClaude(Uri u) {
         if (u == null || !"https".equals(u.getScheme())) return false;
+        // Solo el puerto por omision de https: otro puerto es otro servicio.
+        if (u.getPort() != -1 && u.getPort() != 443) return false;
         String h = u.getHost();
-        return h != null && (h.equals("claude.ai") || h.endsWith(".claude.ai"));
+        if (h == null) return false;
+        h = h.toLowerCase(java.util.Locale.ROOT);
+        return h.equals("claude.ai") || h.endsWith(".claude.ai");
     }
 
     /**

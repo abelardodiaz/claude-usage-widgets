@@ -19,6 +19,14 @@ public final class LoginActivityTest {
         a.eq("market", false, ok("market://details?id=x"));
         a.eq("javascript", false, ok("javascript:alert(1)"));
         a.eq("userinfo engana", false, ok("https://claude.ai@evil.com/"));
+        a.eq("puerto 443 explicito", true, ok("https://claude.ai:443/login"));
+        a.eq("puerto distinto", false, ok("https://claude.ai:8443/login"));
+        a.eq("subdominio con puerto distinto", false, ok("https://api.claude.ai:4443/x"));
+        a.eq("mayusculas", true, ok("https://CLAUDE.AI/login"));
+        a.eq("mayusculas en subdominio", true, ok("https://Api.Claude.Ai/x"));
+        a.eq("punto final", false, ok("https://claude.ai./login"));
+        a.eq("IDN con homoglifo", false, ok("https://cl\u0430ude.ai/"));
+        a.eq("IDN punycode", false, ok("https://xn--claude-9ve.ai/"));
         a.eq("nulo", false, LoginActivity.isClaude(null));
     }
 

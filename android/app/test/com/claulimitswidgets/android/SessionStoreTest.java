@@ -52,6 +52,9 @@ public final class SessionStoreTest {
         // Archivo corrupto: null, archivo borrado (y llave borrada: es corrupcion autentica).
         corrupt(a, ctx, s, f, "1 byte", new byte[] {7});
         corrupt(a, ctx, s, f, "ivLen invalido", new byte[] {0, 1, 2, 3, 4});
+        byte[] ivCinco = new byte[20];
+        ivCinco[0] = 5;
+        corrupt(a, ctx, s, f, "ivLen valido en forma pero distinto de 12", ivCinco);
         corrupt(a, ctx, s, f, "ivLen mayor que el archivo", new byte[] {(byte) 200, 1, 2, 3});
         call(a, () -> { s.save(COOKIE); return null; });
         byte[] good = readAll(a, f);

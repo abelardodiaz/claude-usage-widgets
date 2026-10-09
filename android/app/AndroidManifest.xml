@@ -17,6 +17,7 @@
         <activity
             android:name=".LoginActivity"
             android:exported="true"
+            android:taskAffinity=""
             android:configChanges="orientation|screenSize|keyboardHidden">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
