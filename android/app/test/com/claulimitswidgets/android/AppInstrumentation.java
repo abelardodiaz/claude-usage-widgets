@@ -5,8 +5,6 @@ import android.os.Bundle;
 
 import com.claudewidgets.core.Assert;
 
-import java.util.List;
-
 /**
  * Corre las pruebas DENTRO del proceso de la app: uid correcto, `filesDir` escribible y
  * Keystore propio. Se lanza con `adb shell am instrument -w`.

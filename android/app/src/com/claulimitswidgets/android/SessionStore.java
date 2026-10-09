@@ -12,6 +12,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.KeyStore;
 
+import javax.crypto.AEADBadTagException;
 import javax.crypto.Cipher;
 import javax.crypto.KeyGenerator;
 import javax.crypto.SecretKey;
@@ -59,55 +60,79 @@ public final class SessionStore {
         return file().isFile() && file().length() > 0;
     }
 
+    /** Candado comun: login y widget pueden usar instancias distintas sobre el mismo archivo. */
+    private static final Object LOCK = new Object();
+
     public void save(String cookies) throws GeneralSecurityException, IOException {
-        Cipher c = Cipher.getInstance(TRANSFORM);
-        c.init(Cipher.ENCRYPT_MODE, key());
-        byte[] iv = c.getIV();
-        byte[] body = c.doFinal(cookies.getBytes(StandardCharsets.UTF_8));
-        File f = file();
-        try (FileOutputStream out = new FileOutputStream(f)) {
-            out.write(iv.length);
-            out.write(iv);
-            out.write(body);
+        synchronized (LOCK) {
+            Cipher c = Cipher.getInstance(TRANSFORM);
+            c.init(Cipher.ENCRYPT_MODE, key());
+            byte[] iv = c.getIV();
+            byte[] body = c.doFinal(cookies.getBytes(StandardCharsets.UTF_8));
+            // Escritura atomica: a un temporal y renombrar, para que un lector nunca vea un
+            // archivo a medias y lo confunda con uno corrupto.
+            File f = file();
+            File tmp = new File(f.getParentFile(), fileName + ".tmp");
+            try (FileOutputStream out = new FileOutputStream(tmp)) {
+                out.write(iv.length);
+                out.write(iv);
+                out.write(body);
+                out.getFD().sync();
+            }
+            if (!tmp.renameTo(f)) {
+                tmp.delete();
+                throw new IOException("no se pudo reemplazar el archivo de sesion");
+            }
         }
     }
 
-    /** Null si no hay sesion. Si el archivo esta corrupto, se borra y se devuelve null. */
+    /**
+     * Null si no hay sesion. Si el archivo esta corrupto (forma invalida o etiqueta GCM que no
+     * cuadra) se borra y se devuelve null. Cualquier otro fallo del Keystore se propaga SIN
+     * borrar nada: puede ser transitorio y borrar costaria la sesion del usuario.
+     */
     public String load() throws GeneralSecurityException, IOException {
-        if (!hasSession()) return null;
-        byte[] all = readAll(file());
-        if (all.length < 2) { clear(); return null; }
-        int ivLen = all[0] & 0xFF;
-        if (ivLen <= 0 || all.length < 1 + ivLen + 1) { clear(); return null; }
-        byte[] iv = new byte[ivLen];
-        System.arraycopy(all, 1, iv, 0, ivLen);
-        byte[] body = new byte[all.length - 1 - ivLen];
-        System.arraycopy(all, 1 + ivLen, body, 0, body.length);
-        try {
+        synchronized (LOCK) {
+            if (!hasSession()) return null;
+            byte[] all = readAll(file());
+            if (all.length < 2) { clear(); return null; }
+            int ivLen = all[0] & 0xFF;
+            if (ivLen <= 0 || all.length < 1 + ivLen + 1) { clear(); return null; }
+            byte[] iv = new byte[ivLen];
+            System.arraycopy(all, 1, iv, 0, ivLen);
+            byte[] body = new byte[all.length - 1 - ivLen];
+            System.arraycopy(all, 1 + ivLen, body, 0, body.length);
             Cipher c = Cipher.getInstance(TRANSFORM);
             c.init(Cipher.DECRYPT_MODE, key(), new GCMParameterSpec(TAG_BITS, iv));
-            return new String(c.doFinal(body), StandardCharsets.UTF_8);
-        } catch (GeneralSecurityException e) {
-            // La etiqueta GCM no cuadra: el archivo se manipulo o la llave cambio.
-            // No se puede recuperar; se borra y el usuario vuelve a iniciar sesion.
-            clear();
-            return null;
+            try {
+                return new String(c.doFinal(body), StandardCharsets.UTF_8);
+            } catch (AEADBadTagException e) {
+                // Corrupcion autentica: el contenido se manipulo. No se recupera.
+                clear();
+                return null;
+            }
         }
     }
 
-    /** Borra el archivo y la llave. Idempotente: no lanza si no habia nada. */
-    public void clear() {
-        File f = file();
-        if (f.isFile()) {
-            overwrite(f);
-            if (!f.delete()) f.deleteOnExit();
-        }
-        try {
-            KeyStore ks = KeyStore.getInstance(KEYSTORE);
-            ks.load(null);
-            if (ks.containsAlias(keyAlias)) ks.deleteEntry(keyAlias);
-        } catch (GeneralSecurityException | IOException ignored) {
-            // Si el Keystore no responde, el archivo ya esta borrado: sin llave no se descifra.
+    /**
+     * Borra el archivo y la llave. Idempotente. Devuelve false si la llave no pudo borrarse
+     * (el llamador decide; no se registra nada porque aqui no hay datos que se puedan citar).
+     */
+    public boolean clear() {
+        synchronized (LOCK) {
+            File f = file();
+            if (f.isFile()) {
+                overwrite(f);
+                if (!f.delete()) f.deleteOnExit();
+            }
+            try {
+                KeyStore ks = KeyStore.getInstance(KEYSTORE);
+                ks.load(null);
+                if (ks.containsAlias(keyAlias)) ks.deleteEntry(keyAlias);
+                return !f.exists();
+            } catch (GeneralSecurityException | IOException e) {
+                return false;
+            }
         }
     }
 
@@ -140,7 +165,11 @@ public final class SessionStore {
         }
     }
 
-    /** Pisa el contenido antes de borrar, para que no quede en bloques libres del sistema. */
+    /**
+     * Pisa el contenido antes de borrar. Es solo un esfuerzo: en F2FS y memoria flash con
+     * copy-on-write no garantiza que no queden restos en bloques libres. Lo que de verdad protege
+     * el contenido es que la llave del Keystore se elimina.
+     */
     private static void overwrite(File f) {
         try (RandomAccessFile r = new RandomAccessFile(f, "rw")) {
             byte[] zeros = new byte[(int) r.length()];
@@ -148,7 +177,7 @@ public final class SessionStore {
             r.write(zeros);
             r.getFD().sync();
         } catch (IOException ignored) {
-            // Si no se puede pisar, igual se borra: sin la llave el contenido no sirve.
+            // Si no se puede pisar, igual se borra.
         }
     }
 }
