@@ -140,4 +140,30 @@ mod tests {
         assert_eq!(language_from_locale("pt-BR"), "en");
         assert_eq!(language_from_locale(""), "en");
     }
+
+    /// Guarda de seguridad: la UI solo puede escuchar eventos, ajustar su alto, arrastrar y
+    /// ocultar la ventana. Agregar cualquier permiso (por ejemplo `core:event:allow-emit` o un
+    /// comando de plugin) tiene que pasar por este test y por la revision.
+    #[test]
+    fn capacidades_de_la_ui_son_exactamente_las_esperadas() {
+        let raw = include_str!("../capabilities/default.json");
+        let json: serde_json::Value = serde_json::from_str(raw).expect("default.json valido");
+        let mut got: Vec<&str> = json["permissions"]
+            .as_array()
+            .expect("permissions es un arreglo")
+            .iter()
+            .map(|p| p.as_str().expect("cada permiso es una cadena"))
+            .collect();
+        got.sort_unstable();
+        let mut want = vec![
+            "core:event:allow-listen",
+            "core:event:allow-unlisten",
+            "core:window:allow-set-size",
+            "core:window:allow-start-dragging",
+            "core:window:allow-hide",
+        ];
+        want.sort_unstable();
+        assert_eq!(got, want);
+        assert_eq!(json["windows"], serde_json::json!(["main"]));
+    }
 }
