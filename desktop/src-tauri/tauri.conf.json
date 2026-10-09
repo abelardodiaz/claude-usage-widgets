@@ -49,6 +49,7 @@
   },
   "plugins": {
     "updater": {
+      "requireSignedVersion": true,
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDhENEJEMzMyOUFFQ0E2MkEKUldRcXB1eWFNdE5MamJ4MUpuZkR5Snk2VURiUy9xZ09pWjJVYUhIRVFUcXFmNTdaeGY4RmdwV3IK",
       "endpoints": [
         "https://github.com/abelardodiaz/claude-usage-widgets/releases/latest/download/latest.json"

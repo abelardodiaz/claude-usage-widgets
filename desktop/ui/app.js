@@ -212,7 +212,7 @@ $("btnClose").addEventListener("click", () => getCurrentWindow().hide());
 listen("refresh", () => load(true));
 listen("update-status", (event) => {
   $("status").textContent = T.update[event.payload] || "";
-  $("status").classList.toggle("err", event.payload === "failed");
+  $("status").classList.toggle("err", event.payload === "failed" || event.payload === "install_failed");
 });
 setLang("es");
 load();
