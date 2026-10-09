@@ -1,2 +1,5 @@
 jsonschema==4.26.0
-tzdata==2026.4
+tzdata==2026.5
+# Dependencia de referencing en Python 3.12. Se fija explicita: Dependabot compila con un
+# Python mas nuevo donde no hace falta y la omitia del lockfile, rompiendo --require-hashes.
+typing-extensions
