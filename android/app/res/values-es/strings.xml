@@ -2,4 +2,9 @@
 <resources>
     <string name="app_name">Uso de Claude</string>
     <string name="core_ok">Núcleo enlazado: %1$s</string>
+    <string name="settings_title">Ajustes</string>
+    <string name="settings_org">Organización</string>
+    <string name="settings_org_auto">Automática</string>
+    <string name="settings_org_help">Tu cuenta tiene más de una organización. Elige cuál debe mostrar el widget.</string>
+    <string name="logout">Cerrar sesión</string>
 </resources>
