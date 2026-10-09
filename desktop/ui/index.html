@@ -3,17 +3,37 @@
 <head>
 <meta charset="utf-8">
 <title>Uso de Claude</title>
+<link rel="icon" href="data:,">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div class="card" id="root">
   <div class="head" data-tauri-drag-region>
-    <span class="lbl">USO DE CLAUDE</span>
+    <span class="lbl" id="lblToday">HOY</span>
+    <span class="ico" data-p="hist" id="icoHist"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="2" y="9" width="3" height="5" rx="1"/><rect x="6.5" y="5" width="3" height="9" rx="1"/><rect x="11" y="2" width="3" height="12" rx="1"/></svg></span>
+    <span class="ico" data-p="mix" id="icoMix"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="8" r="6"/><path d="M8 2v6h6" fill="currentColor" fill-opacity=".35"/></svg></span>
+    <span class="ico" data-p="proj" id="icoProj"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12l4-4 3 3 5-6"/><path d="M10 5h4v4"/></svg></span>
     <span class="sp"></span>
-    <span class="ico" id="btnClose" title="Cerrar">x</span>
+    <span class="today-num" id="todayNum">--</span>
+    <span class="ico" id="btnRefresh"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.5 2.5v3h-3"/></svg></span>
+    <span class="ico" id="btnClose"><svg viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg></span>
   </div>
-  <p class="note" id="status">Esqueleto W1 F1: la UI completa llega en F4.</p>
+  <div class="bar"><i id="todayBar"></i></div>
+
+  <div class="row" data-tauri-drag-region>
+    <div class="t"><b><span id="lblSession">SESIÓN 5 H</span><span id="sPct">--</span></b><span class="r" id="sReset"></span></div>
+    <div class="bar"><i id="sBar"></i></div>
+  </div>
+  <div class="row" data-tauri-drag-region>
+    <div class="t"><b><span id="lblWeek">SEMANA</span><span id="wPct">--</span></b><span class="r" id="wReset"></span></div>
+    <div class="bar"><i id="wBar"></i><span class="mark" id="wMark" hidden></span></div>
+  </div>
+  <div id="extra"></div>
+
+  <div class="panel" id="panel" hidden></div>
+  <div class="foot" data-tauri-drag-region><span id="status"></span><span id="updated"></span></div>
 </div>
+<script src="i18n.js"></script>
 <script src="app.js" defer></script>
 </body>
 </html>
