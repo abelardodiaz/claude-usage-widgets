@@ -19,6 +19,7 @@ public final class AppTestRunner {
     /** Devuelve el texto del resultado; quien llama decide el codigo de salida. */
     public static String run(Assert a, android.content.Context ctx) {
         // Cada tarea que crea su prueba anade aqui su linea.
+        SessionStoreTest.run(a, ctx);
         List<String> failures = a.failures();
         if (failures.isEmpty()) return "OK: " + a.checks() + " comprobaciones, 0 fallos";
         StringBuilder sb = new StringBuilder("FALLOS (" + failures.size()
