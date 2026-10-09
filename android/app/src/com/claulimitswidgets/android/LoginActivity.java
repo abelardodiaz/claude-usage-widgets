@@ -144,14 +144,20 @@ public class LoginActivity extends Activity {
         final String ua = userAgent(web);
         String all = CookieManager.getInstance().getCookie(ORIGIN);
         String minimal = UsageClient.minimalCookies(all);
-        if (!minimal.startsWith("sessionKey=")) {
+        if (!hasSessionKey(minimal)) {
             status.setText(R.string.login_no_session);
             return;
         }
         // Keystore y sync() no van en el hilo principal. Mientras tanto el boton queda inactivo
         // para que un segundo toque no lance un segundo guardado.
+        // Lo mismo con los dos botones de cerrar sesion: un logout cruzado con el guardado dejaria
+        // una sesion zombi en disco o pintaria "sesion iniciada" sobre un estado sin sesion.
         final View done = findViewById(R.id.btn_done);
+        final View out1 = findViewById(R.id.btn_logout);
+        final View out2 = findViewById(R.id.btn_logout_intro);
         done.setEnabled(false);
+        out1.setEnabled(false);
+        out2.setEnabled(false);
         new Thread(() -> {
             boolean saved;
             try {
@@ -164,6 +170,8 @@ public class LoginActivity extends Activity {
             final boolean ok = saved;
             runOnUiThread(() -> {
                 done.setEnabled(true);
+                out1.setEnabled(true);
+                out2.setEnabled(true);
                 // Si la pantalla se cerro mientras se guardaba, onDestroy ya limpio el WebView.
                 if (isFinishing() || isDestroyed()) {
                     if (ok) scheduleAfterLogin();
@@ -207,6 +215,19 @@ public class LoginActivity extends Activity {
         boolean ok = Session.logout(this);
         wipeWebView();
         status.setText(ok ? R.string.login_no_session : R.string.logout_failed);
+    }
+
+    /**
+     * Hay una pieza `sessionKey=` con valor, en CUALQUIER posicion: minimalCookies conserva el
+     * orden de entrada y CookieManager no garantiza que sessionKey vaya primero.
+     */
+    static boolean hasSessionKey(String minimal) {
+        if (minimal == null) return false;
+        for (String piece : minimal.split(";")) {
+            String p = piece.trim();
+            if (p.startsWith("sessionKey=") && p.length() > "sessionKey=".length()) return true;
+        }
+        return false;
     }
 
     /** Solo https hacia claude.ai o un subdominio suyo. */

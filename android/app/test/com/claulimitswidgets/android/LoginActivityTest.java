@@ -28,6 +28,17 @@ public final class LoginActivityTest {
         a.eq("IDN con homoglifo", false, ok("https://cl\u0430ude.ai/"));
         a.eq("IDN punycode", false, ok("https://xn--claude-9ve.ai/"));
         a.eq("nulo", false, LoginActivity.isClaude(null));
+
+        // finishLogin: el orden de las cookies no decide el login.
+        a.eq("sessionKey primero", true, LoginActivity.hasSessionKey(
+                com.claulimitswidgets.android.UsageClient.minimalCookies("sessionKey=A; lastActiveOrg=B")));
+        a.eq("lastActiveOrg primero inicia sesion igual", true, LoginActivity.hasSessionKey(
+                com.claulimitswidgets.android.UsageClient.minimalCookies("lastActiveOrg=B; x=1; sessionKey=A")));
+        a.eq("solo lastActiveOrg no es sesion", false, LoginActivity.hasSessionKey(
+                com.claulimitswidgets.android.UsageClient.minimalCookies("lastActiveOrg=B")));
+        a.eq("sessionKey vacia no es sesion", false, LoginActivity.hasSessionKey(
+                com.claulimitswidgets.android.UsageClient.minimalCookies("lastActiveOrg=B; sessionKey=")));
+        a.eq("hasSessionKey nulo", false, LoginActivity.hasSessionKey(null));
     }
 
     private static boolean ok(String url) {
