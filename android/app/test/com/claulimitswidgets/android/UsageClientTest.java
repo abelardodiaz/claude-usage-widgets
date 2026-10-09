@@ -38,9 +38,33 @@ public final class UsageClientTest {
 
         // Los mensajes de error no llevan cuerpo ni cookie.
         String body = "SECRETO-DEL-CUERPO";
-        a.eq("mensaje 403 sin cuerpo", false, messageOf(403, "text/html", body).contains(body));
-        a.eq("mensaje 418 sin cuerpo", false, messageOf(418, "text/html", body).contains(body));
-        a.eq("mensaje html sin cuerpo", false, messageOf(200, "text/html", body).contains(body));
+        noLeak(a, "mensaje 403", messageOf(403, "text/html", body), body);
+        noLeak(a, "mensaje 418", messageOf(418, "text/html", body), body);
+        noLeak(a, "mensaje html", messageOf(200, "text/html", body), body);
+
+        // uuid: forma 8-4-4-4-12; lo demas se rechaza antes de tocar la red.
+        a.eq("uuid valido", null, uuidResult("123e4567-e89b-12d3-a456-426614174000"));
+        a.eq("uuid mayusculas", null, uuidResult("123E4567-E89B-12D3-A456-426614174000"));
+        a.eq("uuid ../x", "format", uuidResult("../x"));
+        a.eq("uuid con barra", "format", uuidResult("123e4567-e89b-12d3-a456-42661417/000"));
+        a.eq("uuid 36 guiones", "format", uuidResult("------------------------------------"));
+        a.eq("uuid con query", "format", uuidResult("123e4567-e89b-12d3-a456-42661417?x=1"));
+        a.eq("uuid nulo", "format", uuidResult(null));
+        a.eq("uuid vacio", "format", uuidResult(""));
+        a.eq("uuid con salto final", "format", uuidResult("123e4567-e89b-12d3-a456-426614174000\n"));
+        a.eq("usage ../x no toca la red", "format", usageResult("../x"));
+
+        // parseOrgs con entradas sinteticas.
+        a.eq("orgs normal", "u1|N", orgs("[{\"uuid\":\"u1\",\"name\":\"N\"}]"));
+        a.eq("orgs cae a plan_display_name", "u1|P",
+                orgs("[{\"uuid\":\"u1\",\"plan_display_name\":\"P\"}]"));
+        a.eq("orgs sin nombre", "u1|null", orgs("[{\"uuid\":\"u1\"}]"));
+        a.eq("orgs salta elemento sin uuid", "u2|null",
+                orgs("[{\"name\":\"x\"},{\"uuid\":\"u2\"}]"));
+        a.eq("orgs arreglo vacio", "format", orgs("[]"));
+        a.eq("orgs sin uuid en ninguna", "format", orgs("[{\"name\":\"x\"}]"));
+        a.eq("orgs raiz objeto", "format", orgs("{}"));
+        a.eq("orgs json invalido", "format", orgs("<html>"));
 
         // Cookies minimas: solo sessionKey y lastActiveOrg.
         a.eq("minimal", "sessionKey=A; lastActiveOrg=B",
@@ -52,10 +76,49 @@ public final class UsageClientTest {
         a.eq("org vacia", null, UsageClient.lastActiveOrg("lastActiveOrg="));
     }
 
+    private static void noLeak(Assert a, String what, String msg, String body) {
+        a.eq(what + " lanzo", false, "<<no lanzo>>".equals(msg));
+        a.eq(what + " con mensaje", false, msg.isEmpty() || "null".equals(msg));
+        a.eq(what + " sin cuerpo", false, msg.contains(body));
+    }
+
+    private static String uuidResult(String u) {
+        try {
+            UsageClient.requireUuid(u);
+            return null;
+        } catch (com.claudewidgets.core.UnrecognizedFormatException e) {
+            return "format";
+        }
+    }
+
+    private static String usageResult(String u) {
+        try {
+            new UsageClient("", "t").usage(u);
+            return null;
+        } catch (com.claudewidgets.core.UnrecognizedFormatException e) {
+            return "format";
+        } catch (Exception e) {
+            return "otro:" + e.getClass().getSimpleName();
+        }
+    }
+
+    private static String orgs(String body) {
+        try {
+            StringBuilder sb = new StringBuilder();
+            for (UsageClient.Org o : UsageClient.parseOrgs(body)) {
+                if (sb.length() > 0) sb.append(',');
+                sb.append(o.uuid).append('|').append(o.name);
+            }
+            return sb.toString();
+        } catch (com.claudewidgets.core.UnrecognizedFormatException e) {
+            return "format";
+        }
+    }
+
     private static String messageOf(int code, String ctype, String body) {
         try {
             UsageClient.check(code, ctype, body, null);
-            return "";
+            return "<<no lanzo>>";
         } catch (Exception e) {
             return String.valueOf(e.getMessage());
         }

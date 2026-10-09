@@ -33,6 +33,15 @@ public final class UsageClient {
     /** 1 MiB: lo mismo que acota el lector JSON, pero en BYTES y antes de decodificar. */
     private static final int MAX_BYTES = 1024 * 1024;
     private static final int TIMEOUT_MS = 20000;
+    /** Forma 8-4-4-4-12 de un uuid. Defensa contra inyeccion de ruta al armar la URL. */
+    private static final java.util.regex.Pattern UUID_RE = java.util.regex.Pattern.compile(
+            "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
+
+    /** Cuerpo de mas de MAX_BYTES. Mensaje constante, sin datos de la respuesta. */
+    private static final class TooLargeException extends IOException {
+        private static final long serialVersionUID = 1L;
+        TooLargeException() { super("respuesta de mas de " + MAX_BYTES + " bytes"); }
+    }
 
     /** 429 y 5xx: ni vencida ni bloqueada. Se reintenta con {@link Backoff}. */
     public static final class RetryLaterException extends Exception {
@@ -91,7 +100,11 @@ public final class UsageClient {
 
     public List<Org> organizations() throws IOException, AuthExpiredException,
             BlockedException, RetryLaterException, UnrecognizedFormatException {
-        String body = get(ORGS);
+        return parseOrgs(get(ORGS));
+    }
+
+    /** Separado del transporte para probarlo con entradas sinteticas. */
+    static List<Org> parseOrgs(String body) throws UnrecognizedFormatException {
         Object root = parseOrFail(body);
         if (!(root instanceof List)) {
             throw new UnrecognizedFormatException("/api/organizations no devolvio un arreglo");
@@ -118,22 +131,19 @@ public final class UsageClient {
         return s.isEmpty() ? null : s;
     }
 
-    private static final java.util.regex.Pattern UUID_RE =
-            java.util.regex.Pattern.compile("^[0-9a-fA-F-]{36}$");
-
     public UsageModel usage(String orgUuid) throws IOException, AuthExpiredException,
             BlockedException, RetryLaterException, UnrecognizedFormatException {
         // El uuid viene de una respuesta del servidor o de una preferencia: no se concatena a
         // una URL sin mirarlo. Un valor con '/' o '?' cambiaria a que endpoint se llama.
+        requireUuid(orgUuid);
+        // orgUuid es un dato de cuenta: si falla, el mensaje no lo lleva.
+        return Parser.parse(get(ORGS + "/" + orgUuid + "/usage"), Source.CLAUDE_AI);
+    }
+
+    /** Package-private para probarla sin red. El mensaje no lleva el valor recibido. */
+    static void requireUuid(String orgUuid) throws UnrecognizedFormatException {
         if (orgUuid == null || !UUID_RE.matcher(orgUuid).matches()) {
             throw new UnrecognizedFormatException("uuid de organizacion con forma invalida");
-        }
-        // orgUuid es un dato de cuenta: si falla, el mensaje no lo lleva.
-        try {
-            return Parser.parse(get(ORGS + "/" + orgUuid + "/usage"), Source.CLAUDE_AI);
-        } catch (UnrecognizedFormatException e) {
-            // Se vuelve a crear sin la causa: asi ninguna traza arrastra texto del cuerpo.
-            throw new UnrecognizedFormatException(e.getMessage());
         }
     }
 
@@ -141,7 +151,8 @@ public final class UsageClient {
         try {
             return Json.parse(body);
         } catch (Json.JsonException e) {
-            throw new UnrecognizedFormatException("la respuesta no es JSON valido");
+            // Los mensajes de JsonException son descriptivos (posicion, no texto del cuerpo).
+            throw new UnrecognizedFormatException("la respuesta no es JSON valido", e);
         }
     }
 
@@ -161,10 +172,15 @@ public final class UsageClient {
             int code = c.getResponseCode();
             String ctype = c.getHeaderField("content-type");
             String cfMitigated = c.getHeaderField("cf-mitigated");
-            InputStream in = code >= 400 ? c.getErrorStream() : c.getInputStream();
+            // Si no es 200 se clasifica por codigo y cabeceras, sin leer el cuerpo: un reto
+            // grande no puede convertirse en un fallo de red. check() siempre lanza aqui.
+            if (code != 200) check(code, ctype, "", cfMitigated);
+            InputStream in = c.getInputStream();
             String body = in == null ? "" : read(in);
             check(code, ctype, body, cfMitigated);
             return body;
+        } catch (TooLargeException e) {
+            throw e;
         } catch (IOException e) {
             // El mensaje original puede llevar la URL (con el uuid de la organizacion): solo
             // se conserva el tipo de fallo.
@@ -212,7 +228,7 @@ public final class UsageClient {
             while ((n = in.read(buf)) != -1) {
                 total += n;
                 if (total > MAX_BYTES) {
-                    throw new IOException("respuesta de mas de " + MAX_BYTES + " bytes");
+                    throw new TooLargeException();
                 }
                 out.write(buf, 0, n);
             }
