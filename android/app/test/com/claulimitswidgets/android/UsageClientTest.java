@@ -36,6 +36,12 @@ public final class UsageClientTest {
         a.eq("599", "retry", classify(599, null, ""));
         a.eq("html con ctype mayusculas", "blocked", classify(200, "Text/HTML; charset=UTF-8", "x"));
 
+        // Pre-chequeo sin cuerpo (get() lo hace antes de leer): clasifica sin necesitarlo.
+        a.eq("pre 200 cf-mitigated", "blocked", classifyWithHeader(200, "application/json", "", "challenge"));
+        a.eq("pre 200 html", "blocked", classify(200, "text/html; charset=UTF-8", ""));
+        a.eq("pre 200 json no lanza", null, classify(200, "application/json", ""));
+        a.eq("pre 200 sin ctype no lanza", null, classify(200, null, ""));
+
         // Los mensajes de error no llevan cuerpo ni cookie.
         String body = "SECRETO-DEL-CUERPO";
         noLeak(a, "mensaje 403", messageOf(403, "text/html", body), body);

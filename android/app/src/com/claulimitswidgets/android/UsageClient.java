@@ -151,7 +151,9 @@ public final class UsageClient {
         try {
             return Json.parse(body);
         } catch (Json.JsonException e) {
-            // Los mensajes de JsonException son descriptivos (posicion, no texto del cuerpo).
+            // Ojo: el mensaje de la causa (JsonException) puede llevar un fragmento corto de la
+            // entrada (un caracter de escape, hasta 32 de un numero). Se encadena para depurar,
+            // pero nadie debe registrar la cadena de causas.
             throw new UnrecognizedFormatException("la respuesta no es JSON valido", e);
         }
     }
@@ -172,9 +174,11 @@ public final class UsageClient {
             int code = c.getResponseCode();
             String ctype = c.getHeaderField("content-type");
             String cfMitigated = c.getHeaderField("cf-mitigated");
-            // Si no es 200 se clasifica por codigo y cabeceras, sin leer el cuerpo: un reto
-            // grande no puede convertirse en un fallo de red. check() siempre lanza aqui.
-            if (code != 200) check(code, ctype, "", cfMitigated);
+            // Primero por codigo y cabeceras, sin leer el cuerpo: un reto grande (con 403 o con
+            // 200) no puede convertirse en un fallo de red. Si no es 200, check() siempre lanza;
+            // si es 200 lanza ante cf-mitigated o content-type html. El HTML sin content-type
+            // solo se ve con el cuerpo, por eso se vuelve a revisar tras leerlo.
+            check(code, ctype, "", cfMitigated);
             InputStream in = c.getInputStream();
             String body = in == null ? "" : read(in);
             check(code, ctype, body, cfMitigated);
