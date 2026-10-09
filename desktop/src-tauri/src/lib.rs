@@ -78,10 +78,13 @@ pub fn run() {
             }
         }))
         // Solo la posicion: no se guarda VISIBLE, para que ocultar a la bandeja no la deje
-        // oculta en el siguiente arranque.
+        // oculta en el siguiente arranque. Sin restauracion automatica al crear la ventana: el
+        // plugin guardaria en su cache la posicion que da el sistema y `restore_state` en `setup`
+        // desharia `place_top_right` en el primer arranque. Se restaura a mano en `setup`.
         .plugin(
             tauri_plugin_window_state::Builder::default()
                 .with_state_flags(StateFlags::POSITION)
+                .skip_initial_state("main")
                 .build(),
         )
         .plugin(tauri_plugin_autostart::init(
