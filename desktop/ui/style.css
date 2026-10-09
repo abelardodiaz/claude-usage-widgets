@@ -51,6 +51,9 @@ html, body { background: var(--bg); color: var(--text); overflow: hidden;
 .proj { border-left: 2px solid var(--line); padding: 4px 0 4px 9px; margin-bottom: 7px; }
 .proj small { font-size: 9.5px; color: var(--dim); letter-spacing: .08em; }
 .proj p { font-weight: 600; font-size: 12px; }
-.proj p + p { font-weight: 400; color: var(--muted); font-size: 10.5px; }
+/* 10px como .note. El "ritmo en azul" era el suavizado subpixel de ClearType sobre texto gris
+   en fondo oscuro; a 10px los trazos quedan bien alineados a 125 % de escala. Si reaparece en
+   otra escala, la cura de fondo es forzar antialias en grises (transform: translateZ(0)). */
+.proj p + p { font-weight: 400; color: var(--muted); font-size: 10px; }
 .proj.bad { border-color: var(--red); }
 .proj.ok { border-color: var(--green); }
