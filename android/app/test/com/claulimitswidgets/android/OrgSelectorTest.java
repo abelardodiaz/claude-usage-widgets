@@ -67,6 +67,17 @@ public final class OrgSelectorTest {
         a.eq("lastActiveOrg que falla no se vuelve a sondear en la lista",
                 2, activaNoResponde.llamadas);
 
+        a.eq("lastActiveOrg que falla y quedan varias: ambiguo, no la unica que sobra", null,
+                OrgSelector.choose(Arrays.asList("a", "b", "c"), null, "c",
+                        u -> !u.equals("c")).orgUuid);
+        a.isTrue("lastActiveOrg que falla y quedan varias: pide elegir",
+                OrgSelector.choose(Arrays.asList("a", "b", "c"), null, "c",
+                        u -> !u.equals("c")).ambiguous);
+        a.eq("manual vacio se trata como ausente", "org-b",
+                OrgSelector.choose(dos, "", "org-b", u -> true).orgUuid);
+        a.eq("manual vacio sin pistas: se sigue la regla normal", "org-a",
+                OrgSelector.choose(dos, "", null, u -> u.equals("org-a")).orgUuid);
+
         Contador varias = new Contador(u -> true);
         OrgSelector.choose(Arrays.asList("org-a", "org-b", "org-c", "org-d"), null, null, varias);
         a.eq("varias responden: se corta al segundo sin sondear el resto",

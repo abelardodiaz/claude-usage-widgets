@@ -7,7 +7,7 @@ import java.util.List;
  * Decision D2: que organizacion mira el widget cuando la cuenta tiene varias.
  *
  * Orden: lo que el usuario eligio a mano, luego la que la web considera activa
- * (`lastActiveOrg`), luego la primera que responda. Nunca se elige "la del plan mas alto":
+ * (`lastActiveOrg`), luego la unica que responda; si responden varias, se pregunta. Nunca se elige "la del plan mas alto":
  * eso mostraria una cuota que el usuario no esta usando.
  *
  * Cada sondeo es una peticion de red real: no se repite una organizacion ya sondeada y, si ya
