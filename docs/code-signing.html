@@ -44,6 +44,8 @@ Estado: solicitud en trámite. Hasta que se active, los instaladores se publican
     <a href="https://github.com/abelardodiaz/claude-usage-widgets/releases">GitHub Releases</a>:
     <code>claude-usage-widgets_&lt;versión&gt;_x64-setup.exe</code> y
     <code>claude-usage-widgets_&lt;versión&gt;_x64_en-US.msi</code>.</li>
+  <li>El ejecutable portable de la versión lite, publicado en el mismo release:
+    <code>claude-usage-widgets-lite_&lt;versión&gt;_x64.exe</code>.</li>
   <li>Solo se firman binarios construidos a partir del código de este repositorio. No se firma software de terceros.</li>
 </ul>
 
@@ -75,7 +77,7 @@ El uso de esos servicios se rige por las políticas de privacidad de <a href="ht
 <h2 id="english">English</h2>
 <p>Free code signing provided by <a href="https://about.signpath.io/">SignPath.io</a>, certificate by <a href="https://signpath.org/">SignPath Foundation</a>.</p>
 <ul>
-  <li><strong>What is signed:</strong> the Windows installers (<code>-setup.exe</code> and <code>.msi</code>) attached to each release on <a href="https://github.com/abelardodiaz/claude-usage-widgets/releases">GitHub Releases</a>. Only binaries built from this repository's source are signed.</li>
+  <li><strong>What is signed:</strong> the Windows installers (<code>-setup.exe</code> and <code>.msi</code>) and the portable lite executable (<code>claude-usage-widgets-lite_&lt;version&gt;_x64.exe</code>) attached to each release on <a href="https://github.com/abelardodiaz/claude-usage-widgets/releases">GitHub Releases</a>. Only binaries built from this repository's source are signed.</li>
   <li><strong>How they are built:</strong> from a <code>vX.Y.Z</code> tag on the protected <code>main</code> branch, by the <a href="https://github.com/abelardodiaz/claude-usage-widgets/blob/main/.github/workflows/release.yml">release workflow</a> on GitHub Actions. Every signing request is manually approved, and releases are published as drafts first and checked against <code>SHA256SUMS.txt</code>.</li>
   <li><strong>Committers and reviewers:</strong> <a href="https://github.com/abelardodiaz">abelardodiaz</a>. <strong>Approvers:</strong> <a href="https://github.com/abelardodiaz">abelardodiaz</a>. Multi-factor authentication is enabled on GitHub and SignPath.</li>
   <li><strong>Privacy:</strong> no telemetry and no project servers. The program only contacts <code>api.anthropic.com</code> / <code>claude.ai</code> to read the user's own Claude plan usage, and <code>github.com</code> when the user clicks <em>Check for updates</em>. Otherwise, this program will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it.</li>

@@ -16,6 +16,11 @@ escritorio). Estas reglas no son negociables y cada fase se revisa contra ellas.
    y **nunca se refresca** (refrescarlo invalidaría el de Claude Code).
 4. Escritorio (Tauri): CSP estricta, sin APIs de `shell` ni `fs` expuestas a la UI. La UI solo
    recibe el modelo normalizado de uso, nunca credenciales.
+   Versión lite (`desktop/lite`, Win32 nativo): sin WebView ni UI web; reutiliza los mismos
+   módulos de credenciales y red de `desktop/src-tauri/src`, así que cumple las reglas 1 a 3
+   igual que la app: solo `api.anthropic.com`, token leído en cada consulta, nunca copiado,
+   refrescado ni escrito en logs, y sin telemetría. No tiene updater, así que no contacta
+   `github.com`.
 5. Android: el WebView se usa solo para iniciar sesión; sin `addJavascriptInterface`,
    `usesCleartextTraffic=false`, `allowBackup=false`, sin permisos de red local.
 6. Releases firmados, con checksums SHA-256 publicados. Dependencias fijadas en lockfiles y
