@@ -25,6 +25,7 @@ public final class AppTestRunner {
         OrgSelectorTest.run(a);
         SessionTest.run(a, ctx);
         LoginActivityTest.run(a);
+        SampleStoreTest.run(a, ctx.getCacheDir());
         // Cierre de F3.
         UsageClientTest.runCierre(a);
         OrgSelectorTest.runCierre(a);

@@ -26,20 +26,31 @@ public final class Session {
      * quien llama debe avisar al usuario, no cerrar la pantalla como si hubiera salido bien.
      */
     public static boolean logout(Context ctx) {
-        return logout(ctx, new SessionStore(ctx), SettingsActivity.PREFS, true);
+        SampleStore samples;
+        try {
+            samples = new SampleStore(new File(ctx.getFilesDir(), "samples"));
+        } catch (RuntimeException e) {
+            samples = null;   // sin directorio no hay muestras que borrar... pero no se sabe: false
+        }
+        boolean ok = logout(ctx, new SessionStore(ctx), samples, SettingsActivity.PREFS, true);
+        return ok;
     }
 
     /**
      * Para las pruebas: almacen y preferencias inyectados; con realDevice=false no toca WebView, cache,
      * job ni widgets, para no afectar la sesion ni el aparato reales del dueno.
      */
-    static boolean logout(Context ctx, SessionStore store, String prefsName, boolean realDevice) {
+    static boolean logout(Context ctx, SessionStore store, SampleStore samples,
+                          String prefsName, boolean realDevice) {
         // F4: envolver esto en synchronized (UsageRefresher.LOCK) para no borrar mientras un
         // refresco escribe.
         Context app = ctx.getApplicationContext() != null ? ctx.getApplicationContext() : ctx;
         boolean ok = true;
 
         ok &= store.clear();                                      // cookie cifrada + llave Keystore
+        // Historico de uso. El almacen viene inyectado: la prueba pasa uno propio, asi que borrarlo
+        // no depende de realDevice. null = no se pudo abrir el directorio: cuenta como fallo.
+        ok &= samples != null && samples.clear();
 
         // Preferencias: manual_org (uuid de cuenta) y lo que se anada. commit() y no apply():
         // tiene que estar en disco cuando el metodo vuelve.
@@ -52,8 +63,7 @@ public final class Session {
             ok &= deleteContents(app.getCacheDir());              // cache (incluye la del WebView)
         }
 
-        // F4: borrar aqui samples.jsonl (SampleStore.clear()) y el ultimo modelo/orgs/hora
-        // (SnapshotStore.clear()).
+        // F4: borrar aqui el ultimo modelo/orgs/hora (SnapshotStore.clear()).
         // cancel y push tocan el job y los widgets REALES del dueno: la prueba (realDevice=false)
         // no debe cancelarlos ni repintarlos cuando F4 los llene.
         if (realDevice) {
