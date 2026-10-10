@@ -195,7 +195,8 @@ public final class WidgetRendererTest {
             String tag = "4x2 en 170dp, " + names[i];
             int[] bottoms = new int[2];
             int[] hostH = new int[1];
-            boolean[] whole = new boolean[3];
+            boolean[] whole = new boolean[5];
+            int[] barBottom = new int[1];
             onMain(() -> {
                 FrameLayout host = new FrameLayout(en);
                 View root = WidgetRenderer.render(en, s, false, NOW).apply(en, host);
@@ -220,6 +221,11 @@ public final class WidgetRendererTest {
                     View b = root.findViewById(id);
                     if (b.getVisibility() == View.VISIBLE) todayBar = b;
                 }
+                // `today` es el ultimo wrap_content de `numbers`: el que se encoge a 0 si el aviso
+                // cuesta mas de lo que libera el pronostico. La altura fija de la barra NO sirve
+                // de detector (LinearLayout la mide EXACTLY sin mirar el espacio que queda).
+                whole[3] = fullText(root.findViewById(R.id.today));
+                barBottom[0] = todayBar == null ? Integer.MAX_VALUE : bottomIn(todayBar, host);
                 whole[2] = todayBar != null && todayBar.getHeight() >= Math.round(8 * d);
             });
             a.eq(tag + ": el contenedor mide lo pedido", h, hostH[0]);
@@ -229,6 +235,8 @@ public final class WidgetRendererTest {
             a.isTrue(tag + ": pronostico oculto con aviso / entero sin el", whole[0]);
             a.isTrue(tag + ": la edad conserva su altura", whole[1]);
             a.isTrue(tag + ": la barra de hoy conserva sus 8dp", whole[2]);
+            a.isTrue(tag + ": el texto de hoy conserva su altura (detector real del recorte)", whole[3]);
+            a.isTrue(tag + ": la barra de hoy cae dentro (" + barBottom[0] + " <= " + h + ")", barBottom[0] <= h);
         }
     }
 

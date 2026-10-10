@@ -57,6 +57,7 @@ public final class WidgetUpdateJobTest {
         runNowDoesNotBlock(a);
         orgs(a, ctx);
         paintEach(a);
+        errorsInThreads(a);
         manifest(a, ctx);
         sizes(a, ctx);
         enums(a);
@@ -502,6 +503,39 @@ public final class WidgetUpdateJobTest {
         a.eq("paintEach: intento los tres", Arrays.asList(1, 2, 3), seen);
         a.isTrue("paintEach: todos bien -> true", WidgetUpdateJob.paintEach(new int[] {1, 2}, id -> true));
         a.isTrue("paintEach: sin widgets -> true", WidgetUpdateJob.paintEach(new int[0], id -> false));
+    }
+
+    /** M3: un Error (p. ej. OutOfMemoryError) del refresco no atasca la puerta ni deja el aviso sin dar. */
+    private static void errorsInThreads(Assert a) {
+        WidgetUpdateJob.NowGate g = new WidgetUpdateJob.NowGate();
+        CountDownLatch ran = new CountDownLatch(1);
+        WidgetUpdateJob.runNowWith(g, () -> { ran.countDown(); throw new OutOfMemoryError("prueba"); },
+                () -> 1, x -> { });
+        boolean freed = false;
+        try {
+            a.isTrue("el refresco con Error llego a correr", ran.await(5, TimeUnit.SECONDS));
+            long end = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+            while (!freed && System.nanoTime() < end) {
+                if (g.claim()) freed = true; else Thread.sleep(10);
+            }
+        } catch (InterruptedException e) {
+            a.fail("errorsInThreads interrumpida");
+        }
+        a.isTrue("tras un Error la puerta NO queda atascada", freed);
+
+        int[] finishes = {0};
+        boolean started = false;
+        boolean threw = false;
+        try {
+            started = WidgetUpdateJob.runJob(Runnable::run, () -> 2, () -> { },
+                    () -> { throw new OutOfMemoryError("prueba"); }, () -> 1, x -> { },
+                    () -> finishes[0]++);
+        } catch (Throwable t) {
+            threw = true;
+        }
+        a.isTrue("runJob con Error: no se escapa", !threw);
+        a.isTrue("runJob con Error: el trabajo arranco (true, el aviso viene del hilo)", started);
+        a.eq("runJob con Error: se avisa exactamente una vez", 1, finishes[0]);
     }
 
     // ---- el manifiesto ------------------------------------------------------------------
