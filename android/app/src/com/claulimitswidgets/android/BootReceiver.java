@@ -16,12 +16,18 @@ import android.content.Intent;
 public class BootReceiver extends BroadcastReceiver {
     @Override
     public void onReceive(Context ctx, Intent intent) {
-        String action = intent == null ? null : intent.getAction();
+        handle(intent == null ? null : intent.getAction(), () -> WidgetUpdateJob.countAll(ctx),
+                () -> WidgetUpdateJob.schedule(ctx), () -> WidgetUpdateJob.runSoon(ctx));
+    }
+
+    /** La decision, sin tocar el sistema: las pruebas no pueden programar jobs ni consultar. */
+    static void handle(String action, java.util.function.IntSupplier widgets, Runnable schedule,
+                       Runnable runSoon) {
         if (!Intent.ACTION_BOOT_COMPLETED.equals(action)
                 && !Intent.ACTION_MY_PACKAGE_REPLACED.equals(action)) return;
         // Sin widgets puestos no hay a quien actualizar: ni se programa ni se consulta.
-        if (WidgetUpdateJob.countAll(ctx) == 0) return;
-        WidgetUpdateJob.schedule(ctx);
-        WidgetUpdateJob.runSoon(ctx);
+        if (widgets.getAsInt() == 0) return;
+        schedule.run();
+        runSoon.run();
     }
 }

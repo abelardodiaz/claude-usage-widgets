@@ -47,6 +47,7 @@ public final class WidgetUpdateJobTest {
         ensure(a, ctx);
         realSchedule(a, ctx);
         cancel(a);
+        boot(a);
         gate(a);
         cycles(a);
         pushLock(a);
@@ -171,6 +172,24 @@ public final class WidgetUpdateJobTest {
         a.eq("y nada mas", 2, js.cancelled.size());
         WidgetUpdateJob.cancelAll(null);   // sin planificador: no lanza
         a.isTrue("cancelAll(null) no lanza", true);
+    }
+
+    private static void boot(Assert a) {
+        for (String action : new String[] {Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_MY_PACKAGE_REPLACED}) {
+            List<String> calls = new ArrayList<>();
+            BootReceiver.handle(action, () -> 2, () -> calls.add("schedule"), () -> calls.add("soon"));
+            a.eq(action + ": reprograma y pide un refresco, en ese orden",
+                    Arrays.asList("schedule", "soon"), calls);
+            calls.clear();
+            BootReceiver.handle(action, () -> 0, () -> calls.add("schedule"), () -> calls.add("soon"));
+            a.eq(action + ": sin widgets no hace nada", Collections.emptyList(), calls);
+        }
+        for (String other : new String[] {null, "", Intent.ACTION_USER_PRESENT,
+                Intent.ACTION_LOCKED_BOOT_COMPLETED, "com.claulimitswidgets.android.BOOT_COMPLETED"}) {
+            List<String> calls = new ArrayList<>();
+            BootReceiver.handle(other, () -> 2, () -> calls.add("schedule"), () -> calls.add("soon"));
+            a.eq("accion ajena <" + other + ">: no hace nada", Collections.emptyList(), calls);
+        }
     }
 
     // ---- la puerta de refrescos inmediatos ----------------------------------------------
