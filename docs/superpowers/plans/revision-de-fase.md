@@ -1,10 +1,11 @@
-# Revisión Fable de cierre de fase
+# Revisión de cierre de fase
 
 Se ejecuta desde la sesión PC al terminar cada fase, antes del merge. Llamada al tool Agent:
 
 - `subagent_type`: `general-purpose`
-- `model`: `fable`
-- `description`: `Revision Fable wN fM`
+- `model`: `opus` (Opus 5.5)
+- `effort`: `high`
+- `description`: `Revision wN fM`
 - `prompt`: el texto de abajo con `{RAMA}`, `{FASE}` y `{PLAN}` sustituidos.
 
 ```text

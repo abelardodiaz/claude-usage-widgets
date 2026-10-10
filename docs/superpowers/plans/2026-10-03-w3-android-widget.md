@@ -65,7 +65,9 @@ Valen para **todas** las tareas. Son de `SECURITY.md` §5, de la spec §5 y §6,
 6. `setAcceptThirdPartyCookies(web, false)`.
 7. **A `claude.ai` se manda el mínimo de cookies**: `sessionKey` y, si aplica, `lastActiveOrg`.
    No el jarro entero (eso lo hacía el spike; ver "Lo que W3 NO debe copiar").
-8. **Red: solo `claude.ai`.** Ningún otro host. Cero telemetría.
+8. **Red: las peticiones nativas van solo a `claude.ai`.** Ningún otro host, cero telemetría. El
+   WebView de login carga los subrecursos e iframes que el reto de Cloudflare exige (de terceros);
+   la navegación principal sí se restringe a `claude.ai`.
 9. **El núcleo es la única implementación de R0–R7.** `android/app/` no calcula colores, ni
    proyecciones, ni reparto por día.
 10. **Identificadores en inglés, comentarios y documentos en español.** Los scripts (`.sh`) solo en
@@ -2065,7 +2067,7 @@ git commit -m "feat: login por correo con pantalla previa que explica lo de Goog
 
 **Archivos:** crear `src/.../WidgetUpdateJob.java` (esqueleto)
 
-- [ ] **Paso 1: Esqueleto que compila**
+- [x] **Paso 1: Esqueleto que compila**
 
 ```java
 package com.claulimitswidgets.android;
@@ -2081,7 +2083,7 @@ public final class WidgetUpdateJob {
 }
 ```
 
-- [ ] **Paso 2: Construir, instalar y hacer el login de verdad**
+- [x] **Paso 2: Construir, instalar y hacer el login de verdad**
 
 ```bash
 bash android/app/build.sh
@@ -2096,14 +2098,37 @@ Al terminar, tocar "Listo".
 
 Esperado en pantalla: `Sesión iniciada. Ya puedes añadir el widget a la pantalla de inicio.`
 
-- [ ] **Paso 3: Comprobar que no se filtró nada**
+- [x] **Paso 3: Comprobar que no se filtró nada**
+
+**Resultado (2026-10-09/10, con la sesion real del duenio):** se escribio una sonda de diagnostico
+que corre **dentro del proceso de la app** (`run-as` no sirve: el APK no es debuggable) y recorre
+los 67 archivos del `dataDir` buscando la cadena `sessionKey` en ASCII, UTF-16LE y UTF-16BE.
+**No aparece en ningun sitio**: ni en `app_webview/Default/Cookies` (que si tiene filas de
+claude.ai), ni en `Cookies-journal`, ni en Local Storage, Session Storage o Service Worker, ni en
+`http_auth.db`, ni en `shared_prefs`. El detector esta validado con un control sintetico que si lo
+encuentra en las tres codificaciones, asi que el vacio es real y no un fallo de la sonda.
+
+La razon es buena: **`LoginActivity.wipeWebView` limpia el jarro del WebView justo despues de
+guardar la sesion cifrada**, de modo que la cookie no sobrevive ni siquiera hasta que el usuario
+cierra sesion.
+
+**Limite honesto de esta comprobacion:** por eso mismo, la medicion "antes del logout" **no
+discrimina** —no hay rastro que ver— y medir a mitad de un login es incompatible con la
+herramienta: tanto reinstalar el APK como lanzar `am instrument` reinician el proceso de la app y
+**tiran el login en curso**. Ocurrio una vez y le costo un intento al duenio. Queda, por tanto,
+sin control positivo directo sobre el camino del logout. Dos limites mas: Chromium escribe con
+retraso (~30 s) y `session.bin` esta cifrado, asi que de el solo se puede comparar existe/bytes.
+
+La sonda es de diagnostico y **no se commitea** (necesita red y una sesion real: romperia CI y
+ampliaria la superficie de las pruebas sobre datos reales). Queda en el espacio de trabajo de la
+fase con su reporte.
 
 ```bash
 adb logcat -d | grep -i "sessionKey\|lastActiveOrg" | grep -v "nombres=" || echo "limpio"
 ```
 Esperado: `limpio`. Si aparece algo, es un fallo de seguridad y bloquea el PR.
 
-- [ ] **Paso 4: Probar la cookie MÍNIMA contra claude.ai real**
+- [x] **Paso 4: Probar la cookie MÍNIMA contra claude.ai real**
 
 Esta es **la hipótesis central de la fase y no está demostrada**. El spike A2 mandó el jarro
 entero, incluidas `__cf_bm` y `_cfuvid`, que son de gestión de bots de Cloudflare. Que
@@ -2140,6 +2165,27 @@ Esperado: `HTTP 200, N organizacion(es)`.
 probablemente `__cf_bm` y `_cfuvid`— lo cual cambia la restricción global 7. **Eso es un memo a
 PC, no una decisión de quien ejecute.** Y si el resultado no se puede obtener (sin sesión, sin
 red), se declara como riesgo abierto en el reporte de la fase, no se da por bueno.
+
+**Resultado del Paso 4 (2026-10-09, sesion real del duenio, SM-S948B):** la hipotesis central del
+diseno queda **CONFIRMADA**. Lo guardado en el almacen cifrado era **solo** `sessionKey` y
+`lastActiveOrg` —la cookie minima, ningun otro nombre— y claude.ai respondio **200 con JSON** a
+`organizations()` y a `usage()`: ni 401, ni 403, ni `cf-mitigated`, ni HTML donde se esperaba JSON.
+El **nucleo parseo la respuesta real** sin `UnrecognizedFormatException`, no solo los fixtures. La
+cuenta tiene 2 organizaciones y D2 eligio sin ambiguedad con `lastActiveOrg` en el primer sondeo.
+Valores que saldrian en el widget: sesion **64.0% (amber)**, semana **96.0% (red)** — y la app
+oficial de Claude mostraba en ese mismo momento "Cerca del limite", lo que confirma el calculo de
+forma independiente.
+
+Tambien queda confirmado, de paso, que `CookieManager.getCookie` **si devuelve la `sessionKey`**
+pese a ser HttpOnly: hasta hoy eso solo lo respaldaba el spike de W0.
+
+La sonda que hizo la comprobacion es de diagnostico y **no se commitea**: necesita red y una sesion
+real, asi que romperia CI. Queda guardada en el espacio de trabajo de la fase
+(`RealSessionProbe.java` y `build-probe.sh`), junto con su reporte.
+
+**Pendiente, deliberadamente aplazado al Paso 3 / F5:** comprobar que cerrar sesion no deja la
+cookie en `app_webview/Default/Cookies`. Exige **borrar la sesion del duenio**, que acaba de
+iniciarla y que hace falta para F4. Se hara cuando toque probar en dispositivo.
 
 - [ ] **Paso 5: Commit, PR y memo**
 
@@ -2370,6 +2416,35 @@ git commit -m "feat: ajustes con selector de organizacion y cerrar sesion"
 ---
 
 ## F4 — Widget · rama `android/w3-f4-widget`
+
+### Enganches obligatorios heredados de F3 (lista de entrada de esta fase)
+
+F3 se escribio **sin referenciar nada de F4**, porque el orden del plan no compilaba: `LoginActivity`,
+`Session` y `SettingsActivity` se referencian en circulo y las tres llamaban a clases que nacen
+aqui. Cada omision quedo con un comentario `F4:` en su linea exacta. **Son nueve y hay que
+conectarlos todos**; el 6 es **criterio de salida de la fase**, no opcional.
+
+1. `LoginActivity` tras entrar: `WidgetUpdateJob.schedule` y `runNow`.
+2. `Session.logout`: `cancel` y `pushToWidgets(app, Snapshot.of(NO_SESSION))`. La firma pasa de
+   `pushToWidgets(Context)` a `(Context, Snapshot)`.
+3. `SettingsActivity`: `refreshOrgs`, `runNow` en los radios, y `knownOrgs` con `SnapshotStore`.
+4. `UsageRefresher.clearBackoff` y `LOCK`, `SnapshotStore` y `Snapshot`: nacen en esta fase.
+5. Cuerpos de los cinco metodos de `WidgetUpdateJob`, el `JobService`, `ACTION_TAP`, `countAll` y
+   el `BootReceiver`.
+6. **`Session.logout` debe ampliarse para borrar `SampleStore` y `SnapshotStore`.** Hoy borra todo
+   lo que EXISTE, pero en cuanto esta fase guarde muestras, un logout incompleto dejaria rastro del
+   uso del duenio en su telefono. **Criterio de salida.**
+7. `WidgetUpdateJob.refreshOrgs` debe llamar a `onDone`; hoy no lo hace.
+8. Ajustes en estado ambiguo (`CHOOSE_ORG`): hoy marca "Automatica" y muestra la ayuda siempre.
+   Debe mostrarla solo en ese estado, pintar el aviso y no marcar "Automatica" como elegida.
+9. `SettingsActivity.KEY_UA`: el `user_agent` que guarda `LoginActivity` hay que **leerlo** al
+   construir `UsageClient`. Si no, claude.ai ve dos huellas distintas, que es justo lo que ese
+   guardado evita.
+
+**Condicion que esta fase debe respetar:** el candado de `SessionStore` es estatico, asi que solo
+protege dentro de un proceso. Si algun componente declarase `android:process`, `load` y `clear`
+volverian a poder competir.
+
 
 **Entregable:** dos widgets en la pantalla de inicio (4×1 compacto y 4×2 con barras) que muestran
 el uso real, se actualizan cada 15 minutos y al tocarlos, y que dicen la verdad cuando algo falla:

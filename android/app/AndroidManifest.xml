@@ -17,11 +17,17 @@
         <activity
             android:name=".LoginActivity"
             android:exported="true"
+            android:taskAffinity=""
             android:configChanges="orientation|screenSize|keyboardHidden">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="false"
+            android:label="@string/settings_title" />
     </application>
 </manifest>

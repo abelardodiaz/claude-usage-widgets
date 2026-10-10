@@ -2,4 +2,24 @@
 <resources>
     <string name="app_name">Claude Usage</string>
     <string name="core_ok">Core linked: %1$s</string>
+    <string name="settings_title">Settings</string>
+    <string name="settings_org">Organization</string>
+    <string name="settings_org_auto">Automatic</string>
+    <string name="settings_org_help">Your account has more than one organization. Pick the one the widget should show. The automatic choice is fixed when you sign in: if you later switch organization on the website, the widget keeps watching the old one until you pick the new one here.</string>
+    <string name="logout">Log out</string>
+    <string name="logout_failed">Could not fully log out</string>
+    <string name="settings_org_unnamed">Organization %1$d</string>
+    <string name="login_title">Sign in to Claude</string>
+    <string name="login_email_only">On Android, <b>only email sign-in works</b>. The "Continue with
+        Google" button fails inside an in-app browser: Google blocks the attempt for 48 hours.</string>
+    <string name="login_steps">You will get a link by email. It expires in 10 minutes. If opening it
+        shows a verification code instead of signing you in, type that code here.</string>
+    <string name="login_start">Sign in with email</string>
+    <string name="login_again">Sign in with another account</string>
+    <string name="probe_title">Test the connection</string>
+    <string name="login_done">Done</string>
+    <string name="login_checking">Checking…</string>
+    <string name="login_no_session">No session yet. Finish signing in on the page above.</string>
+    <string name="login_ok">Signed in. Your session is saved. The widget arrives in the next update.</string>
+    <string name="login_save_failed">Signed in, but the session could not be saved. Try signing in again.</string>
 </resources>

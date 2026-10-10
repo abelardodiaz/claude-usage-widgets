@@ -195,7 +195,7 @@ del usuario. Reglas no negociables, revisadas en cada oleada:
 ## 8. Forma de trabajo
 
 - **Plan:** oleadas → fases → tareas, en `docs/superpowers/plans/`. Cada fase cierra con una
-  **revisión de un subagente Fable** contra este diseño y `SECURITY.md`; los hallazgos se
+  **revisión de un subagente Opus 5.5 (esfuerzo `high`)** contra este diseño y `SECURITY.md`; los hallazgos se
   corrigen antes de pasar a la siguiente fase.
 - **Git:** `main` protegida; una rama por fase (`w1/f2-bandeja`), PR a `main`, revisión antes de
   merge. La parte Android se trabaja en ramas `android/*`.
