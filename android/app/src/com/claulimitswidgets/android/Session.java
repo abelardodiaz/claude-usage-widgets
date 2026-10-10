@@ -96,13 +96,15 @@ public final class Session {
         }
 
         // cancel y push tocan el job y los widgets REALES del dueno: la prueba (realDevice=false)
-        // no debe cancelarlos ni repintarlos cuando F4 los llene.
+        // no debe cancelarlos ni repintarlos.
         if (realDevice) {
             ok &= attempt(() -> WidgetUpdateJob.cancel(app));
         }
-        // F4: pasar Snapshot.of(Snapshot.Problem.NO_SESSION) para que los widgets muestren "sin sesion".
+        // Los widgets pasan a "sin sesion". Va bajo el candado de pintado de WidgetUpdateJob: un
+        // refresco que empezo antes no puede pintar despues los numeros de la cuenta cerrada.
         if (realDevice) {
-            ok &= attempt(() -> WidgetUpdateJob.pushToWidgets(app));
+            ok &= attempt(() -> WidgetUpdateJob.pushToWidgets(app,
+                    Snapshot.of(Snapshot.Problem.NO_SESSION)));
         }
         EPOCH.incrementAndGet();   // por si un refresco empezo entre el primer incremento y los borrados
         return ok;

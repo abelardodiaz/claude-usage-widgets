@@ -28,6 +28,9 @@ public final class AppTestRunner {
         SampleStoreTest.run(a, ctx.getCacheDir());
         UsageRefresherTest.run(a, ctx);
         WidgetRendererTest.run(a, ctx);
+        // Tarea 4.4.
+        SessionStoreTest.runKeyLoss(a, ctx);
+        WidgetUpdateJobTest.run(a, ctx);
         // Cierre de F3.
         UsageClientTest.runCierre(a);
         OrgSelectorTest.runCierre(a);

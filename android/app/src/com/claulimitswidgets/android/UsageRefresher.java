@@ -171,6 +171,11 @@ public final class UsageRefresher {
         String cookies;
         try {
             cookies = cookieSource.load();
+        } catch (SessionStore.KeyLostException e) {
+            // Llave perdida para siempre (cambio o quitaron el bloqueo de pantalla): no es "sin
+            // red". Se trata como sesion vencida para que el toque lleve al login. Sin backoff:
+            // no se hizo ninguna peticion y lo arregla el usuario, no el tiempo.
+            return oldWith(Snapshot.Problem.AUTH_EXPIRED);
         } catch (GeneralSecurityException | IOException e) {
             // El Keystore puede fallar de forma transitoria (SessionStore lo propaga a proposito
             // sin borrar nada). No es "sin sesion": se conserva el dato y se reintenta. Decir
@@ -462,6 +467,10 @@ public final class UsageRefresher {
      * Sin respaldo a `http.agent`: si no esta guardado es que no hubo login, y una huella
      * distinta a la del WebView es justo lo que podria disparar un reto.
      */
+    static String userAgentOf(Context ctx) {
+        return userAgent(app(ctx));
+    }
+
     private static String userAgent(Context app) {
         return app.getSharedPreferences(SettingsActivity.PREFS, Context.MODE_PRIVATE)
                 .getString(SettingsActivity.KEY_UA, "");

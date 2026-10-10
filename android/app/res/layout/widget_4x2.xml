@@ -10,9 +10,10 @@
 
         <TextView android:maxLines="1" android:ellipsize="end" android:id="@+id/session" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:textColor="#FFFFFFFF" android:textSize="13sp" />
-        <!-- Una ProgressBar por color. RemoteViews solo deja llamar setProgressBar y
-             setViewVisibility; no puede colorear un drawable en API 29, asi que se enciende
-             la del color que toca y se apagan las otras tres. -->
+        <!-- Una ProgressBar por color: se enciende la del color que toca y se apagan las otras
+             tres. Con minSdk 31 RemoteViews ya podria pintar una sola con setColorStateList, pero
+             este camino solo usa setProgressBar y setViewVisibility, que estan probados y no
+             dependen de que el lanzador respete el tinte. -->
         <FrameLayout android:layout_width="match_parent" android:layout_height="8dp"
             android:layout_marginBottom="6dp">
             <ProgressBar android:id="@+id/session_green" style="?android:attr/progressBarStyleHorizontal"

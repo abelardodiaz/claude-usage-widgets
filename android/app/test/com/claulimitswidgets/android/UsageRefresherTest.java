@@ -732,6 +732,21 @@ public final class UsageRefresherTest {
             UsageRefresher none = new UsageRefresher(r.session, () -> null, r.samples, r.meta,
                     r.prefs, c -> r.fake, () -> r.now[0]);
             a.eq("load() null -> NO_SESSION", Snapshot.Problem.NO_SESSION, none.refresh().problem);
+
+            // Llave perdida PARA SIEMPRE: no es "sin red". Con OFFLINE el widget diria "Sin
+            // conexion" eternamente y el toque solo reintentaria; tiene que ir al login.
+            int before = r.fake.usageCalls.size();
+            UsageRefresher lost = new UsageRefresher(r.session,
+                    () -> { throw new SessionStore.KeyLostException(); },
+                    r.samples, r.meta, r.prefs, c -> r.fake, () -> r.now[0]);
+            Snapshot ls = lost.refresh();
+            a.eq("llave perdida -> AUTH_EXPIRED, no OFFLINE", Snapshot.Problem.AUTH_EXPIRED, ls.problem);
+            a.isTrue("llave perdida: se conserva el ultimo dato", ls.hasData());
+            a.eq("llave perdida: ninguna peticion", before, r.fake.usageCalls.size());
+            for (int i = 0; i < 3; i++) lost.refresh();
+            a.isTrue("llave perdida: sin backoff (lo arregla el usuario)", !r.prefs.contains("backoff_attempt"));
+            a.eq("llave perdida: el toque lleva al login", LoginActivity.class.getName(),
+                    WidgetRenderer.tapTarget(ctx, ls, true).getComponent().getClassName());
         } finally { r.close(); }
     }
 

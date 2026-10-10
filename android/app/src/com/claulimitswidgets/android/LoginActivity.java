@@ -219,7 +219,7 @@ public class LoginActivity extends Activity {
             getSharedPreferences(SettingsActivity.PREFS, MODE_PRIVATE).edit()
                     .putString(SettingsActivity.KEY_UA, ua).apply();
         } catch (RuntimeException ignored) {
-            // F4 usara su UA por omision.
+            // Sin UA guardado las consultas llevan uno vacio: no hay respaldo a proposito (ver userAgent).
         }
         // Volver a entrar arregla el problema: la espera acumulada ya no aplica.
         UsageRefresher.clearBackoff(this);
@@ -231,7 +231,7 @@ public class LoginActivity extends Activity {
     }
 
     private void scheduleAfterLogin() {
-        // F3: ambos son esqueleto y no hacen nada hasta F4.
+        // Los dos solo encolan (programan el periodico y lanzan el primer refresco en un hilo).
         WidgetUpdateJob.schedule(this);
         WidgetUpdateJob.runNow(this);
     }

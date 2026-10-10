@@ -8,7 +8,6 @@ import android.widget.RemoteViews;
 import com.claudewidgets.core.Color;
 import com.claudewidgets.core.Colors;
 import com.claudewidgets.core.TodayFill;
-import com.claudewidgets.core.TodayState;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -109,13 +108,12 @@ public final class WidgetRenderer {
      * A donde lleva el toque. Separado del PendingIntent para poder probar las tres rutas.
      * Nunca lleva extras: ni cookie ni uuid viajan en un Intent.
      *
-     * CALLEJONES SIN SALIDA que se deciden aqui y que cierra la 4.4 (la causa esta en otras tareas):
-     *  - OFFLINE mezcla "sin red", "hipo transitorio del Keystore" y "fallo PERMANENTE del
-     *    Keystore" (cambiar o quitar el bloqueo de pantalla). En el ultimo el widget dice "Sin
-     *    conexion" para siempre aunque el WiFi este perfecto, y el toque solo reintenta. Hace
-     *    falta distinguirlo en SessionStore y mandarlo al login como AUTH_EXPIRED.
-     *  - CHOOSE_ORG manda a Ajustes, donde `knownOrgs()` hoy devuelve vacio: la instruccion
-     *    "elige organizacion en Ajustes" es imposible de cumplir hasta que la 4.4 la cablee.
+     * Los dos CALLEJONES SIN SALIDA que dejo la 4.3 estan cerrados (4.4):
+     *  - Un fallo PERMANENTE del Keystore (el dueno cambia o quita el bloqueo de pantalla) ya no
+     *    llega aqui como OFFLINE: SessionStore lo distingue (`KeyLostException`) y el refrescador
+     *    lo devuelve como AUTH_EXPIRED, que lleva al login. OFFLINE vuelve a significar solo
+     *    "sin red" o un hipo transitorio, donde reintentar si es lo correcto.
+     *  - CHOOSE_ORG manda a Ajustes, donde la lista ya sale de `SnapshotStore.knownOrgs()`.
      */
     static Intent tapTarget(Context ctx, Snapshot s, boolean compact) {
         if (s.problem == Snapshot.Problem.NO_SESSION || s.problem == Snapshot.Problem.AUTH_EXPIRED) {
@@ -131,9 +129,15 @@ public final class WidgetRenderer {
     private static int whole(double percent) { return (int) Math.floor(percent); }
 
     private static String todayText(Context ctx, com.claudewidgets.core.DayUsage d, TodayFill fill) {
-        if (fill.state == TodayState.EXHAUSTED) return ctx.getString(R.string.w_today_exhausted);
-        return ctx.getString(R.string.w_today, one(ctx, d.todayUsed),
-                fill.state == TodayState.UNKNOWN ? "\u2014" : one(ctx, d.quotaToday));
+        // Un switch exhaustivo con `default` que lanza: un TodayState nuevo en el nucleo no puede
+        // caer en silencio en la rama de los numeros.
+        switch (fill.state) {
+            case EXHAUSTED: return ctx.getString(R.string.w_today_exhausted);
+            case UNKNOWN:   return ctx.getString(R.string.w_today, one(ctx, d.todayUsed), "\u2014");
+            case OK:        return ctx.getString(R.string.w_today, one(ctx, d.todayUsed),
+                                    one(ctx, d.quotaToday));
+            default: throw new IllegalStateException("estado de hoy sin texto: " + fill.state);
+        }
     }
 
     private static Locale locale(Context ctx) {
@@ -149,8 +153,9 @@ public final class WidgetRenderer {
             {R.id.today_green, R.id.today_amber, R.id.today_red, R.id.today_gray};
 
     /**
-     * Enciende la barra del color que toca y apaga las otras tres. RemoteViews no puede tenir
-     * un drawable en API 29; `setProgressBar` y `setViewVisibility` si estan en su lista blanca.
+     * Enciende la barra del color que toca y apaga las otras tres. Con minSdk 31 RemoteViews
+     * ya podria pintar una sola con `setColorStateList`, pero se mantienen cuatro barras porque
+     * `setProgressBar` y `setViewVisibility` son lo unico que este camino necesita del lanzador.
      */
     private static void bar(RemoteViews v, int[] ids, double percent, Color color) {
         int wanted = index(color);
