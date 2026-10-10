@@ -95,6 +95,64 @@ public final class UsageClientTest {
         a.eq("org vacia", null, UsageClient.lastActiveOrg("lastActiveOrg="));
     }
 
+    /** Cierre de F3: sin cadena de causas, y lastActiveOrg coherente con minimalCookies. */
+    public static void runCierre(Assert a) {
+        // Control: la funcion de recorrido SI ve una cadena (si no, las pruebas serian vacias).
+        Throwable chain = new RuntimeException("a", new RuntimeException("SECRETO-X"));
+        a.eq("control: la cadena se recorre", true, chainContains(chain, "SECRETO-X"));
+
+        // Control: Json.parse SI mete un fragmento de la entrada en su mensaje (la razon de
+        // quitar la causa). Si esto deja de cumplirse, las pruebas de abajo serian vacias.
+        String jsonMsg = "<<no lanzo>>";
+        try { com.claudewidgets.core.Json.parse("[1e999]"); }
+        catch (Exception e) { jsonMsg = String.valueOf(e.getMessage()); }
+        a.eq("control: la JsonException lleva un fragmento de la entrada", true,
+                jsonMsg.contains("1e999"));
+
+        String[] bodies = {"<html>", "[\"\\Z\"]", "[1e999]", "{\"a\":"};
+        for (String b : bodies) {
+            Throwable t = parseFailure(b);
+            a.eq("json roto lanza format: " + b.length(), true,
+                    t instanceof com.claudewidgets.core.UnrecognizedFormatException);
+            a.eq("json roto sin causa: " + b.length(), true, t != null && t.getCause() == null);
+            a.eq("json roto: ningun mensaje de la cadena lleva el literal: " + b.length(), false,
+                    chainContains(t, "1e999") || chainContains(t, "\\Z"));
+        }
+        // Mismo recorrido para los mensajes de check().
+        String body = "SECRETO-DEL-CUERPO";
+        try {
+            UsageClient.check(403, "text/html", body, null);
+            a.fail("check 403 no lanzo");
+        } catch (Exception e) {
+            a.eq("check 403: cadena sin cuerpo", false, chainContains(e, body));
+        }
+
+        a.eq("org vacia y luego buena", "B",
+                UsageClient.lastActiveOrg("lastActiveOrg=; lastActiveOrg=B"));
+        a.eq("org solo espacios", null, UsageClient.lastActiveOrg("lastActiveOrg= ; x=1"));
+        a.eq("org vacia y minimal coinciden", "sessionKey=A",
+                UsageClient.minimalCookies("sessionKey=A; lastActiveOrg="));
+    }
+
+    private static Throwable parseFailure(String body) {
+        try {
+            UsageClient.parseOrgs(body);
+            return null;
+        } catch (Exception e) {
+            return e;
+        }
+    }
+
+    /** Recorre getCause() hasta el final: true si algun mensaje de la cadena contiene `s`. */
+    private static boolean chainContains(Throwable t, String s) {
+        int guard = 0;
+        for (; t != null && guard < 20; t = t.getCause(), guard++) {
+            String m = t.getMessage();
+            if (m != null && m.contains(s)) return true;
+        }
+        return false;
+    }
+
     private static void noLeak(Assert a, String what, String msg, String body) {
         a.eq(what + " lanzo", false, "<<no lanzo>>".equals(msg));
         a.eq(what + " con mensaje", false, msg.isEmpty() || "null".equals(msg));

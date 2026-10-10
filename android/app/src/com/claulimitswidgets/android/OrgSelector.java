@@ -58,12 +58,13 @@ public final class OrgSelector {
                                 String lastActiveOrg, Probe probe) {
         if (manual != null && !manual.isEmpty()) return new Choice(manual, false);
 
-        boolean unknown = false;   // algun sondeo no pudo decidir: no se descarta nada
         String probedAlready = null;
         if (lastActiveOrg != null && !lastActiveOrg.isEmpty()) {
             Answer first = probe.probe(lastActiveOrg);
             if (first == Answer.RESPONDS) return new Choice(lastActiveOrg, false);
-            if (first == Answer.UNKNOWN) unknown = true;
+            // Un UNKNOWN ya decide el resultado (ambiguous): seguir sondeando la lista son N
+            // peticiones inutiles justo cuando la red va mal.
+            if (first == Answer.UNKNOWN) return new Choice(null, true);
             probedAlready = lastActiveOrg;
         }
 
@@ -72,13 +73,12 @@ public final class OrgSelector {
             if (uuid.equals(probedAlready)) continue;
             Answer answer = probe.probe(uuid);
             if (answer == Answer.UNKNOWN) {
-                unknown = true;
+                return new Choice(null, true);   // fallo de red: que elija el usuario, sin mas sondeos
             } else if (answer == Answer.RESPONDS) {
                 responding.add(uuid);
                 if (responding.size() == 2) break;   // ya es ambiguo: no hace falta el resto
             }
         }
-        if (unknown) return new Choice(null, true);   // fallo de red: que elija el usuario
         if (responding.size() == 1) return new Choice(responding.get(0), false);
         if (responding.isEmpty()) return new Choice(null, false);
         return new Choice(null, true);   // varias responden y ninguna pista: no se adivina

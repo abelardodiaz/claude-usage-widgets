@@ -25,6 +25,10 @@ public final class AppTestRunner {
         OrgSelectorTest.run(a);
         SessionTest.run(a, ctx);
         LoginActivityTest.run(a);
+        // Cierre de F3.
+        UsageClientTest.runCierre(a);
+        OrgSelectorTest.runCierre(a);
+        SessionStoreTest.runCierre(a, ctx);
         List<String> failures = a.failures();
         if (failures.isEmpty()) return "OK: " + a.checks() + " comprobaciones, 0 fallos";
         StringBuilder sb = new StringBuilder("FALLOS (" + failures.size()

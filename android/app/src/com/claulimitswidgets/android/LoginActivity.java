@@ -100,6 +100,13 @@ public class LoginActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        // Tras cerrar sesion desde Ajustes, el WebView de esta instancia puede conservar cache.
+        // SOLO si no hay sesion Y el panel web no esta a la vista: con el panel visible el
+        // usuario esta a mitad de un login (o guardando) y no se toca nada.
+        if (!store.hasSession()
+                && findViewById(R.id.web_pane).getVisibility() != View.VISIBLE) {
+            wipeWebView();
+        }
         paintIntro();
     }
 
@@ -142,6 +149,7 @@ public class LoginActivity extends Activity {
 
     private void startLogin() {
         webUsed = true;
+        status.setText("");   // sin restos de un intento anterior
         findViewById(R.id.intro).setVisibility(View.GONE);
         findViewById(R.id.web_pane).setVisibility(View.VISIBLE);
         web.loadUrl(LOGIN_URL);
@@ -194,6 +202,7 @@ public class LoginActivity extends Activity {
                     showIntro();
                     paintIntro();
                     ((TextView) findViewById(R.id.intro_status)).setText(R.string.login_save_failed);
+                    status.setText(R.string.login_save_failed);
                     return;
                 }
                 afterSaved(ua);
@@ -215,6 +224,7 @@ public class LoginActivity extends Activity {
         // F4: aqui engancha UsageRefresher.clearBackoff(this): volver a entrar arregla el
         // problema y la espera acumulada ya no aplica.
         wipeWebView();
+        status.setText(R.string.login_ok);   // ya no se queda en "Comprobando..."
         showIntro();
         paintIntro();      // ahora hay sesion: aparecen Ajustes y cerrar sesion
         scheduleAfterLogin();

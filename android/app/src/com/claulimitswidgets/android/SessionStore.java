@@ -35,6 +35,7 @@ public final class SessionStore {
     private static final String KEY_ALIAS = "cuw-session-v1";
     private static final String TRANSFORM = "AES/GCM/NoPadding";
     private static final int TAG_BITS = 128;
+    private static final int IV_LEN = 12;
 
     private final Context ctx;
     private final String fileName;
@@ -56,7 +57,23 @@ public final class SessionStore {
         this.keyAlias = keyAlias;
     }
 
+    /**
+     * Hay un archivo con la FORMA de uno que escribio save(): primer byte = 12 (el IV) y largo al
+     * menos 1+12+16 (IV mas etiqueta GCM). No descifra: un archivo corrupto en su forma deja de
+     * pintar "Sesion iniciada". Una corrupcion interna (byte volteado) solo la detecta load().
+     */
     public boolean hasSession() {
+        File f = file();
+        if (!f.isFile() || f.length() < 1 + IV_LEN + TAG_BITS / 8) return false;
+        try (java.io.FileInputStream in = new java.io.FileInputStream(f)) {
+            return in.read() == IV_LEN;
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
+    /** Hay algo en disco, sea o no valido: load() lo examina y borra lo corrupto. */
+    private boolean fileExists() {
         return file().isFile() && file().length() > 0;
     }
 
@@ -93,7 +110,7 @@ public final class SessionStore {
      */
     public String load() throws GeneralSecurityException, IOException {
         synchronized (LOCK) {
-            if (!hasSession()) return null;
+            if (!fileExists()) return null;
             byte[] all = readAll(file());
             if (all.length < 2) { clear(); return null; }
             int ivLen = all[0] & 0xFF;

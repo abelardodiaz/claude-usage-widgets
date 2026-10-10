@@ -63,6 +63,43 @@ public final class SessionStoreTest {
         s.clear();
     }
 
+    /** Cierre de F3: hasSession() mira la forma del archivo, sin descifrar. */
+    public static void runCierre(Assert a, android.content.Context ctx) {
+        SessionStore s = new SessionStore(ctx, TEST_FILE, TEST_ALIAS);
+        s.clear();
+        File f = new File(ctx.getFilesDir(), TEST_FILE);
+        shape(a, s, f, "1 byte", new byte[] {7}, false);
+        shape(a, s, f, "ivLen invalido", new byte[] {0, 1, 2, 3, 4}, false);
+        byte[] ivCinco = new byte[40];
+        ivCinco[0] = 5;
+        shape(a, s, f, "iv de 5 bytes", ivCinco, false);
+        shape(a, s, f, "demasiado corto para IV+etiqueta", new byte[] {12, 1, 2, 3, 4, 5, 6, 7}, false);
+        shape(a, s, f, "archivo vacio", new byte[0], false);
+        byte[] ok = new byte[1 + 12 + 16 + 3];
+        ok[0] = 12;
+        // Control: con forma valida (aunque el contenido no descifre) SI cuenta; si no, lo
+        // anterior pasaria en vacio.
+        shape(a, s, f, "forma valida", ok, true);
+        s.clear();
+        // Un archivo valido de verdad sigue contando y se carga.
+        call(a, () -> { s.save(COOKIE); return null; });
+        a.isTrue("save real: hasSession", s.hasSession());
+        a.eq("save real: load", COOKIE, call(a, () -> s.load()));
+        s.clear();
+    }
+
+    private static void shape(Assert a, SessionStore s, File f, String what, byte[] content,
+                              boolean expected) {
+        try {
+            Files.write(f.toPath(), content);
+        } catch (Exception e) {
+            a.fail(what + ": no se pudo escribir el archivo de prueba");
+            return;
+        }
+        a.eq("hasSession " + what, expected, s.hasSession());
+        s.clear();
+    }
+
     private static void corrupt(Assert a, android.content.Context ctx, SessionStore s, File f,
                                 String what, byte[] content) {
         try {

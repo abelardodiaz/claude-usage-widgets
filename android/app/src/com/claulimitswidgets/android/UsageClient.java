@@ -82,9 +82,9 @@ public final class UsageClient {
         if (all == null) return null;
         for (String piece : all.split(";")) {
             String p = piece.trim();
-            if (p.startsWith("lastActiveOrg=")) {
-                String v = p.substring("lastActiveOrg=".length());
-                return v.isEmpty() ? null : v;
+            // Con valor no vacio, igual que minimalCookies: una pieza vacia se salta y se sigue.
+            if (p.startsWith("lastActiveOrg=") && p.length() > "lastActiveOrg=".length()) {
+                return p.substring("lastActiveOrg=".length());
             }
         }
         return null;
@@ -154,10 +154,11 @@ public final class UsageClient {
         try {
             return Json.parse(body);
         } catch (Json.JsonException e) {
-            // Ojo: el mensaje de la causa (JsonException) puede llevar un fragmento corto de la
-            // entrada (un caracter de escape, hasta 32 de un numero). Se encadena para depurar,
-            // pero nadie debe registrar la cadena de causas: solo se registra su tipo.
-            throw new UnrecognizedFormatException("la respuesta no es JSON valido", e);
+            // A PROPOSITO no se encadena `e`: el mensaje de la JsonException puede llevar un
+            // fragmento corto de la entrada (un caracter de escape, hasta 32 de un numero) y los
+            // cuerpos de respuesta no se registran nunca. Sin causa no hay nada que un
+            // `Log.w(TAG, "x", ex)` pueda filtrar, y no dependemos de que nadie lo escriba.
+            throw new UnrecognizedFormatException("la respuesta no es JSON valido");
         }
     }
 

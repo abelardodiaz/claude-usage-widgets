@@ -35,6 +35,26 @@ public final class OrgSelectorTest {
         return u -> responds.test(u) ? OrgSelector.Answer.RESPONDS : OrgSelector.Answer.NO;
     }
 
+    /** Cierre de F3: un UNKNOWN decide el resultado y no se sigue sondeando. */
+    public static void runCierre(Assert a) {
+        List<String> five = Arrays.asList("a", "b", "c", "d", "e");
+        Counter activeUnknown = new Counter(u -> OrgSelector.Answer.UNKNOWN);
+        OrgSelector.Choice c1 = OrgSelector.choose(five, null, "c", activeUnknown);
+        a.eq("lastActiveOrg UNKNOWN: una sola sonda", 1, activeUnknown.calls);
+        a.isTrue("lastActiveOrg UNKNOWN: ambiguo y sin eleccion", c1.ambiguous && c1.orgUuid == null);
+
+        Counter listUnknown = new Counter(u -> OrgSelector.Answer.UNKNOWN);
+        OrgSelector.Choice c2 = OrgSelector.choose(five, null, null, listUnknown);
+        a.eq("sin pista, primer UNKNOWN corta la lista", 1, listUnknown.calls);
+        a.isTrue("sin pista, UNKNOWN: ambiguo", c2.ambiguous && c2.orgUuid == null);
+
+        Counter lateUnknown = new Counter(u -> u.equals("c") ? OrgSelector.Answer.UNKNOWN
+                : OrgSelector.Answer.NO);
+        OrgSelector.Choice c3 = OrgSelector.choose(five, null, null, lateUnknown);
+        a.eq("UNKNOWN en la tercera: no se sondean d ni e", 3, lateUnknown.calls);
+        a.isTrue("UNKNOWN tardio: ambiguo", c3.ambiguous);
+    }
+
     public static void run(Assert a) {
         List<String> two = Arrays.asList("org-a", "org-b");
 
