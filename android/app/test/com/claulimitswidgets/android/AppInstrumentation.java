@@ -26,7 +26,7 @@ public class AppInstrumentation extends Instrumentation {
             // La lista de pruebas vive en UN sitio: AppTestRunner. Repetirla aqui garantiza
             // que algun dia se agregue una prueba y no corra.
             text = AppTestRunner.run(a, getTargetContext());
-        } catch (RuntimeException e) {
+        } catch (Throwable e) {   // tambien Error: ninguno puede tirar la evidencia
             a.fail("excepcion no controlada: " + e);
             text = "FALLOS (1 de " + a.checks() + "):\n  - " + e;
         }

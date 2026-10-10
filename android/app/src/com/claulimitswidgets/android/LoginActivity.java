@@ -191,7 +191,12 @@ public class LoginActivity extends Activity {
                 out1.setEnabled(true);
                 out2.setEnabled(true);
                 // Si la pantalla se cerro mientras se guardaba, onDestroy ya limpio el WebView.
-                if (closeOrFail(ok, isFinishing() || isDestroyed(), this::scheduleAfterLogin)) return;
+                if (closeOrFail(ok, isFinishing() || isDestroyed(), () -> {
+                    // Tambien aqui el UA: sin el, las consultas nativas irian con uno vacio hasta el
+                    // siguiente login. Es una escritura barata y sin vista.
+                    if (ok) saveUserAgent(ua);
+                    scheduleAfterLogin();
+                })) return;
                 if (!ok) {
                     // Entro bien pero la sesion se perdio al guardarla. El mensaje promete que no
                     // quedo sesion: el WebView tampoco debe conservar la cookie.
@@ -210,6 +215,16 @@ public class LoginActivity extends Activity {
     /** En el hilo principal y SOLO con la sesion ya guardada: ahora si se limpia el WebView. */
     private void afterSaved(String ua) {
         // Con la sesion ya guardada, un fallo aqui NO es un fallo del login.
+        saveUserAgent(ua);
+        wipeWebView();
+        status.setText(R.string.login_ok);   // ya no se queda en "Comprobando..."
+        showIntro();
+        paintIntro();      // ahora hay sesion: aparecen Ajustes y cerrar sesion
+        scheduleAfterLogin();
+    }
+
+    /** Guarda el UA; nunca lanza (ni una sesion ya guardada se tumba por esto). */
+    private void saveUserAgent(String ua) {
         try {
             // El UA del WebView es el que usaran las consultas nativas: una sola huella hacia
             // claude.ai. Se guarda aqui porque un JobService no puede crear un WebView.
@@ -218,11 +233,6 @@ public class LoginActivity extends Activity {
         } catch (RuntimeException ignored) {
             // Sin UA guardado las consultas llevan uno vacio: no hay respaldo a proposito (ver userAgent).
         }
-        wipeWebView();
-        status.setText(R.string.login_ok);   // ya no se queda en "Comprobando..."
-        showIntro();
-        paintIntro();      // ahora hay sesion: aparecen Ajustes y cerrar sesion
-        scheduleAfterLogin();
     }
 
     /**

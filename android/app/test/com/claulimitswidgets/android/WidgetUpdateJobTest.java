@@ -30,7 +30,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * Tarea 4.4. NADA de esto toca la red, el JobScheduler real ni los widgets del dueno: el
+ * Tarea 4.4. NADA de esto toca la red, el JobScheduler real (salvo la sonda 4299, que se cancela) ni los widgets del dueno: el
  * planificador es un doble, el refresco es un Supplier y el pintado un Consumer.
  *
  * Lo que NO se puede probar aqui (hace falta un reinicio de verdad): que el sistema entregue
@@ -150,35 +150,37 @@ public final class WidgetUpdateJobTest {
         a.isTrue("sin planificador: false y no lanza", !WidgetUpdateJob.ensure(null, want));
     }
 
+    /** Id de la sonda: NO es ninguno de los dos del dueno (4201, 4202). */
+    private static final int PROBE_ID = 4299;
+
     /**
      * El JobScheduler DE VERDAD acepta el trabajo: ata manifiesto (BIND_JOB_SERVICE,
      * RECEIVE_BOOT_COMPLETED, ACCESS_NETWORK_STATE) y codigo. Sin cualquiera de los permisos,
      * schedule lanza SecurityException y `ensure` lo traga en un false: este es el unico sitio
      * donde se ve. (Lo encontro: el plan olvidaba ACCESS_NETWORK_STATE.)
-     * No se cancela nada despues: es el mismo trabajo que el widget del dueno necesita tener.
+     *
+     * N2: se registra un trabajo IDENTICO pero con el id 4299, y se cancela al terminar. El
+     * 4201 y el 4202 del dueno no se tocan jamas (antes esta prueba hacia cancel(4201) y le
+     * reiniciaba el ciclo de 15 minutos en cada corrida).
      */
-    @SuppressWarnings("deprecation")
     private static void realSchedule(Assert a, Context ctx) {
-        try {
-        // Primero se cancela: tras `install -r` el widget ya registro el 4201 en su onUpdate, y
-        // `ensure` cortocircuita con un pendiente igual SIN llamar a schedule (pasaria en vacio).
-        ctx.getSystemService(JobScheduler.class).cancel(4201);
-        a.isTrue("antes de programar no hay pendiente",
-                ctx.getSystemService(JobScheduler.class).getPendingJob(4201) == null);
-        a.isTrue("JobScheduler real: schedule devuelve true", WidgetUpdateJob.schedule(ctx));
         JobScheduler js = ctx.getSystemService(JobScheduler.class);
-        JobInfo got = js.getPendingJob(4201);
-        a.isTrue("JobScheduler real: el periodico quedo registrado", got != null);
-        if (got != null) {
-            a.isTrue("JobScheduler real: periodico", got.isPeriodic());
-            a.isTrue("JobScheduler real: persistido", got.isPersisted());
-            a.isTrue("JobScheduler real: igual a lo pedido",
-                    WidgetUpdateJob.same(got, WidgetUpdateJob.periodicInfo(ctx)));
+        JobInfo want = WidgetUpdateJob.periodicInfo(ctx, PROBE_ID);
+        try {
+            js.cancel(PROBE_ID);
+            a.isTrue("antes de programar no hay pendiente", js.getPendingJob(PROBE_ID) == null);
+            a.isTrue("JobScheduler real: ensure devuelve true", WidgetUpdateJob.ensure(js, want));
+            JobInfo got = js.getPendingJob(PROBE_ID);
+            a.isTrue("JobScheduler real: el periodico quedo registrado", got != null);
+            if (got != null) {
+                a.isTrue("JobScheduler real: periodico", got.isPeriodic());
+                a.isTrue("JobScheduler real: persistido", got.isPersisted());
+                a.isTrue("JobScheduler real: igual a lo pedido", WidgetUpdateJob.same(got, want));
+            }
+        } finally {
+            js.cancel(PROBE_ID);
         }
-            } finally {
-            // Si algo falla a mitad, el dueno no se queda sin job: se vuelve a programar.
-            WidgetUpdateJob.schedule(ctx);
-        }
+        a.isTrue("la sonda no queda registrada", js.getPendingJob(PROBE_ID) == null);
     }
 
     private static void cancel(Assert a) {

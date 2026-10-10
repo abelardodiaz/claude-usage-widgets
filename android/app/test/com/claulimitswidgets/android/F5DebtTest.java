@@ -658,8 +658,12 @@ public final class F5DebtTest {
         CountDownLatch fin = new CountDownLatch(1);
         Boolean[] got = new Boolean[1];
         Thread[] where = new Thread[1];
-        Session.runAsync(() -> true, ok -> { got[0] = ok; where[0] = Thread.currentThread(); fin.countDown(); },
-                starter -> { throw new OutOfMemoryError("prueba"); });
+        Throwable esc = null;
+        try {
+            Session.runAsync(() -> true, ok -> { got[0] = ok; where[0] = Thread.currentThread(); fin.countDown(); },
+                    starter -> { throw new OutOfMemoryError("prueba"); });
+        } catch (Throwable t) { esc = t; }
+        a.isTrue("hilo que no arranca: runAsync no deja escapar el Error", esc == null);
         try { a.isTrue("hilo que no arranca: avisa", fin.await(5, TimeUnit.SECONDS)); }
         catch (InterruptedException e) { a.fail("interrumpida"); }
         a.eq("hilo que no arranca: false", Boolean.FALSE, got[0]);
@@ -848,5 +852,15 @@ public final class F5DebtTest {
         catch (InterruptedException e) { a.fail("interrumpida"); }
         a.eq("prelude que lanza: refresca y pinta igual", Arrays.asList("refresh", "paint"), order2);
         a.isTrue("prelude que lanza: la puerta queda libre", gate.claim());
+
+        // Igual si lo que lanza es un Error: el refresco del toque no se pierde.
+        List<String> order3 = Collections.synchronizedList(new ArrayList<>());
+        CountDownLatch done3 = new CountDownLatch(1);
+        WidgetUpdateJob.runNowWith(new WidgetUpdateJob.NowGate(), () -> { throw new AssertionError("x"); },
+                () -> { order3.add("refresh"); return Snapshot.of(Snapshot.Problem.OFFLINE); },
+                () -> 1, s -> order3.add("paint"), done3::countDown);
+        try { a.isTrue("prelude que lanza un Error: termina", done3.await(5, TimeUnit.SECONDS)); }
+        catch (InterruptedException e) { a.fail("interrumpida"); }
+        a.eq("prelude que lanza un Error: refresca y pinta igual", Arrays.asList("refresh", "paint"), order3);
     }
 }

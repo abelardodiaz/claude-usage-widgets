@@ -38,7 +38,12 @@ public class WidgetUpdateJob extends JobService {
 
     /** El trabajo periodico tal como debe estar registrado. */
     static JobInfo periodicInfo(Context ctx) {
-        return new JobInfo.Builder(JOB_ID, new ComponentName(ctx, WidgetUpdateJob.class))
+        return periodicInfo(ctx, JOB_ID);
+    }
+
+    /** Lo mismo con otro id: las pruebas lo usan para no tocar el trabajo real del dueno. */
+    static JobInfo periodicInfo(Context ctx, int id) {
+        return new JobInfo.Builder(id, new ComponentName(ctx, WidgetUpdateJob.class))
                 .setPeriodic(PERIOD_MS)
                 .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
                 // Persiste al reinicio (necesita RECEIVE_BOOT_COMPLETED en el manifiesto; sin el
@@ -200,7 +205,12 @@ public class WidgetUpdateJob extends JobService {
         runNowWith(gate, () -> { }, refresh, epoch, sink, done);
     }
 
-    /** Con `prelude`: se corre en el hilo del refresco, antes de la primera vuelta; si lanza, se ignora. */
+    /**
+     * Con `prelude`: se corre en el hilo del refresco, antes de la primera vuelta; si lanza
+     * (excepcion o Error), se ignora y el refresco sigue. Va DESPUES de `gate.claim()`: si ya hay
+     * un refresco en vuelo, el prelude de este toque no corre (aceptado: el del vuelo ya curo o lo
+     * hara el siguiente).
+     */
     static void runNowWith(NowGate gate, Runnable prelude, Supplier<Snapshot> refresh, LongSupplier epoch,
                            Consumer<Snapshot> sink, Runnable done) {
         if (!gate.claim()) {
@@ -228,7 +238,7 @@ public class WidgetUpdateJob extends JobService {
     }
 
     private static void safely(Runnable r) {
-        try { r.run(); } catch (RuntimeException ignored) { }
+        try { r.run(); } catch (RuntimeException | Error ignored) { }
     }
 
     /**
