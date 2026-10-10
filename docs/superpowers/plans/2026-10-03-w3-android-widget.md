@@ -2246,7 +2246,7 @@ public final class Session {
     private static void logoutLocked(Context ctx) {
         Context app = ctx.getApplicationContext();
         new SessionStore(app).clear();                       // cookie + llave del Keystore
-        new SampleStore(app.getFilesDir()).clear();          // samples.jsonl (D5)
+        SampleStore.of(app).clear();                         // samples.jsonl (D5)
         new SnapshotStore(app).clear();                      // ultimo modelo, orgs, hora
         app.getSharedPreferences(SettingsActivity.PREFS, Context.MODE_PRIVATE)
                 .edit().clear().apply();                     // manual_org, user_agent, backoff
