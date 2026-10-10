@@ -48,7 +48,7 @@ if ($fromBuild.Count -gt 0) { Close-Lite }
 Write-Host "Compilando ($env:CARGO_TARGET_DIR)..."
 Push-Location $crate
 try {
-    & cargo build --release
+    & cargo build --release --locked
     if ($LASTEXITCODE -ne 0) { throw "cargo build fallo (codigo $LASTEXITCODE)" }
 } finally {
     Pop-Location

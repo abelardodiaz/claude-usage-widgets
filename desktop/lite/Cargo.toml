@@ -1,6 +1,6 @@
 [package]
 name = "claude-usage-widgets-lite"
-version = "0.1.3"
+version = "0.1.4"
 description = "Version lite: widget nativo minimo (Win32 + GDI, sin WebView) del uso de Claude"
 authors = ["Abelardo Diaz"]
 license = "MIT"

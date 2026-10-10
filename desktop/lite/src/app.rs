@@ -53,15 +53,15 @@ use windows::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CS_HREDRAW, CS_VREDRAW, CheckMenuRadioItem, CreateIconFromResourceEx,
     CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyMenu, DestroyWindow, DispatchMessageW,
     FindWindowW, GetClientRect, GetCursorPos, GetMessageW, GetWindowRect, HICON, HMENU, HTCAPTION,
-    HTCLIENT, HWND_NOTOPMOST, HWND_TOPMOST, IDC_ARROW, IsWindowVisible, KillTimer, LR_DEFAULTCOLOR,
-    LoadCursorW, MF_BYCOMMAND, MF_CHECKED, MF_POPUP, MF_SEPARATOR, MF_STRING, MSG, PostMessageW,
-    PostQuitMessage, RegisterClassExW, RegisterWindowMessageW, SM_CXICON, SM_CXSMICON, SW_HIDE,
-    SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetForegroundWindow,
-    SetTimer, SetWindowPos, ShowWindow, TPM_BOTTOMALIGN, TPM_RIGHTBUTTON, TrackPopupMenu,
-    TranslateMessage, WM_APP, WM_COMMAND, WM_CONTEXTMENU, WM_DESTROY, WM_DPICHANGED, WM_ERASEBKGND,
-    WM_EXITSIZEMOVE, WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCHITTEST, WM_NCLBUTTONDBLCLK, WM_NCMOUSEMOVE,
-    WM_NCRBUTTONUP, WM_NULL, WM_PAINT, WM_RBUTTONUP, WM_TIMER, WNDCLASSEXW, WS_EX_TOOLWINDOW,
-    WS_EX_TOPMOST, WS_POPUP,
+    HTCLIENT, HWND_NOTOPMOST, HWND_TOP, HWND_TOPMOST, IDC_ARROW, IsWindowVisible, KillTimer,
+    LR_DEFAULTCOLOR, LoadCursorW, MF_BYCOMMAND, MF_CHECKED, MF_POPUP, MF_SEPARATOR, MF_STRING, MSG,
+    PostMessageW, PostQuitMessage, RegisterClassExW, RegisterWindowMessageW, SM_CXICON,
+    SM_CXSMICON, SW_HIDE, SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
+    SetForegroundWindow, SetTimer, SetWindowPos, ShowWindow, TPM_BOTTOMALIGN, TPM_RIGHTBUTTON,
+    TrackPopupMenu, TranslateMessage, WM_APP, WM_COMMAND, WM_CONTEXTMENU, WM_DESTROY,
+    WM_DPICHANGED, WM_ERASEBKGND, WM_EXITSIZEMOVE, WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCHITTEST,
+    WM_NCLBUTTONDBLCLK, WM_NCMOUSEMOVE, WM_NCRBUTTONUP, WM_NULL, WM_PAINT, WM_RBUTTONUP, WM_TIMER,
+    WNDCLASSEXW, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
 };
 use windows::core::{BOOL, PCWSTR, w};
 
@@ -80,6 +80,10 @@ use crate::view::UsageView;
 
 const CLASS_NAME: PCWSTR = w!("ClaudeUsageWidgetsLite");
 const MUTEX_NAME: PCWSTR = w!("Local\\io.github.abelardodiaz.claude-usage-widgets-lite");
+/// WM_POWERBROADCAST: reanudacion tras suspension (automatica o por el usuario).
+const WM_POWERBROADCAST: u32 = 0x0218;
+const PBT_APMRESUMESUSPEND: u32 = 0x0007;
+const PBT_APMRESUMEAUTOMATIC: u32 = 0x0012;
 /// Carpeta de datos propia (muestras del servicio y preferencias), separada de la app normal.
 const DATA_DIR: &str = "io.github.abelardodiaz.claude-usage-widgets-lite";
 
@@ -394,6 +398,14 @@ fn show(hwnd: HWND, topmost: bool) {
         let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
     }
     apply_topmost(hwnd, topmost);
+    if !topmost {
+        // Sin "Siempre encima" la ventana puede quedar detras de otras: al pedir mostrarla
+        // (bandeja o segunda instancia) se trae al frente.
+        unsafe {
+            let _ = SetWindowPos(hwnd, Some(HWND_TOP), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+            let _ = SetForegroundWindow(hwnd);
+        }
+    }
 }
 
 fn send(cmd: Cmd) {
@@ -899,7 +911,10 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
         }
         WM_ERASEBKGND => LRESULT(1),
         WM_PAINT => {
-            // BeginPaint/BitBlt no despachan mensajes: se puede pintar con el prestamo activo.
+            // Se pinta con el prestamo de `UI` activo. BeginPaint puede enviar WM_ERASEBKGND de
+            // forma sincrona, pero esa rama no toca `UI`; el resto (GDI, BitBlt) no despacha
+            // mensajes. Si algun dia otro mensaje reentrante necesitara `UI`, `with_ui` daria
+            // None en vez de entrar en panico.
             if with_ui(|ui| paint(hwnd, ui)).is_none() {
                 return unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) };
             }
@@ -986,6 +1001,17 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                 PostQuitMessage(0);
             }
             LRESULT(0)
+        }
+        WM_POWERBROADCAST => {
+            // Al despertar el equipo los datos pueden tener horas: se consulta ya (el servicio
+            // sigue aplicando el backoff si la red aun no esta lista).
+            if matches!(
+                wparam.0 as u32,
+                PBT_APMRESUMEAUTOMATIC | PBT_APMRESUMESUSPEND
+            ) {
+                send(Cmd::Force);
+            }
+            LRESULT(1)
         }
         m if m != 0 && m == taskbar_created => {
             // Explorer se reinicio: hay que volver a poner el icono.
