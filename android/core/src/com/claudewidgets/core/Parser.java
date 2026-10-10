@@ -24,7 +24,12 @@ public final class Parser {
         try {
             root = Json.parse(json);
         } catch (Json.JsonException e) {
-            throw new UnrecognizedFormatException("la respuesta no es JSON valido", e);
+            // No se encadena la causa a proposito: el mensaje de JsonException puede llevar un
+            // fragmento de la entrada (un caracter de escape desconocido, o hasta 32 caracteres de
+            // un literal numerico), y los cuerpos de respuesta no se registran nunca. Con la causa
+            // colgando, que no se filtre dependeria de que nadie escriba Log.w(TAG, "x", ex), que
+            // es lo que se hace por reflejo. Mejor que no haya nada que registrar.
+            throw new UnrecognizedFormatException("la respuesta no es JSON valido");
         }
         return parse(root, source);
     }
