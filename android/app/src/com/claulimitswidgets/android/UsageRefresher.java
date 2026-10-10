@@ -161,7 +161,8 @@ public final class UsageRefresher {
             // El Keystore puede fallar de forma transitoria (SessionStore lo propaga a proposito
             // sin borrar nada). No es "sin sesion": se conserva el dato y se reintenta. Decir
             // NO_SESSION aqui podria llevar a quien reaccione a eso a cerrar sesion de verdad.
-            return keepOld(Snapshot.Problem.OFFLINE);
+            // Tampoco cuenta como intento de backoff: no se hizo ninguna peticion.
+            return oldWith(Snapshot.Problem.OFFLINE);
         }
         // Mismo criterio que minimalCookies: un `sessionKey=` vacio no es una sesion.
         if (cookies == null || !UsageClient.minimalCookies(cookies).contains("sessionKey=")) {
@@ -190,13 +191,17 @@ public final class UsageRefresher {
             boolean cached = (manual != null || lastActive != null) && !known.isEmpty()
                     && orgsFresh(at);
             List<UsageClient.Org> orgs = cached ? known : fetchOrgs(remote, at);
+            if (orgs == null) return Snapshot.of(Snapshot.Problem.NO_SESSION);   // cerro sesion: ni una peticion mas
 
             Selection sel = select(remote, orgs, manual, lastActive);
             sel.rethrow();   // el fracaso real gana sobre "que elija el usuario"
-            if (cached && (sel.choice.ambiguous || sel.choice.orgUuid == null)) {
+            if (cached && !sel.choice.ambiguous && sel.choice.orgUuid == null) {
                 // La cache puede estar vieja (el usuario salio de una organizacion o entro en
-                // otra): sin esto el widget se quedaria en BAD_FORMAT sin salida. Una vez por ciclo.
+                // otra): sin esto el widget se quedaria en BAD_FORMAT sin salida. Una vez por
+                // ciclo. Solo ante "ninguna sirve": `ambiguous` ya tiene salida por Ajustes y es
+                // el unico estado sin backoff, asi que revalidar ahi costaria red en CADA ciclo.
                 orgs = fetchOrgs(remote, at);
+                if (orgs == null) return Snapshot.of(Snapshot.Problem.NO_SESSION);
                 sel = select(remote, orgs, manual, lastActive);
                 sel.rethrow();
             }
@@ -237,7 +242,11 @@ public final class UsageRefresher {
             AuthExpiredException, BlockedException, UsageClient.RetryLaterException,
             UnrecognizedFormatException {
         List<UsageClient.Org> orgs = remote.organizations();
-        if (alive()) meta.rememberOrgs(orgs, at);   // Ajustes los necesita aunque el resto falle
+        if (!alive()) return null;
+        meta.rememberOrgs(orgs, at);   // Ajustes los necesita aunque el resto falle
+        // Autocuracion: si el logout gano la carrera entre la comprobacion y la escritura, se
+        // deshace lo escrito. No bloquea nada y deja el estado consistente.
+        if (!alive()) { meta.clear(); return null; }
         return orgs;
     }
 
@@ -348,7 +357,13 @@ public final class UsageRefresher {
                             clock.now().getEpochSecond() + Backoff.seconds(attempt))
                     .putString(KEY_LAST_PROBLEM, p.name())
                     .apply();
+            if (!alive()) wipeBackoff(prefs.edit()).commit();   // autocuracion, como en compute
         }
+        return oldWith(p);
+    }
+
+    /** El ultimo dato conocido marcado con `p`, sin tocar el backoff. */
+    private Snapshot oldWith(Snapshot.Problem p) {
         Snapshot old = last();
         return old.hasData() ? old.withProblem(p) : Snapshot.of(p);
     }
@@ -397,6 +412,13 @@ public final class UsageRefresher {
             }
         }
         meta.remember(model, now);
+        if (!alive()) {
+            // El logout gano la carrera (p. ej. espero en el candado de SampleStore y borro justo
+            // antes de nuestro append): se deshace lo escrito para no dejar la cuenta en disco.
+            if (samples != null) samples.clear();
+            meta.clear();
+            return Snapshot.of(Snapshot.Problem.NO_SESSION);
+        }
         return build(model, loadSamples(now), now, now, null);
     }
 

@@ -593,8 +593,9 @@ public final class UsageRefresherTest {
             a.eq("logout durante /organizations: la consulta ocurrio", 1, r.fake.orgCalls);
             a.eq("logout durante /organizations -> NO_SESSION", Snapshot.Problem.NO_SESSION, s.problem);
             a.eq("no resucitaron las orgs", 0, r.meta.knownOrgs().size());
-            a.isTrue("el archivo de preferencias sigue vacio",
-                    ctx.getSharedPreferences(r.prefsName, Context.MODE_PRIVATE).getAll().isEmpty());
+            a.eq("y no se hizo ni una peticion /usage con la cookie revocada", 0, r.fake.usageCalls.size());
+            // Instancia VIVA (donde caeria un apply() tardio), no una nueva tras el borrado.
+            a.isTrue("el archivo de preferencias sigue vacio", r.prefs.getAll().isEmpty());
         } finally { r.close(); }
 
         // (1b) Solo la epoca cambia (p. ej. logout y nuevo login muy seguidos): tampoco se escribe.
@@ -609,6 +610,29 @@ public final class UsageRefresherTest {
             a.eq("epoca cambiada: no se guardaron orgs", 0, r1b.meta.knownOrgs().size());
             a.isTrue("epoca cambiada: no se guardo modelo", r1b.meta.lastModel() == null);
         } finally { r1b.close(); }
+
+        // (1c) El logout gana la carrera DESPUES de la ultima comprobacion (la tercera lectura del
+        // reloj es justo la de `now`, tras `alive()` y antes de escribir): lo escrito se deshace.
+        Rig r1c = new Rig(ctx, true, COOKIES);
+        try {
+            r1c.fake.orgs = Arrays.asList(new UsageClient.Org(ORG1, "Uno"));
+            r1c.fake.usage.put(ORG1, model(30, 40));
+            int[] reads = {0};
+            r1c.refresher = new UsageRefresher(r1c.session, r1c.samples, r1c.meta, r1c.prefs,
+                    c -> r1c.fake, () -> {
+                        if (++reads[0] == 3) {
+                            Session.logout(ctx, r1c.session, r1c.samples, r1c.meta, r1c.prefsName, false);
+                        }
+                        return T0;
+                    });
+            Snapshot s = r1c.refresher.refresh();
+            a.eq("el logout se disparo en la ventana (no pasa en vacio)", true, reads[0] >= 3);
+            a.eq("logout tras la comprobacion -> NO_SESSION", Snapshot.Problem.NO_SESSION, s.problem);
+            a.isTrue("se deshizo la muestra", samplesEmpty(a, r1c));
+            a.isTrue("se deshizo el modelo", r1c.meta.lastModel() == null);
+            a.isTrue("se deshicieron las orgs", r1c.meta.knownOrgs().isEmpty());
+            a.isTrue("preferencias vacias", r1c.prefs.getAll().isEmpty());
+        } finally { r1c.close(); }
 
         // (2) Llega mientras la consulta de uso falla por red: keepOld no escribe la espera.
         Rig r2 = new Rig(ctx, true, COOKIES);
@@ -640,7 +664,16 @@ public final class UsageRefresherTest {
             Snapshot s = flaky.refresh();
             a.eq("hipo del Keystore -> OFFLINE, no NO_SESSION", Snapshot.Problem.OFFLINE, s.problem);
             a.isTrue("hipo del Keystore: sigue el dato", s.hasData());
-            a.eq("hipo del Keystore: el dato de antes", 40.0, s.model.weekly.percent);
+            if (s.hasData()) a.eq("hipo del Keystore: el dato de antes", 40.0, s.model.weekly.percent);
+            // Cinco toques con el Keystore ocupado: ninguna peticion, ningun backoff.
+            for (int i = 0; i < 5; i++) flaky.refresh();
+            a.isTrue("hipo: no cuenta como intento", !r.prefs.contains("backoff_attempt"));
+            a.isTrue("hipo: no pone espera", !r.prefs.contains("backoff_next_allowed_at"));
+            a.eq("hipo: no hubo peticiones nuevas", 1, r.fake.usageCalls.size());
+            // Cuando vuelve el Keystore se consulta de inmediato.
+            fail[0] = false;
+            r.fake.usage.put(ORG1, model(31, 41));
+            a.eq("tras el hipo se consulta sin esperar", 41.0, flaky.refresh().model.weekly.percent);
             a.isTrue("hipo del Keystore: la sesion NO se borro", r.session.hasSession());
 
             // load() que devuelve null si es "sin sesion".
@@ -692,9 +725,24 @@ public final class UsageRefresherTest {
             Snapshot s = r.refresher.refresh();
             a.eq("cache con org vieja: se re-pidio /organizations", 1, r.fake.orgCalls);
             a.isTrue("cache con org vieja: se recupera", s.problem == null);
-            a.eq("cache con org vieja: muestra la nueva", 77.0, s.model.weekly.percent);
+            if (s.hasData()) a.eq("cache con org vieja: muestra la nueva", 77.0, s.model.weekly.percent);
+            else a.fail("cache con org vieja: no hay datos");
             a.eq("la cache se actualizo", ORG1, r.meta.knownOrgs().get(0).uuid);
         } finally { r.close(); }
+
+        // (a2) varias responden (ambiguous): NO se revalida, es el estado sin backoff.
+        Rig ra = new Rig(ctx, true, "sessionKey=falsa; lastActiveOrg=" + OLD);
+        try {
+            ra.meta.rememberOrgs(Arrays.asList(new UsageClient.Org(ORG1, "Uno"),
+                    new UsageClient.Org(ORG2, "Dos")), T0);
+            ra.fake.usage.put(OLD, new UnrecognizedFormatException("x"));
+            ra.fake.usage.put(ORG1, model(1, 11));
+            ra.fake.usage.put(ORG2, model(2, 22));
+            for (int i = 0; i < 3; i++) {
+                a.eq("ambiguous " + i, Snapshot.Problem.CHOOSE_ORG, ra.refresher.refresh().problem);
+            }
+            a.eq("ambiguous no pide /organizations", 0, ra.fake.orgCalls);
+        } finally { ra.close(); }
 
         // (b) caducidad por tiempo: con eleccion posible igualmente se re-pide pasadas 6 h.
         Rig r2 = new Rig(ctx, true, COOKIES);
