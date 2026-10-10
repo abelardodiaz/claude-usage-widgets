@@ -43,4 +43,5 @@
     <string name="pv_today">Today 3.5% of 10.0%</string>
     <string name="pv_forecast">Full at Fri 18:30</string>
     <string name="pv_age">5 min ago</string>
+    <string name="w_today_exhausted">Weekly quota used up</string>
 </resources>

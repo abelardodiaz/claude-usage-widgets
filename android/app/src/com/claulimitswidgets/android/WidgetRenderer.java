@@ -12,6 +12,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.Locale;
 
 /**
  * Snapshot -> RemoteViews. NO decide nada: los colores salen de `Colors` (R7) y los numeros del
@@ -40,28 +41,33 @@ public final class WidgetRenderer {
             v.setViewVisibility(R.id.numbers, android.view.View.VISIBLE);
         }
 
+        // La edad se escribe SIEMPRE, tenga o no datos. En el 4x2 `age` vive fuera de `numbers`,
+        // y el lanzador actualiza con `reapply`: lo que no se reenvia NO se borra. Sin esto, al
+        // pasar a NO_SESSION o LOADING se quedaria "hace 5 min" congelado bajo el aviso.
+        // (Con `fetchedAt == null` devuelve "".)
+        v.setTextViewText(R.id.age, age(ctx, s.fetchedAt, now));
+
         if (s.hasData()) {
-            int sp = (int) Math.round(s.model.session.percent);
-            int wp = (int) Math.round(s.model.weekly.percent);
+            // Se TRUNCA hacia abajo, no se redondea: el color se decide sobre el valor crudo
+            // (R0/R7) y un 84,6 redondeado diria "85%" en ambar, con 85 como umbral del rojo.
+            // Truncado, el texto nunca cruza un umbral antes que el color.
+            int sp = whole(s.model.session.percent);
+            int wp = whole(s.model.weekly.percent);
             v.setTextViewText(R.id.session, ctx.getString(R.string.w_session, sp));
             v.setTextViewText(R.id.weekly, ctx.getString(R.string.w_weekly, wp));
-            v.setTextViewText(R.id.age, age(ctx, s.fetchedAt, now));
 
             if (!compact) {
                 bar(v, SESSION_BARS, s.model.session.percent,
                         Colors.bar(s.model.session.percent));
                 bar(v, WEEKLY_BARS, s.model.weekly.percent,
                         Colors.bar(s.model.weekly.percent));
-                // Esto es DIBUJO, no regla: cuanto se llena la barra. El COLOR lo decide
-                // `Colors.today`, que es R7. No se toca uno pensando en el otro.
-                // Cupo negativo = la semana ya se agoto: la barra va llena y roja, porque una
-                // barra roja vacia no se ve.
-                double todayPct = s.day.quotaToday == null || s.day.quotaToday == 0 ? 0
-                        : s.day.quotaToday < 0 ? 100 : 100 * s.day.todayUsed / s.day.quotaToday;
-                bar(v, TODAY_BARS, todayPct,
+                // PENDIENTE DE CONTRATO (llevar a PC): el nucleo decide el COLOR de hoy
+                // (`Colors.today`) pero no expone la FRACCION de la barra, y la rama de cupo
+                // agotado es semantica de R7. `todayFraction` es lo minimo que la cascara
+                // necesita para dibujar; si el nucleo expone la fraccion, se borra de aqui.
+                bar(v, TODAY_BARS, todayFraction(s.day),
                         Colors.today(s.day.todayUsed, s.day.quotaToday));
-                v.setTextViewText(R.id.today, ctx.getString(R.string.w_today,
-                        one(s.day.todayUsed), s.day.quotaToday == null ? "—" : one(s.day.quotaToday)));
+                v.setTextViewText(R.id.today, todayText(ctx, s.day));
                 // Marca de ritmo parejo: cuanto de la ventana semanal transcurrio (R7).
                 v.setViewVisibility(R.id.pace, s.paceMark == null
                         ? android.view.View.GONE : android.view.View.VISIBLE);
@@ -90,19 +96,53 @@ public final class WidgetRenderer {
     private static PendingIntent tapIntent(Context ctx, Snapshot s, boolean compact) {
         int req = compact ? 1 : 2;
         int flags = PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE;
+        Intent target = tapTarget(ctx, s, compact);
+        // Con accion es el broadcast de refrescar; sin ella, una actividad.
+        return target.getAction() != null
+                ? PendingIntent.getBroadcast(ctx, req, target, flags)
+                : PendingIntent.getActivity(ctx, req, target, flags);
+    }
+
+    /**
+     * A donde lleva el toque. Separado del PendingIntent para poder probar las tres rutas.
+     * Nunca lleva extras: ni cookie ni uuid viajan en un Intent.
+     *
+     * CALLEJONES SIN SALIDA que se deciden aqui y que cierra la 4.4 (la causa esta en otras tareas):
+     *  - OFFLINE mezcla "sin red", "hipo transitorio del Keystore" y "fallo PERMANENTE del
+     *    Keystore" (cambiar o quitar el bloqueo de pantalla). En el ultimo el widget dice "Sin
+     *    conexion" para siempre aunque el WiFi este perfecto, y el toque solo reintenta. Hace
+     *    falta distinguirlo en SessionStore y mandarlo al login como AUTH_EXPIRED.
+     *  - CHOOSE_ORG manda a Ajustes, donde `knownOrgs()` hoy devuelve vacio: la instruccion
+     *    "elige organizacion en Ajustes" es imposible de cumplir hasta que la 4.4 la cablee.
+     */
+    static Intent tapTarget(Context ctx, Snapshot s, boolean compact) {
         if (s.problem == Snapshot.Problem.NO_SESSION || s.problem == Snapshot.Problem.AUTH_EXPIRED) {
-            return PendingIntent.getActivity(ctx, req,
-                    new Intent(ctx, LoginActivity.class)
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), flags);
+            return new Intent(ctx, LoginActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         }
         if (s.problem == Snapshot.Problem.CHOOSE_ORG) {
-            return PendingIntent.getActivity(ctx, req,
-                    new Intent(ctx, SettingsActivity.class)
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), flags);
+            return new Intent(ctx, SettingsActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         }
-        Intent tap = new Intent(ctx, compact ? Widget4x1Provider.class : Widget4x2Provider.class)
+        return new Intent(ctx, compact ? Widget4x1Provider.class : Widget4x2Provider.class)
                 .setAction(WidgetUpdateJob.ACTION_TAP);
-        return PendingIntent.getBroadcast(ctx, req, tap, flags);
+    }
+
+    private static int whole(double percent) { return (int) Math.floor(percent); }
+
+    /** Cuanto se llena la barra de hoy, en [0, 100]. Ver el aviso de contrato en `render`. */
+    private static double todayFraction(com.claudewidgets.core.DayUsage d) {
+        if (d.quotaToday == null) return 0;
+        if (d.quotaToday <= 0) return 100;   // semana agotada: llena, no vacia
+        return 100 * d.todayUsed / d.quotaToday;
+    }
+
+    private static String todayText(Context ctx, com.claudewidgets.core.DayUsage d) {
+        if (d.quotaToday != null && d.quotaToday <= 0) return ctx.getString(R.string.w_today_exhausted);
+        return ctx.getString(R.string.w_today, one(ctx, d.todayUsed),
+                d.quotaToday == null ? "\u2014" : one(ctx, d.quotaToday));
+    }
+
+    private static Locale locale(Context ctx) {
+        return ctx.getResources().getConfiguration().getLocales().get(0);
     }
 
     // Orden fijo: verde, ambar, rojo, gris. Debe coincidir con `index(Color)`.
@@ -132,7 +172,9 @@ public final class WidgetRenderer {
             case GREEN: return 0;
             case AMBER: return 1;
             case RED:   return 2;
-            default:    return 3;
+            case GRAY:  return 3;
+            // Un color nuevo en el nucleo no puede volverse gris en silencio.
+            default: throw new IllegalStateException("color sin barra: " + c);
         }
     }
 
@@ -152,7 +194,10 @@ public final class WidgetRenderer {
         if (s.weeklyForecast == null || s.weeklyForecast.hitsAt == null) {
             return ctx.getString(R.string.w_no_forecast);
         }
-        String when = DateTimeFormatter.ofPattern("EEE HH:mm")
+        // "j" = la hora segun la preferencia 12/24 h del aparato.
+        Locale loc = locale(ctx);
+        String when = DateTimeFormatter.ofPattern(
+                        android.text.format.DateFormat.getBestDateTimePattern(loc, "EEEjm"), loc)
                 .withZone(ZoneId.systemDefault()).format(s.weeklyForecast.hitsAt);
         return ctx.getString(R.string.w_full_at, when);
     }
@@ -165,5 +210,7 @@ public final class WidgetRenderer {
         return ctx.getString(R.string.w_age_hour, min / 60);
     }
 
-    private static String one(double v) { return String.format(java.util.Locale.getDefault(), "%.1f%%", v); }
+    private static String one(Context ctx, double v) {
+        return String.format(locale(ctx), "%.1f%%", v);
+    }
 }

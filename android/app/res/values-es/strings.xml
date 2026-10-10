@@ -44,4 +44,5 @@
     <string name="pv_today">Hoy 3.5% de 10.0%</string>
     <string name="pv_forecast">Al 100% a las vie 18:30</string>
     <string name="pv_age">hace 5 min</string>
+    <string name="w_today_exhausted">Cuota semanal agotada</string>
 </resources>

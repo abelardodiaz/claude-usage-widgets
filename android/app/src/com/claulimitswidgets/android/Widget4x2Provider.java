@@ -18,9 +18,9 @@ public class Widget4x2Provider extends AppWidgetProvider {
     public void onUpdate(Context ctx, AppWidgetManager awm, int[] ids) {
         // `onUpdate` corre en el hilo principal y `UsageRefresher.last()` hace disco y pasa por
         // el nucleo: StrictMode lo castigaria. `goAsync` mantiene vivo el receptor mientras tanto.
-        final PendingResult pending = goAsync();
+        final PendingResult pending = goAsync();   // puede ser null fuera de un receptor real
         final Context app = ctx.getApplicationContext();
-        new Thread(() -> {
+        Runnable work = () -> {
             try {
                 Snapshot s = new UsageRefresher(app).last();
                 for (int id : ids) awm.updateAppWidget(id, WidgetRenderer.render(app, s, compact()));
@@ -37,9 +37,15 @@ public class Widget4x2Provider extends AppWidgetProvider {
                     // Sin nada mas que hacer; el siguiente ciclo del job lo repinta.
                 }
             } finally {
-                pending.finish();
+                if (pending != null) pending.finish();
             }
-        }, "widget-update").start();
+        };
+        try {
+            new Thread(work, "widget-update").start();
+        } catch (RuntimeException | Error e) {
+            // Sin hilo no hay trabajo, pero el PendingResult no puede quedar huerfano (ANR).
+            if (pending != null) pending.finish();
+        }
     }
 
     @Override

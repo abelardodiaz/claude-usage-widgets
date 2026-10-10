@@ -157,11 +157,16 @@ public final class WidgetRendererTest {
         Context en = localized(ctx, "en");
         Context es = localized(ctx, "es");
         problems(a, en, es);
+        thresholds(a, en);
+        exhausted(a, en, es);
+        reapply(a, en);
+        paceOrder(a, en);
+        tapTargets(a, en);
         problemWithOldData(a, en);
         normal(a, en, es);
         bars(a, en);
         pace(a, en);
-        noUuid(a, en);
+        noUuid(a, ctx, en);
         fillColors(a, en);
         translations(a, en, es);
     }
@@ -178,11 +183,13 @@ public final class WidgetRendererTest {
                 "Claude est\u00e1 bloqueando \u2014 reintentando", "Sin conexi\u00f3n",
                 "Formato de respuesta no reconocido", "Elige organizaci\u00f3n en Ajustes",
                 "Actualizando\u2026"};
-        // La tabla de arriba esta en el orden del enum: si alguien lo cambia, que falle aqui.
-        a.eq("Problem tiene los siete valores esperados", 7, all.length);
         Snapshot.Problem[] order = {Snapshot.Problem.NO_SESSION, Snapshot.Problem.AUTH_EXPIRED,
                 Snapshot.Problem.BLOCKED, Snapshot.Problem.OFFLINE, Snapshot.Problem.BAD_FORMAT,
                 Snapshot.Problem.CHOOSE_ORG, Snapshot.Problem.LOADING};
+        // Las tablas de arriba van en este orden: si alguien reordena o amplia el enum, falla aqui
+        // en vez de comparar el texto de un Problem con el de otro.
+        a.isTrue("Problem == el orden que suponen las tablas",
+                java.util.Arrays.equals(order, all));
         for (int i = 0; i < order.length; i++) {
             for (boolean compact : new boolean[] {true, false}) {
                 String tag = order[i] + (compact ? " 4x1" : " 4x2");
@@ -224,7 +231,7 @@ public final class WidgetRendererTest {
         a.eq("4x1: sin aviso", View.GONE, vis(a, "4x1", v1, R.id.notice));
         a.eq("4x1: numeros", View.VISIBLE, vis(a, "4x1", v1, R.id.numbers));
         a.eq("4x1: sesion redondeada", "Session 42%", text(a, "4x1", v1, R.id.session));
-        a.eq("4x1: semana redondeada", "Week 68%", text(a, "4x1", v1, R.id.weekly));
+        a.eq("4x1: semana truncada, no redondeada", "Week 67%", text(a, "4x1", v1, R.id.weekly));
         a.eq("4x1: edad", "5 min ago", text(a, "4x1", v1, R.id.age));
         a.isTrue("4x1 no lleva barras ni proyeccion", v1.findViewById(R.id.today) == null
                 && v1.findViewById(R.id.session_green) == null);
@@ -232,18 +239,16 @@ public final class WidgetRendererTest {
         View v2 = paint(en, s, false);
         a.eq("4x2: sin aviso", View.GONE, vis(a, "4x2", v2, R.id.notice));
         a.eq("4x2: sesion", "Session 42%", text(a, "4x2", v2, R.id.session));
-        a.eq("4x2: semana", "Week 68%", text(a, "4x2", v2, R.id.weekly));
+        a.eq("4x2: semana", "Week 67%", text(a, "4x2", v2, R.id.weekly));
         a.eq("4x2: edad", "5 min ago", text(a, "4x2", v2, R.id.age));
-        a.eq("4x2: hoy", "Today " + String.format(Locale.getDefault(), "%.1f%%", 3.5)
-                + " of " + String.format(Locale.getDefault(), "%.1f%%", 10.0),
-                text(a, "4x2", v2, R.id.today));
+        a.eq("4x2: hoy", "Today 3.5% of 10.0%", text(a, "4x2", v2, R.id.today));
         String fc = text(a, "4x2", v2, R.id.forecast);
         a.isTrue("4x2: proyeccion 'Full at <dia hora>': " + fc,
-                fc != null && fc.matches("Full at .+ \\d\\d:\\d\\d"));
+                fc != null && fc.matches("Full at .+ \\d{1,2}:\\d\\d.*"));
 
         View ve = paint(es, s, false);
         a.eq("es: sesion", "Sesi\u00f3n 42%", text(a, "es", ve, R.id.session));
-        a.eq("es: semana", "Semana 68%", text(a, "es", ve, R.id.weekly));
+        a.eq("es: semana", "Semana 67%", text(a, "es", ve, R.id.weekly));
         a.eq("es: edad", "hace 5 min", text(a, "es", ve, R.id.age));
         String fce = text(a, "es", ve, R.id.forecast);
         a.isTrue("es: proyeccion 'Al 100% a las': " + fce,
@@ -325,25 +330,185 @@ public final class WidgetRendererTest {
         a.eq("sin marca de ritmo: oculta", View.GONE, vis(a, "pace", n, R.id.pace));
     }
 
-    /** Ningun uuid llega a pantalla, ni en el aviso ni en los numeros, ni en ningun idioma. */
-    private static void noUuid(Assert a, Context en) {
+    /**
+     * Ningun uuid ni cookie llega a pantalla. Un Snapshot no tiene campo de uuid, asi que pintar
+     * Snapshots a mano no podria fallar: aqui se planta el uuid donde SI vive (preferencias, lista
+     * de organizaciones y hasta el NOMBRE de una organizacion) y la cookie, y se pinta lo que
+     * devuelve el refrescador de verdad.
+     */
+    private static void noUuid(Assert a, Context ctx, Context en) {
+        final String org1 = "11111111-1111-4111-8111-111111111111";
+        final String org2 = "22222222-2222-4222-8222-222222222222";
+        final String cookie = "sessionKey=SECRETCOOKIEVALUE";
+        List<UsageClient.Org> orgs = java.util.Arrays.asList(
+                new UsageClient.Org(org1, "Org " + org1), new UsageClient.Org(org2, org2));
         List<Snapshot> all = new ArrayList<>();
+
+        // Con organizacion elegida a mano (el uuid esta en las preferencias): hay datos.
+        UsageRefresherTest.Rig r1 = new UsageRefresherTest.Rig(ctx, true, cookie);
+        try {
+            r1.fake.orgs = orgs;
+            r1.fake.usage.put(org2, UsageRefresherTest.model(30, 40));
+            r1.prefs.edit().putString(SettingsActivity.KEY_ORG, org2).commit();
+            Snapshot s = r1.refresher.refresh();
+            a.isTrue("plantado: hay datos que pintar", s.hasData() && s.problem == null);
+            all.add(s);
+            all.add(r1.refresher.last());
+        } finally { r1.close(); }
+
+        // Dos organizaciones y sin pista: CHOOSE_ORG con los uuid en la lista.
+        UsageRefresherTest.Rig r2 = new UsageRefresherTest.Rig(ctx, true, cookie);
+        try {
+            r2.fake.orgs = orgs;
+            r2.fake.usage.put(org1, UsageRefresherTest.model(1, 11));
+            r2.fake.usage.put(org2, UsageRefresherTest.model(2, 22));
+            Snapshot s = r2.refresher.refresh();
+            a.eq("plantado: CHOOSE_ORG", Snapshot.Problem.CHOOSE_ORG, s.problem);
+            all.add(s);
+        } finally { r2.close(); }
+
         for (Snapshot.Problem p : Snapshot.Problem.values()) all.add(Snapshot.of(p));
-        all.add(fine(42, 68, 3, 10.0));
-        all.add(snap(42, 68, 3, 10.0, 0.4, null, NOW, Snapshot.Problem.CHOOSE_ORG));
+
         int seen = 0;
         for (Snapshot s : all) {
             for (boolean compact : new boolean[] {true, false}) {
                 StringBuilder sb = new StringBuilder();
                 collect(paint(en, s, compact), sb);
-                seen += sb.length();
-                a.isTrue("sin uuid en pantalla: " + s.problem, !UUID.matcher(sb).find());
+                String shown = sb.toString();
+                seen += shown.length();
+                String tag = "estado " + s.problem + (compact ? " 4x1" : " 4x2");
+                a.isTrue(tag + ": sin uuid", !UUID.matcher(shown).find());
+                a.isTrue(tag + ": sin uuid plantado",
+                        !shown.contains(org1) && !shown.contains(org2));
+                a.isTrue(tag + ": sin cookie", !shown.contains("SECRETCOOKIEVALUE")
+                        && !shown.contains("sessionKey"));
+                // El toque tampoco lleva nada.
+                a.isTrue(tag + ": el toque no lleva extras",
+                        WidgetRenderer.tapTarget(en, s, compact).getExtras() == null);
             }
         }
-        // Que la prueba no pase en vacio: el detector SI encuentra un uuid, y se leyo texto.
-        a.isTrue("el detector de uuid detecta", UUID.matcher(
-                "x 123e4567-e89b-12d3-a456-426614174000 y").find());
+        a.isTrue("el detector de uuid detecta", UUID.matcher("x " + org1 + " y").find());
         a.isTrue("se recorrio texto de verdad", seen > 100);
+    }
+
+    /** El texto nunca cruza un umbral antes que el color: 84,6 no puede decir 85 en ambar. */
+    private static void thresholds(Assert a, Context en) {
+        View v = paint(en, fine(59.6, 84.6, 1, 10.0), false);
+        a.eq("59,6: texto 59", "Session 59%", text(a, "t", v, R.id.session));
+        a.eq("59,6: sigue verde", "green", lit(v, SESSION));
+        a.eq("84,6: texto 84", "Week 84%", text(a, "t", v, R.id.weekly));
+        a.eq("84,6: sigue ambar", "amber", lit(v, WEEKLY));
+        View w = paint(en, fine(60, 85, 1, 10.0), false);
+        a.eq("60 exacto: texto 60", "Session 60%", text(a, "t", w, R.id.session));
+        a.eq("60 exacto: ambar", "amber", lit(w, SESSION));
+        a.eq("85 exacto: texto 85", "Week 85%", text(a, "t", w, R.id.weekly));
+        a.eq("85 exacto: rojo", "red", lit(w, WEEKLY));
+    }
+
+    /** Cupo de hoy agotado: texto propio, no "de -3,0%", y la barra no se ve vacia. */
+    private static void exhausted(Assert a, Context en, Context es) {
+        for (double q : new double[] {-3.0, 0.0}) {
+            View v = paint(en, fine(10, 10, 5.0, q), false);
+            a.eq("cupo " + q + ": texto", "Weekly quota used up", text(a, "ex", v, R.id.today));
+            a.eq("cupo " + q + ": barra llena", 100, progressOf(v, TODAY,
+                    q < 0 ? "red" : "gray"));
+            a.eq("cupo " + q + " (es)", "Cuota semanal agotada",
+                    text(a, "ex", paint(es, fine(10, 10, 5.0, q), false), R.id.today));
+        }
+        a.eq("cupo nulo no es agotado: raya", "Today 5.0% of \u2014",
+                text(a, "ex", paint(en, fine(10, 10, 5.0, null), false), R.id.today));
+    }
+
+    /** Reaplica B sobre LA MISMA vista, como hace el lanzador. */
+    private static View repaint(Context ctx, View existing, Snapshot s, boolean compact) {
+        onMain(() -> WidgetRenderer.render(ctx, s, compact, NOW).reapply(ctx, existing));
+        return existing;
+    }
+
+    /**
+     * El lanzador usa `reapply` cuando el layout coincide, y lo que el renderizador no reenvia
+     * NO se borra. Un arbol nuevo (como en el resto de las pruebas) no puede delatar un campo
+     * olvidado; estas si.
+     */
+    private static void reapply(Assert a, Context en) {
+        Snapshot ok = fine(42, 68, 3, 10.0);
+        for (boolean compact : new boolean[] {true, false}) {
+            String tag = "reapply " + (compact ? "4x1" : "4x2");
+            for (Snapshot.Problem p : new Snapshot.Problem[] {Snapshot.Problem.NO_SESSION,
+                    Snapshot.Problem.LOADING, Snapshot.Problem.AUTH_EXPIRED}) {
+                View v = paint(en, ok, compact);
+                a.eq(tag + ": antes, la edad esta", "5 min ago", text(a, tag, v, R.id.age));
+                repaint(en, v, Snapshot.of(p), compact);
+                a.eq(tag + " -> " + p + ": la edad se borra", "", text(a, tag, v, R.id.age));
+                a.eq(tag + " -> " + p + ": aviso visible", View.VISIBLE, vis(a, tag, v, R.id.notice));
+                a.eq(tag + " -> " + p + ": numeros ocultos", View.GONE, vis(a, tag, v, R.id.numbers));
+                repaint(en, v, ok, compact);
+                a.eq(tag + " <- " + p + ": aviso oculto", View.GONE, vis(a, tag, v, R.id.notice));
+                a.eq(tag + " <- " + p + ": numeros", View.VISIBLE, vis(a, tag, v, R.id.numbers));
+                a.eq(tag + " <- " + p + ": edad", "5 min ago", text(a, tag, v, R.id.age));
+            }
+        }
+        View v = paint(en, fine(10, 10, 1, 10.0), false);
+        a.eq("reapply: verde al inicio", "green", lit(v, SESSION));
+        repaint(en, v, fine(90, 70, 12.0, 10.0), false);
+        a.eq("reapply: sesion pasa a roja y solo roja", "red", lit(v, SESSION));
+        a.eq("reapply: semana pasa a ambar", "amber", lit(v, WEEKLY));
+        a.eq("reapply: hoy pasa a rojo", "red", lit(v, TODAY));
+        repaint(en, v, fine(10, 10, 1, 10.0), false);
+        a.eq("reapply: vuelve a verde, solo verde", "green", lit(v, SESSION));
+        a.eq("reapply: texto normal", "Today 1.0% of 10.0%", text(a, "re", v, R.id.today));
+        repaint(en, v, fine(10, 10, 1, -2.0), false);
+        a.eq("reapply: cupo agotado", "Weekly quota used up", text(a, "re", v, R.id.today));
+        repaint(en, v, fine(10, 10, 1, 10.0), false);
+        a.eq("reapply: del agotado de vuelta al normal", "Today 1.0% of 10.0%",
+                text(a, "re", v, R.id.today));
+        repaint(en, v, snap(10, 10, 1, 5.0, null, null, NOW, null), false);
+        a.eq("reapply: sin marca de ritmo", View.GONE, vis(a, "re", v, R.id.pace));
+        repaint(en, v, snap(10, 10, 1, 5.0, 0.7, null, NOW, null), false);
+        a.eq("reapply: marca de ritmo vuelve", View.VISIBLE, vis(a, "re", v, R.id.pace));
+        a.eq("reapply: marca de ritmo 70", 70, ((ProgressBar) v.findViewById(R.id.pace)).getProgress());
+    }
+
+    /** La marca de ritmo es de la ventana semanal: va justo despues de la barra semanal. */
+    private static void paceOrder(Assert a, Context en) {
+        View v = paint(en, fine(10, 10, 1, 10.0), false);
+        View weeklyBar = v.findViewById(R.id.weekly_green);
+        View pace = v.findViewById(R.id.pace);
+        View todayLabel = v.findViewById(R.id.today);
+        ViewGroup col = (ViewGroup) pace.getParent();
+        int iPace = col.indexOfChild(pace);
+        int iWeeklyFrame = col.indexOfChild((View) weeklyBar.getParent());
+        a.eq("marca de ritmo inmediatamente despues de la barra semanal", iWeeklyFrame + 1, iPace);
+        a.isTrue("y antes del texto de hoy", iPace < col.indexOfChild(todayLabel));
+    }
+
+    /** Las tres rutas del toque. */
+    private static void tapTargets(Assert a, Context en) {
+        for (boolean compact : new boolean[] {true, false}) {
+            String tag = compact ? "4x1" : "4x2";
+            for (Snapshot.Problem p : new Snapshot.Problem[] {Snapshot.Problem.NO_SESSION,
+                    Snapshot.Problem.AUTH_EXPIRED}) {
+                android.content.Intent i = WidgetRenderer.tapTarget(en, Snapshot.of(p), compact);
+                a.eq(tag + " " + p + ": abre el login", LoginActivity.class.getName(),
+                        i.getComponent().getClassName());
+                a.eq(tag + " " + p + ": sin accion (es una actividad)", null, i.getAction());
+            }
+            android.content.Intent o = WidgetRenderer.tapTarget(en,
+                    Snapshot.of(Snapshot.Problem.CHOOSE_ORG), compact);
+            a.eq(tag + " CHOOSE_ORG: abre Ajustes", SettingsActivity.class.getName(),
+                    o.getComponent().getClassName());
+            Snapshot.Problem[] refresh = {Snapshot.Problem.BLOCKED, Snapshot.Problem.OFFLINE,
+                    Snapshot.Problem.BAD_FORMAT, Snapshot.Problem.LOADING};
+            for (Snapshot.Problem p : refresh) {
+                android.content.Intent i = WidgetRenderer.tapTarget(en, Snapshot.of(p), compact);
+                a.eq(tag + " " + p + ": refresca", WidgetUpdateJob.ACTION_TAP, i.getAction());
+                a.eq(tag + " " + p + ": al proveedor de su tamano",
+                        (compact ? Widget4x1Provider.class : Widget4x2Provider.class).getName(),
+                        i.getComponent().getClassName());
+            }
+            android.content.Intent none = WidgetRenderer.tapTarget(en, fine(1, 1, 0, 1.0), compact);
+            a.eq(tag + " sin problema: refresca", WidgetUpdateJob.ACTION_TAP, none.getAction());
+        }
     }
 
     /**
@@ -388,7 +553,7 @@ public final class WidgetRendererTest {
 
     /** Toda cadena del widget existe en los dos idiomas y no es la misma en ambos. */
     private static void translations(Assert a, Context en, Context es) {
-        int[] ids = {R.string.widget_desc, R.string.w_session, R.string.w_weekly, R.string.w_today,
+        int[] ids = {R.string.widget_desc, R.string.w_session, R.string.w_weekly, R.string.w_today, R.string.w_today_exhausted,
                 R.string.w_age_now, R.string.w_age_min, R.string.w_age_hour, R.string.w_full_at,
                 R.string.w_no_forecast, R.string.p_no_session, R.string.p_auth_expired,
                 R.string.p_blocked, R.string.p_offline, R.string.p_bad_format,
