@@ -1,0 +1,56 @@
+# ============================================================================
+# PROJECT.yaml - Archivo de metadatos del proyecto
+# ============================================================================
+#
+# PARA CLAUDE (IA): Este archivo es leido por el Project Manager (99999).
+#
+# INSTRUCCIONES:
+#   - Si cambias de version, actualiza 'project.version'
+#   - Siempre actualiza 'updated_at' y 'updated_by' al modificar
+#
+# NO MODIFICAR SIN RAZON:
+#   - project.code (identificador unico)
+#   - server.base_path
+#
+# NOTA: repo publico. base_path relativo a proposito; las rutas reales de las
+# copias de trabajo no van aqui (mismo criterio que 077, 091, 101 y 107).
+# El codigo de flota (116) vive solo en este archivo: el repo y la carpeta
+# conservan su nombre para no romper GitHub Pages ni los enlaces a Releases.
+# ============================================================================
+
+project:
+  code: web26-116
+  name: Claude Usage Widgets
+  version: 0.1.4
+  status: development
+  description: Widget siempre visible con el uso del plan de Claude (sesion de 5 h, semana, limites por modelo, proyeccion)
+  type: app
+
+server:
+  location: local-windows
+  base_path: .
+
+service:
+  type: none
+  expect_offline: true
+  notes: "app de escritorio y widget Android; no es un servicio con puerto"
+
+stack:
+  primary: rust
+  components:
+    - "contrato: JSON Schema + reglas R0-R7 + fixtures, validador Python (spec/)"
+    - "Windows: Tauri (nucleo Rust) y version lite nativa Win32 + GDI"
+    - "Android: Java, APK sin Gradle, widget y burbuja flotante"
+
+repository:
+  github: "https://github.com/abelardodiaz/claude-usage-widgets"   # principal
+  gitlab: "https://gitlab.com/abelardodiaz/claude-usage-widgets"   # respaldo
+  branch_main: "main"
+  visibility: public
+
+urls:
+  page: "https://abelardodiaz.github.io/claude-usage-widgets/"
+  releases: "https://github.com/abelardodiaz/claude-usage-widgets/releases"
+
+updated_at: "2026-10-10"
+updated_by: claude-996
