@@ -4,6 +4,8 @@ Un widget siempre visible con tu uso del plan de Claude: sesión de 5 h, semana,
 modelo, cuánto llevas hoy contra lo que te toca, desglose de la semana y una proyección de
 cuándo llegarías al límite.
 
+**[Página del proyecto](https://abelardodiaz.github.io/claude-usage-widgets/)**: capturas, estado de Windows y Android, cómo se trabaja y seguridad.
+
 ![Widget con las barras de hoy, sesión y semana](docs/img/widget.png)
 
 ![Widget con el panel de proyección abierto](docs/img/widget-proyeccion.png)
