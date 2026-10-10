@@ -31,7 +31,7 @@ public final class FixtureRunner {
      * corredor en verde con cero comprobaciones: una suite que no contrasta nada no falla nunca.
      * Se sube cuando el contrato crece.
      */
-    static final int MIN_TOTAL = 66;
+    static final int MIN_TOTAL = 81;
 
     public static void run(Assert a, Path fixtures) {
         int n = 0;

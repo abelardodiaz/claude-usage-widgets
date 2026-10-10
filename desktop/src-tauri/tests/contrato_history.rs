@@ -11,7 +11,7 @@ use claude_usage_widgets_lib::timez::zone_from_spec;
 fn fixtures_de_historial() {
     let fixtures = common::load_fixtures("history");
     assert!(
-        fixtures.len() >= 18,
+        fixtures.len() >= 33,
         "faltan fixtures de historial: {}",
         fixtures.len()
     );

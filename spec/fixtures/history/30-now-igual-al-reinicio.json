@@ -1,0 +1,36 @@
+{
+  "description": "R4: now = resets_at - 7 dias exacto: inicio_ventana <= now incluye la igualdad, hoy ya empieza en el reinicio. El par cruzado dura 0 y aporta entero",
+  "input": {
+    "tz": "-06:00",
+    "now": "2026-10-09T14:00:00-06:00",
+    "weekly": {
+      "percent": 1,
+      "resets_at": "2026-10-16T14:00:00-06:00"
+    },
+    "samples": [
+      {
+        "t": "2026-10-09T08:00:00-06:00",
+        "percent": 80,
+        "resets_at": "2026-10-09T14:00:00-06:00"
+      },
+      {
+        "t": "2026-10-09T12:00:00-06:00",
+        "percent": 86,
+        "resets_at": "2026-10-09T14:00:00-06:00"
+      },
+      {
+        "t": "2026-10-09T14:00:00-06:00",
+        "percent": 1,
+        "resets_at": "2026-10-16T14:00:00-06:00"
+      }
+    ]
+  },
+  "expected": {
+    "per_day": {
+      "2026-10-09": 7
+    },
+    "today_used": 1,
+    "quota_today": 14.285714,
+    "partial": false
+  }
+}

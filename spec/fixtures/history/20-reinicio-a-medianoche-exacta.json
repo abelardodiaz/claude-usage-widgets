@@ -1,0 +1,31 @@
+{
+  "description": "R4: reinicio exactamente a las 00:00: day_start = medianoche, mismo resultado que antes de la regla del reinicio",
+  "input": {
+    "tz": "-06:00",
+    "now": "2026-10-09T06:00:00-06:00",
+    "weekly": {
+      "percent": 5,
+      "resets_at": "2026-10-16T00:00:00-06:00"
+    },
+    "samples": [
+      {
+        "t": "2026-10-08T20:00:00-06:00",
+        "percent": 90,
+        "resets_at": "2026-10-09T00:00:00-06:00"
+      },
+      {
+        "t": "2026-10-09T06:00:00-06:00",
+        "percent": 5,
+        "resets_at": "2026-10-16T00:00:00-06:00"
+      }
+    ]
+  },
+  "expected": {
+    "per_day": {
+      "2026-10-09": 5
+    },
+    "today_used": 5,
+    "quota_today": 14.285714,
+    "partial": false
+  }
+}

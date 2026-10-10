@@ -1,0 +1,32 @@
+{
+  "description": "R4: weekly.resets_at a mas de 7 dias de now (resets_at - 7 dias > now, dato incoherente): day_start = medianoche, como antes",
+  "input": {
+    "tz": "-06:00",
+    "now": "2026-10-09T12:00:00-06:00",
+    "weekly": {
+      "percent": 20,
+      "resets_at": "2026-10-17T18:00:00-06:00"
+    },
+    "samples": [
+      {
+        "t": "2026-10-08T12:00:00-06:00",
+        "percent": 10,
+        "resets_at": "2026-10-17T18:00:00-06:00"
+      },
+      {
+        "t": "2026-10-09T12:00:00-06:00",
+        "percent": 20,
+        "resets_at": "2026-10-17T18:00:00-06:00"
+      }
+    ]
+  },
+  "expected": {
+    "per_day": {
+      "2026-10-08": 5,
+      "2026-10-09": 5
+    },
+    "today_used": 5,
+    "quota_today": 9.714286,
+    "partial": false
+  }
+}

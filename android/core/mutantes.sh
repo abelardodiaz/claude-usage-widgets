@@ -58,8 +58,34 @@ probar "R5: el dato rancio deja de ganar" $SRC/Projection.java \
         // 2. Ya esta lleno." "if (resetsAt == null) return Forecast.NONE;
         // 2. Ya esta lleno."
 probar "R4: quita la comprobacion de dato rancio" $SRC/History.java \
-  "if (weekly.resetsAt != null && now.isBefore(weekly.resetsAt)) {" \
-  "if (weekly.resetsAt != null) {"
+  "boolean fresh = weekly.resetsAt != null && now.isBefore(weekly.resetsAt);" \
+  "boolean fresh = weekly.resetsAt != null;"
+probar "R4: hoy empieza siempre a medianoche aunque la ventana se reinicie hoy" $SRC/History.java   "if (startMs > midnight.toEpochMilli() && startMs <= now.toEpochMilli()) {"   "if (false) {"
+probar "R4: day_start no exige que el reinicio ya haya pasado" $SRC/History.java   "if (startMs > midnight.toEpochMilli() && startMs <= now.toEpochMilli()) {"   "if (startMs > midnight.toEpochMilli()) {"
+probar "R4: reinicio exacto a medianoche entra por la rama del reinicio (< por <=)" $SRC/History.java   "if (startMs > midnight.toEpochMilli() && startMs <= now.toEpochMilli()) {"   "if (startMs >= midnight.toEpochMilli() && startMs <= now.toEpochMilli()) {"
+probar "R4: now igual al reinicio no cuenta como reiniciado (<= por <)" $SRC/History.java   "if (startMs > midnight.toEpochMilli() && startMs <= now.toEpochMilli()) {"   "if (startMs > midnight.toEpochMilli() && startMs < now.toEpochMilli()) {"
+probar "R0/R4: day_start comparado en nanosegundos en vez de ms" $SRC/History.java   "if (startMs > midnight.toEpochMilli() && startMs <= now.toEpochMilli()) {"   "if (windowStart.isAfter(midnight) && !windowStart.isAfter(now)) {"
+probar "R4: today_used sin filtrar por la ventana de weekly" $SRC/History.java \
+  "if (!Projection.sameWindow(c.resetsAt, weeklyResetsAt)) continue;" \
+  "if (false) continue;"
+probar "R4: intervalo de duracion 0 anterior a day_start tambien aporta" $SRC/History.java \
+  "if (c.end.toEpochMilli() >= dayStart.toEpochMilli()) used += c.delta;" \
+  "used += c.delta;"
+probar "R4: intervalo de duracion 0 nunca aporta" $SRC/History.java \
+  "if (c.end.toEpochMilli() >= dayStart.toEpochMilli()) used += c.delta;" \
+  "if (false) used += c.delta;"
+probar "R4: today_used cuenta el intervalo entero, no desde day_start" $SRC/History.java \
+  "Instant from = c.start.isAfter(dayStart) ? c.start : dayStart;" \
+  "Instant from = c.start;"
+probar "R4: partial contra medianoche en vez de day_start" $SRC/History.java \
+  "if (s.t.toEpochMilli() < dayStart.toEpochMilli()) { partial = false; break; }" \
+  "if (s.t.isBefore(midnight)) { partial = false; break; }"
+probar "R4: days_left desde medianoche en vez de day_start" $SRC/History.java \
+  "Projection.seconds(dayStart, weekly.resetsAt) / 86400.0;" \
+  "Projection.seconds(midnight, weekly.resetsAt) / 86400.0;"
+probar "R4: base sin acotar a 0" $SRC/History.java \
+  "double base = Math.max(weekly.percent - todayUsed, 0);" \
+  "double base = weekly.percent - todayUsed;"
 probar "R3/R4: desplazamiento fijo en vez de zona IANA" $SRC/History.java \
   "Instant now, ZoneId tz) {" \
   "Instant now, ZoneId tzIgnorada) { ZoneId tz = java.time.ZoneOffset.ofHours(-5);"

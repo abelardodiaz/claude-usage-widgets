@@ -1,0 +1,41 @@
+{
+  "description": "R4, caso real con datos sinteticos: reinicio semanal hoy a las 17:59 tras 13.3 puntos de la ventana vieja; a las 18:28 today_used = 3.4 (toda la ventana nueva), base 0 y days_left 7 -> 100/7. Antes daba today_used 16.7 contra 12.9 (days_left 7.75 desde medianoche) y pintaba rojo",
+  "input": {
+    "tz": "-06:00",
+    "now": "2026-10-09T18:28:00-06:00",
+    "weekly": {
+      "percent": 3.4,
+      "resets_at": "2026-10-16T17:59:00-06:00"
+    },
+    "samples": [
+      {
+        "t": "2026-10-08T22:00:00-06:00",
+        "percent": 80,
+        "resets_at": "2026-10-09T17:59:00-06:00"
+      },
+      {
+        "t": "2026-10-09T00:00:00-06:00",
+        "percent": 80,
+        "resets_at": "2026-10-09T17:59:00-06:00"
+      },
+      {
+        "t": "2026-10-09T17:30:00-06:00",
+        "percent": 93.3,
+        "resets_at": "2026-10-09T17:59:00-06:00"
+      },
+      {
+        "t": "2026-10-09T18:28:00-06:00",
+        "percent": 3.4,
+        "resets_at": "2026-10-16T17:59:00-06:00"
+      }
+    ]
+  },
+  "expected": {
+    "per_day": {
+      "2026-10-09": 16.7
+    },
+    "today_used": 3.4,
+    "quota_today": 14.285714,
+    "partial": false
+  }
+}

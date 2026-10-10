@@ -40,10 +40,19 @@ pub fn prepare_samples(samples: &[Sample], now: Timestamp) -> Vec<Sample> {
     out
 }
 
-/// R3: puntos de la cuota semanal consumidos por dia local (solo dias con aporte > 0).
-pub fn per_day(samples: &[Sample], now: Timestamp, tz: &TimeZone) -> BTreeMap<String, f64> {
-    let prepared = prepare_samples(samples, now);
-    let mut days = BTreeMap::new();
+/// R3 paso 2: aporte de un par consecutivo `a`, `b` con `delta > 0`, consumido en
+/// `[start, end]` (`end = b.t`). `resets_at` es el de `b`: R4 lo usa para saber de que
+/// ventana es el aporte.
+struct Contribution {
+    start: Timestamp,
+    end: Timestamp,
+    delta: f64,
+    resets_at: Option<Timestamp>,
+}
+
+/// R3 paso 2 sobre muestras ya depuradas: los pares que aportan algo.
+fn contributions(prepared: &[Sample]) -> Vec<Contribution> {
+    let mut out = Vec::new();
     for pair in prepared.windows(2) {
         let (a, b) = (&pair[0], &pair[1]);
         let (delta, start) = if same_window(a.resets_at, b.resets_at) {
@@ -58,10 +67,67 @@ pub fn per_day(samples: &[Sample], now: Timestamp, tz: &TimeZone) -> BTreeMap<St
         if delta <= 0.0 {
             continue;
         }
-        spread(&mut days, start.min(b.t), b.t, delta, tz);
+        out.push(Contribution {
+            start: start.min(b.t),
+            end: b.t,
+            delta,
+            resets_at: b.resets_at,
+        });
+    }
+    out
+}
+
+/// R3: puntos de la cuota semanal consumidos por dia local (solo dias con aporte > 0).
+pub fn per_day(samples: &[Sample], now: Timestamp, tz: &TimeZone) -> BTreeMap<String, f64> {
+    per_day_of(&contributions(&prepare_samples(samples, now)), tz)
+}
+
+fn per_day_of(contribs: &[Contribution], tz: &TimeZone) -> BTreeMap<String, f64> {
+    let mut days = BTreeMap::new();
+    for c in contribs {
+        spread(&mut days, c.start, c.end, c.delta, tz);
     }
     days.retain(|_, v| *v > 0.0);
     days
+}
+
+/// R4: inicio de la ventana semanal actual si empezo hoy (`medianoche < resets_at - 7 dias
+/// <= now`). Fuera de ese caso, `None`: "hoy" empieza a medianoche, como siempre.
+fn window_start_today(
+    now: Timestamp,
+    midnight: Timestamp,
+    weekly_resets_at: Timestamp,
+) -> Option<Timestamp> {
+    weekly_resets_at
+        .checked_sub(WEEK)
+        .ok()
+        // R0: a milisegundos con piso, como same_window y before_reset.
+        .filter(|start| {
+            let start = epoch_millis(*start);
+            epoch_millis(midnight) < start && start <= epoch_millis(now)
+        })
+}
+
+/// R4: consumo de la ventana de `weekly` desde `day_start`. Solo cuentan los aportes cuyo `b`
+/// esta en esa ventana (R2), y de cada uno la parte de `[start, end]` posterior a `day_start`.
+fn used_since(contribs: &[Contribution], day_start: Timestamp, weekly_resets_at: Timestamp) -> f64 {
+    contribs
+        .iter()
+        .filter(|c| same_window(c.resets_at, Some(weekly_resets_at)))
+        .map(|c| {
+            let total = seconds_between(c.start, c.end);
+            if total <= 0.0 {
+                if epoch_millis(c.end) >= epoch_millis(day_start) {
+                    c.delta
+                } else {
+                    0.0
+                }
+            } else {
+                let inside = seconds_between(c.start.max(day_start), c.end).max(0.0);
+                c.delta * inside / total
+            }
+        })
+        .sum()
 }
 
 /// Reparte `delta` entre los dias locales del intervalo [start, end], proporcional al tiempo
@@ -94,6 +160,8 @@ fn spread(
 }
 
 /// R4: consumido hoy, cupo adaptativo de hoy y si el dia esta parcialmente registrado.
+/// Si la ventana semanal se reinicio hoy, "hoy" empieza en el reinicio (`day_start`) y solo
+/// cuenta el consumo de la ventana nueva; `per_day` no cambia y sigue sumando todo el dia.
 /// `quota_today` es `None` sin `resets_at` o con dato rancio (`now >= resets_at`); puede ser
 /// negativo si `weekly.percent > 100` (la cuota semanal ya se agoto; R7 lo pinta rojo).
 pub fn today_stats(
@@ -102,21 +170,30 @@ pub fn today_stats(
     samples: &[Sample],
     tz: &TimeZone,
 ) -> TodayStats {
-    let days = per_day(samples, now, tz);
+    let prepared = prepare_samples(samples, now);
+    let contribs = contributions(&prepared);
+    let days = per_day_of(&contribs, tz);
     let midnight = start_of_day(now, tz);
-    let today_used = days
-        .get(&day_key(local_date(now, tz)))
-        .copied()
-        .unwrap_or(0.0);
-    let partial = !prepare_samples(samples, now).iter().any(|s| s.t < midnight);
-    let quota_today = weekly
-        .resets_at
-        .filter(|resets_at| now < *resets_at)
-        .map(|resets_at| {
-            let base = (weekly.percent - today_used).max(0.0);
-            let days_left = seconds_between(midnight, resets_at) / DAY.as_secs_f64();
-            (100.0 - base) / days_left.max(1.0)
-        });
+    let fresh_resets_at = weekly.resets_at.filter(|resets_at| now < *resets_at);
+    let reset_today = fresh_resets_at
+        .and_then(|resets_at| window_start_today(now, midnight, resets_at).map(|s| (s, resets_at)));
+    let (day_start, today_used) = match reset_today {
+        Some((start, resets_at)) => (start, used_since(&contribs, start, resets_at)),
+        None => (
+            midnight,
+            days.get(&day_key(local_date(now, tz)))
+                .copied()
+                .unwrap_or(0.0),
+        ),
+    };
+    let partial = !prepared
+        .iter()
+        .any(|s| epoch_millis(s.t) < epoch_millis(day_start));
+    let quota_today = fresh_resets_at.map(|resets_at| {
+        let base = (weekly.percent - today_used).max(0.0);
+        let days_left = seconds_between(day_start, resets_at) / DAY.as_secs_f64();
+        (100.0 - base) / days_left.max(1.0)
+    });
     TodayStats {
         per_day: days,
         today_used,
