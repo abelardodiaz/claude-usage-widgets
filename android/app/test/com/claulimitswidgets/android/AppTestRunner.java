@@ -36,6 +36,8 @@ public final class AppTestRunner {
         SessionStoreTest.runKeyLoss(a, ctx);
         SessionStoreTest.runTmp(a, ctx);
         WidgetUpdateJobTest.run(a, ctx);
+        // Entrada de F5: la deuda de F4.
+        F5DebtTest.run(a, ctx);
         // Cierre de F3.
         UsageClientTest.runCierre(a);
         OrgSelectorTest.runCierre(a);

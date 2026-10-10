@@ -177,17 +177,32 @@ public final class Session {
     /** `work` en un hilo, `done` en el principal. Aparte para probarlo sin cerrar ninguna sesion. */
     static void runAsync(java.util.function.Supplier<Boolean> work,
                          java.util.function.Consumer<Boolean> done) {
+        runAsync(work, done, r -> new Thread(r, "cuw-logout").start());
+    }
+
+    /**
+     * Con el arranque del hilo inyectado. Si el hilo ni siquiera arranca (`OutOfMemoryError`,
+     * `RuntimeException`) `done` se llama igual con false: quien espera el aviso (la pantalla, con
+     * sus botones desactivados) no puede quedar colgado, como hace `runNowWith`.
+     */
+    static void runAsync(java.util.function.Supplier<Boolean> work,
+                         java.util.function.Consumer<Boolean> done,
+                         java.util.function.Consumer<Runnable> starter) {
         android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
-        new Thread(() -> {
-            boolean ok;
-            try {
-                ok = work.get();
-            } catch (RuntimeException | Error e) {
-                ok = false;   // sin citar nada: no hay datos que se puedan citar
-            }
-            boolean result = ok;
-            main.post(() -> done.accept(result));
-        }, "cuw-logout").start();
+        try {
+            starter.accept(() -> {
+                boolean ok;
+                try {
+                    ok = work.get();
+                } catch (RuntimeException | Error e) {
+                    ok = false;   // sin citar nada: no hay datos que se puedan citar
+                }
+                boolean result = ok;
+                main.post(() -> done.accept(result));
+            });
+        } catch (RuntimeException | Error e) {
+            main.post(() -> done.accept(false));
+        }
     }
 
     private static boolean attempt(Runnable r) {

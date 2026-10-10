@@ -195,17 +195,17 @@ public final class WidgetUpdateJobTest {
     private static void boot(Assert a) {
         for (String action : new String[] {Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_MY_PACKAGE_REPLACED}) {
             List<String> calls = new ArrayList<>();
-            BootReceiver.handle(action, () -> 2, () -> calls.add("schedule"), () -> calls.add("soon"));
+            BootReceiver.handle(action, () -> 2, () -> false, () -> calls.add("schedule"), () -> calls.add("cancel"), () -> calls.add("soon"));
             a.eq(action + ": reprograma y pide un refresco, en ese orden",
                     Arrays.asList("schedule", "soon"), calls);
             calls.clear();
-            BootReceiver.handle(action, () -> 0, () -> calls.add("schedule"), () -> calls.add("soon"));
+            BootReceiver.handle(action, () -> 0, () -> false, () -> calls.add("schedule"), () -> calls.add("cancel"), () -> calls.add("soon"));
             a.eq(action + ": sin widgets no hace nada", Collections.emptyList(), calls);
         }
         for (String other : new String[] {null, "", Intent.ACTION_USER_PRESENT,
                 Intent.ACTION_LOCKED_BOOT_COMPLETED, "com.claulimitswidgets.android.BOOT_COMPLETED"}) {
             List<String> calls = new ArrayList<>();
-            BootReceiver.handle(other, () -> 2, () -> calls.add("schedule"), () -> calls.add("soon"));
+            BootReceiver.handle(other, () -> 2, () -> false, () -> calls.add("schedule"), () -> calls.add("cancel"), () -> calls.add("soon"));
             a.eq("accion ajena <" + other + ">: no hace nada", Collections.emptyList(), calls);
         }
     }
@@ -338,14 +338,14 @@ public final class WidgetUpdateJobTest {
         Snapshot good = Snapshot.of(Snapshot.Problem.OFFLINE);
 
         List<String> log = new ArrayList<>();
-        boolean r = WidgetUpdateJob.runJob(sync, () -> 2, () -> log.add("cancel"),
+        boolean r = WidgetUpdateJob.runJob(sync, () -> 2, () -> false, () -> log.add("cancel"),
                 () -> { log.add("refresh"); return good; }, () -> 1, x -> log.add("push"),
                 () -> log.add("finish"));
         a.isTrue("con widgets: arranca (true)", r);
         a.eq("con widgets: consulta, pinta y avisa una vez", Arrays.asList("refresh", "push", "finish"), log);
 
         log.clear();
-        r = WidgetUpdateJob.runJob(sync, () -> 0, () -> log.add("cancel"),
+        r = WidgetUpdateJob.runJob(sync, () -> 0, () -> false, () -> log.add("cancel"),
                 () -> { log.add("refresh"); return good; }, () -> 1, x -> log.add("push"),
                 () -> log.add("finish"));
         a.isTrue("sin widgets: devuelve true (el aviso viene del hilo)", r);
@@ -353,13 +353,13 @@ public final class WidgetUpdateJobTest {
 
         // Un fallo en el hilo no puede dejar el trabajo sin avisar.
         log.clear();
-        WidgetUpdateJob.runJob(sync, () -> { throw new IllegalStateException("x"); }, () -> log.add("cancel"),
+        WidgetUpdateJob.runJob(sync, () -> { throw new IllegalStateException("x"); }, () -> false, () -> log.add("cancel"),
                 () -> good, () -> 1, x -> log.add("push"), () -> log.add("finish"));
         a.eq("el contador de widgets que lanza: avisa igual", Arrays.asList("finish"), log);
 
         // Aviso unico: `finish` que lanza la primera vez no se repite desde el catch.
         int[] finishes = {0};
-        WidgetUpdateJob.runJob(sync, () -> 2, () -> { }, () -> good, () -> 1, x -> { },
+        WidgetUpdateJob.runJob(sync, () -> 2, () -> false, () -> { }, () -> good, () -> 1, x -> { },
                 () -> { finishes[0]++; throw new IllegalStateException("jobFinished"); });
         a.eq("finish que lanza: se llama UNA sola vez", 1, finishes[0]);
         int[] n = {0};
@@ -370,14 +370,14 @@ public final class WidgetUpdateJobTest {
         // Sin hilo no hay trabajo: false y sin avisar (el sistema lo da por terminado).
         log.clear();
         r = WidgetUpdateJob.runJob(x -> { throw new java.util.concurrent.RejectedExecutionException(); },
-                () -> 2, () -> { }, () -> good, () -> 1, x -> { }, () -> log.add("finish"));
+                () -> 2, () -> false, () -> { }, () -> good, () -> 1, x -> { }, () -> log.add("finish"));
         a.isTrue("sin hilo: false", !r);
         a.eq("sin hilo: no avisa", Collections.emptyList(), log);
 
         // Asincrono de verdad: vuelve true ya, y el aviso llega despues, desde otro hilo.
         CountDownLatch go = new CountDownLatch(1);
         CountDownLatch fin = new CountDownLatch(1);
-        r = WidgetUpdateJob.runJob(x -> new Thread(x).start(), () -> 2, () -> { },
+        r = WidgetUpdateJob.runJob(x -> new Thread(x).start(), () -> 2, () -> false, () -> { },
                 () -> { try { go.await(5, TimeUnit.SECONDS); } catch (InterruptedException ignored) { } return good; },
                 () -> 1, x -> { }, fin::countDown);
         a.isTrue("asincrono: true antes de terminar", r && fin.getCount() == 1);
@@ -534,7 +534,7 @@ public final class WidgetUpdateJobTest {
         boolean started = false;
         boolean threw = false;
         try {
-            started = WidgetUpdateJob.runJob(Runnable::run, () -> 2, () -> { },
+            started = WidgetUpdateJob.runJob(Runnable::run, () -> 2, () -> false, () -> { },
                     () -> { throw new OutOfMemoryError("prueba"); }, () -> 1, x -> { },
                     () -> finishes[0]++);
         } catch (Throwable t) {

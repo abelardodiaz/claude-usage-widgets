@@ -90,6 +90,8 @@ public final class SessionStore {
      * pintar "Sesion iniciada". Una corrupcion interna (byte volteado) solo la detecta load().
      */
     public boolean hasSession() {
+        // Llave perdida de verdad: el archivo tiene buena forma pero no se podra descifrar jamas.
+        if (lostMarker().exists()) return false;
         File f = file();
         if (!f.isFile() || f.length() < 1 + IV_LEN + TAG_BITS / 8) return false;
         try (java.io.FileInputStream in = new java.io.FileInputStream(f)) {
@@ -97,6 +99,43 @@ public final class SessionStore {
         } catch (IOException e) {
             return false;
         }
+    }
+
+    /**
+     * No hay NI archivo de sesion: es la unica respuesta que justifica dejar de despertar el job.
+     * A diferencia de `hasSession()`, no se confunde con un archivo ilegible (sin descriptores,
+     * llave perdida, forma rara): ante la duda, el job sigue.
+     */
+    public boolean isAbsent() {
+        return !file().exists();
+    }
+
+    /**
+     * Marcador de "llave perdida": un archivo vacio junto al de la sesion que deja `load()` cuando
+     * el Keystore declara la llave inservible, para que `hasSession()` no diga "sesion iniciada"
+     * sobre una cookie que ya no se puede leer. Es SOLO un aviso: no borra ni toca la sesion.
+     * `load()` lo quita en cuanto descifra bien (un hipo del Keystore se cura solo), `save()` al
+     * guardar una sesion nueva y `clear()` al cerrar sesion.
+     */
+    boolean isKeyLost() {
+        return lostMarker().exists() && fileExists();
+    }
+
+    private File lostMarker() {
+        return new File(ctx.getFilesDir(), fileName + ".lost");
+    }
+
+    private void markKeyLost() {
+        try {
+            lostMarker().createNewFile();
+        } catch (IOException ignored) {
+            // Sin marcador la pantalla vuelve a ser optimista, pero nada se pierde.
+        }
+    }
+
+    private void unmarkKeyLost() {
+        File m = lostMarker();
+        if (m.exists() && !m.delete()) m.deleteOnExit();
     }
 
     /** Hay algo en disco, sea o no valido: load() lo examina y borra lo corrupto. */
@@ -126,6 +165,7 @@ public final class SessionStore {
                 tmp.delete();
                 throw new IOException("no se pudo reemplazar el archivo de sesion");
             }
+            unmarkKeyLost();   // sesion nueva con llave nueva: ya no esta perdida
         }
     }
 
@@ -176,10 +216,13 @@ public final class SessionStore {
                 // aqui cerraria la sesion del dueno por un hipo y le obligaria a repetir el
                 // login por correo. El lado seguro es no borrar; el siguiente `save()` regenera la
                 // llave si de verdad estaba perdida.
+                markKeyLost();
                 throw new KeyLostException();
             }
             try {
-                return new String(c.doFinal(body), StandardCharsets.UTF_8);
+                String cookies = new String(c.doFinal(body), StandardCharsets.UTF_8);
+                unmarkKeyLost();   // se pudo descifrar: era un hipo, la llave sirve
+                return cookies;
             } catch (AEADBadTagException e) {
                 // Corrupcion autentica: el contenido se manipulo. No se recupera.
                 clear();
@@ -207,11 +250,13 @@ public final class SessionStore {
                 overwrite(tmp);
                 if (!tmp.delete()) tmp.deleteOnExit();
             }
+            File lost = lostMarker();
+            if (lost.exists() && !lost.delete()) lost.deleteOnExit();
             try {
                 KeyStore ks = KeyStore.getInstance(KEYSTORE);
                 ks.load(null);
                 if (ks.containsAlias(keyAlias)) ks.deleteEntry(keyAlias);
-                return !f.exists() && !tmp.exists();
+                return !f.exists() && !tmp.exists() && !lost.exists();
             } catch (GeneralSecurityException | IOException e) {
                 return false;
             }

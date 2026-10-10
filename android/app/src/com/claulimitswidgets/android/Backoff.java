@@ -4,7 +4,8 @@ package com.claulimitswidgets.android;
 public final class Backoff {
 
     private static final long FIRST = 60L;
-    private static final long MAX = 1800L;
+    /** Tope de la espera, en segundos. Lo comparte el cap del reloj atrasado de UsageRefresher. */
+    static final long MAX = 1800L;
 
     private Backoff() {}
 

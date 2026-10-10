@@ -8,50 +8,17 @@ import android.content.Intent;
 /**
  * 4x1 compacto. `exported="false"`: verificado en One UI (spike B).
  *
- * Se repite entero en vez de heredarlo del otro proveedor: el sistema instancia cada
- * `AppWidgetProvider` por su cuenta y heredar entre proveedores registrados confunde el
- * despacho de `onUpdate`.
+ * No hereda del otro proveedor: el sistema instancia cada `AppWidgetProvider` por su cuenta y
+ * heredar entre proveedores registrados confunde el despacho de `onUpdate`. Lo comun vive en
+ * {@link ProviderUpdate}, que tiene prueba.
  */
 public class Widget4x1Provider extends AppWidgetProvider {
 
     @Override
     public void onUpdate(Context ctx, AppWidgetManager awm, int[] ids) {
-        // `onUpdate` corre en el hilo principal y `UsageRefresher.last()` hace disco y pasa por
-        // el nucleo: StrictMode lo castigaria. `goAsync` mantiene vivo el receptor mientras tanto.
-        final PendingResult pending = goAsync();   // puede ser null fuera de un receptor real
-        final Context app = ctx.getApplicationContext();
-        Runnable work = () -> {
-            try {
-                // La epoca se captura ANTES de leer: si el dueno cierra sesion mientras tanto, el
-                // logout ya pinto "sin sesion" y esto NO puede pintar encima los porcentajes de
-                // la cuenta cerrada (nadie los repintaria: el logout cancelo el job).
-                long start = Session.EPOCH.get();
-                Snapshot s = new UsageRefresher(app).last();
-                WidgetUpdateJob.pushIfCurrent(s, start, Session.EPOCH::get, x -> {
-                    for (int id : ids) awm.updateAppWidget(id, WidgetRenderer.render(app, x, compact()));
-                });
-                WidgetUpdateJob.schedule(app);
-                // Primera vez: hay sesion pero ningun dato todavia. Sin esto el widget se queda en
-                // "Actualizando..." hasta el primer ciclo del job, que puede tardar 15 minutos.
-                if (s.problem == Snapshot.Problem.LOADING) WidgetUpdateJob.runNow(app);
-            } catch (RuntimeException e) {
-                // Un fallo aqui no puede dejar el widget en blanco: se pinta un aviso.
-                try {
-                    for (int id : ids) awm.updateAppWidget(id, WidgetRenderer.render(app,
-                            Snapshot.of(Snapshot.Problem.OFFLINE), compact()));
-                } catch (RuntimeException ignored) {
-                    // Sin nada mas que hacer; el siguiente ciclo del job lo repinta.
-                }
-            } finally {
-                if (pending != null) pending.finish();
-            }
-        };
-        try {
-            new Thread(work, "widget-update").start();
-        } catch (RuntimeException | Error e) {
-            // Sin hilo no hay trabajo, pero el PendingResult no puede quedar huerfano (ANR).
-            if (pending != null) pending.finish();
-        }
+        // goAsync mantiene vivo el receptor mientras el trabajo corre fuera del hilo principal;
+        // puede ser null fuera de un receptor real. Todo el cuerpo vive en ProviderUpdate.
+        ProviderUpdate.onUpdate(ctx, awm, ids, goAsync(), compact());
     }
 
     @Override

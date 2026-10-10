@@ -236,11 +236,20 @@ public class LoginActivity extends Activity {
         WidgetUpdateJob.runNow(this);
     }
 
+    /** true mientras un cierre de sesion esta en curso (solo se toca en el hilo principal). */
+    private final java.util.concurrent.atomic.AtomicBoolean loggingOut =
+            new java.util.concurrent.atomic.AtomicBoolean();
+
     private void logout() {
         // El borrado (Keystore, commit, barrido de la cache, widgets) va a un hilo: en el
         // principal, con una cache de WebView grande, "Cerrar sesion" daba ANR. Aqui, en el
         // principal, solo queda lo que exige la instancia del WebView.
-        Session.logoutAsync(this, ok -> {
+        // Mientras dura, los botones quedan inactivos: un doble toque lanzaba dos cierres y el
+        // segundo (sin nada que borrar) podia decir "no se pudo cerrar" cuando SI se cerro; y un
+        // login guardado a mitad de un cierre se quedaba sin job.
+        View[] buttons = {findViewById(R.id.btn_logout), findViewById(R.id.btn_logout_intro),
+                findViewById(R.id.btn_start), findViewById(R.id.btn_done)};
+        guardedLogout(loggingOut, buttons, cb -> Session.logoutAsync(this, cb), ok -> {
             if (isFinishing() || isDestroyed()) return;
             wipeWebView();        // el WebView pudo quedar con cookies de un login anterior
             showIntro();
@@ -250,6 +259,33 @@ public class LoginActivity extends Activity {
                 ((TextView) findViewById(R.id.intro_status)).setText(R.string.logout_failed);
             }
         });
+    }
+
+    /**
+     * El cierre de sesion de un solo toque. Devuelve false (y no hace nada) si ya hay uno en
+     * curso. Los botones se reactivan ANTES de `after`, y tambien si el cierre ni arranca: nunca
+     * quedan muertos. Aparte de la pantalla para poder probarlo sin cerrar ninguna sesion.
+     */
+    static boolean guardedLogout(java.util.concurrent.atomic.AtomicBoolean busy, View[] buttons,
+                                 java.util.function.Consumer<java.util.function.Consumer<Boolean>> start,
+                                 java.util.function.Consumer<Boolean> after) {
+        if (!busy.compareAndSet(false, true)) return false;
+        setEnabled(buttons, false);
+        try {
+            start.accept(ok -> {
+                setEnabled(buttons, true);
+                busy.set(false);
+                after.accept(ok);
+            });
+        } catch (RuntimeException | Error e) {
+            setEnabled(buttons, true);
+            busy.set(false);
+        }
+        return true;
+    }
+
+    private static void setEnabled(View[] views, boolean enabled) {
+        for (View v : views) v.setEnabled(enabled);
     }
 
     /**

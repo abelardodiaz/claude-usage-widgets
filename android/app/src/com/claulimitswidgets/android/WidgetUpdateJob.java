@@ -381,12 +381,44 @@ public class WidgetUpdateJob extends JobService {
     /** `onStopJob`: false, un reintento con la espera del sistema solo sumaria consultas. */
     static final boolean RETRY_ON_STOP = false;
 
+    /** Los trabajos en marcha, por id: `onStopJob` avisa al hilo trabajador por aqui. */
+    static final java.util.Map<Integer, Cancel> RUNNING =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
     @Override
     public boolean onStartJob(JobParameters params) {
         Context app = getApplicationContext();
-        return runJob(r -> new Thread(r, "cuw-job").start(), () -> countAll(app), () -> cancel(app),
-                () -> new UsageRefresher(app).refresh(), Session.EPOCH::get,
+        return startJob(RUNNING, params.getJobId(), r -> new Thread(r, "cuw-job").start(),
+                () -> countAll(app), () -> new SessionStore(app).isAbsent(), () -> cancel(app),
+                c -> new UsageRefresher(app, c).refresh(), Session.EPOCH::get,
                 s -> paintAll(app, s), () -> jobFinished(params, RESCHEDULE_ON_FINISH));
+    }
+
+    /**
+     * `runJob` con un aviso de corte propio: queda registrado por id mientras el hilo trabaja y
+     * {@link #stopJob} lo dispara. Un trabajo cortado ni pinta (no hay resultado que valga) ni
+     * llama a `jobFinished` (el sistema ya lo dio por terminado). Todo inyectado, para la prueba.
+     */
+    static boolean startJob(java.util.Map<Integer, Cancel> running, int jobId,
+                            java.util.concurrent.Executor spawn,
+                            java.util.function.IntSupplier widgets,
+                            java.util.function.BooleanSupplier noSessionFile, Runnable cancelJob,
+                            java.util.function.Function<Cancel, Snapshot> refresh,
+                            LongSupplier epoch, Consumer<Snapshot> sink, Runnable finish) {
+        final Cancel cancel = new Cancel();
+        running.put(jobId, cancel);
+        boolean started = runJob(spawn, widgets, noSessionFile, cancelJob,
+                () -> refresh.apply(cancel), epoch,
+                s -> { if (!cancel.isCancelled()) sink.accept(s); },
+                () -> { if (running.remove(jobId, cancel)) finish.run(); });
+        if (!started) running.remove(jobId, cancel);
+        return started;
+    }
+
+    /** El sistema corto el trabajo `jobId`: el hilo trabajador aborta la red en curso. */
+    static void stopJob(java.util.Map<Integer, Cancel> running, int jobId) {
+        Cancel c = running.remove(jobId);
+        if (c != null) c.cancel();
     }
 
     /** `finish` como mucho una vez: dos avisos de `jobFinished` por el mismo trabajo son un error. */
@@ -405,7 +437,7 @@ public class WidgetUpdateJob extends JobService {
      * siguiente ciclo reintenta.
      */
     static boolean runJob(java.util.concurrent.Executor spawn, java.util.function.IntSupplier widgets,
-                          Runnable cancel, Supplier<Snapshot> refresh, LongSupplier epoch,
+                          java.util.function.BooleanSupplier noSessionFile, Runnable cancel, Supplier<Snapshot> refresh, LongSupplier epoch,
                           Consumer<Snapshot> sink, Runnable finish) {
         Runnable done = once(finish);
         try {
@@ -413,7 +445,10 @@ public class WidgetUpdateJob extends JobService {
                 try {
                     // El dueno quito el ultimo widget (o el sistema no llamo a onDisabled): no hay
                     // a quien actualizar ni razon para gastar una consulta ni seguir despertando.
-                    if (widgets.getAsInt() == 0) {
+                    // Tampoco hay a quien consultar sin sesion: ni archivo de sesion (no el "no se
+                    // puede leer" de hasSession(): un hipo del Keystore no apaga el job).
+                    // LoginActivity.scheduleAfterLogin lo reprograma al entrar.
+                    if (widgets.getAsInt() == 0 || noSessionFile.getAsBoolean()) {
                         cancel.run();
                         done.run();
                         return;
@@ -431,8 +466,15 @@ public class WidgetUpdateJob extends JobService {
 
     @Override
     public boolean onStopJob(JobParameters params) {
-        // El sistema corto el trabajo (se perdio la red, ahorro de bateria). No se pide
-        // reintento propio: el periodico vuelve a correr en su ciclo.
+        // El sistema corto el trabajo (se perdio la red, ahorro de bateria). Se avisa al hilo para
+        // que aborte la conexion en vez de seguir hasta agotar los timeouts. No se pide reintento
+        // propio: el periodico vuelve a correr en su ciclo.
+        return onStop(params == null ? -1 : params.getJobId());
+    }
+
+    /** `onStopJob` sin `JobParameters` (que una prueba no puede construir): corta el trabajo `jobId`. */
+    boolean onStop(int jobId) {
+        stopJob(RUNNING, jobId);
         return RETRY_ON_STOP;
     }
 }
