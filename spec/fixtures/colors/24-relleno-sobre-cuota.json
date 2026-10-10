@@ -1,0 +1,1 @@
+{"description": "Relleno de hoy: gastado por encima del cupo; la fraccion NO se acota (1.5), la UI la acota a [0, 1] solo para dibujar", "input": {"bar": "today_fill", "today_used": 15, "quota_today": 10}, "expected": {"state": "ok", "fraction": 1.5}}

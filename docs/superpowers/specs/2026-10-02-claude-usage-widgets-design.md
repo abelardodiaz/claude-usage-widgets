@@ -97,14 +97,18 @@ El prototipo hace algunas simplificaciones; la versión definitiva las corrige:
 - **Hoy:** consumido = suma de deltas del día local. Cupo de hoy =
   `(100 − % al iniciar el día) / max(días que faltan para el reinicio, 1)`. Adaptativo: si vas
   adelantado el cupo baja, si ahorras sube. Si no hay muestra previa a hoy, se marca "parcial,
-  registrando desde HH:MM".
+  registrando desde HH:MM". Si la ventana semanal se reinició hoy, "hoy" empieza en el reinicio
+  (R4), y en la gráfica de 7 días la columna de hoy muestra ese consumo (`today_used`), no el
+  del día entero.
 - **Proyección:** sesión = ritmo promedio desde que abrió la ventana de 5 h. Semana = ritmo de
   las **últimas 24 h** (o desde el inicio de la ventana si lleva menos), porque el promedio de
   toda la semana esconde un día intenso. *Corrección respecto al prototipo,* que usaba el
   promedio de toda la ventana. Salida: hora estimada de 100 % y si cae antes del reinicio.
 - **Colores (R7, con fixtures propios en `spec/fixtures/colors/`):** verde < 60 %, ámbar < 85 %,
   rojo ≥ 85 %. La barra "hoy" usa el cociente consumido/cupo (< 0.7 verde, < 1 ámbar, ≥ 1 rojo);
-  gris si no hay cupo (nulo o 0) y **rojo si el cupo es negativo** (cuota semanal ya rebasada).
+  gris solo si el cupo no se puede calcular (nulo) y **rojo si el cupo es 0 o negativo** (cuota
+  semanal justo agotada o ya rebasada). El relleno de esa barra (estado `unknown`/`exhausted`/`ok`
+  y fracción gastada) también sale del núcleo (R7, `today_fill`).
   En la barra semanal, una marca indica el ritmo parejo (fracción transcurrida de la ventana).
 
 ### 3.4 Sondeo y errores
@@ -153,7 +157,7 @@ El prototipo hace algunas simplificaciones; la versión definitiva las corrige:
   `TYPE_APPLICATION_OVERLAY` que muestra el % de sesión en un círculo de color; al tocarla se
   expande al panel completo. Requiere permiso de superposición, pedido con explicación previa.
 - **Build:** `android/build.sh` con `aapt2` + `javac` + `d8` + `apksigner`, el mismo script en el
-  teléfono (Termux) y en Ubuntu (CI). `minSdk 29`, `targetSdk 34`. Sin `zipalign` (no existe en
+  teléfono (Termux) y en Ubuntu (CI). `minSdk 31`, `targetSdk 34`. Sin `zipalign` (no existe en
   Termux y no hace falta: verificado en W0). Referencia (no base): `android/spikes/w0/`, desechable; W3 no lo hereda (ver "Lo que W3 NO debe
   copiar" en el reporte del spike A2).
 - **Firma:** builds de prueba con llave de debug en el teléfono; el APK de release se firma

@@ -1,0 +1,31 @@
+{
+  "description": "R0/R4: partial compara t < day_start a milisegundos con piso. day_start = 14:00:00.0009 (reinicio con fraccion) y la unica muestra anterior es de 14:00:00.0005, 0.4 ms antes: en milisegundos las dos caen en 14:00:00.000, no es anterior y partial es true. En nanosegundos si seria anterior y partial saldria false",
+  "input": {
+    "tz": "-06:00",
+    "now": "2026-10-09T18:00:00-06:00",
+    "weekly": {
+      "percent": 4,
+      "resets_at": "2026-10-16T14:00:00.0009-06:00"
+    },
+    "samples": [
+      {
+        "t": "2026-10-09T14:00:00.0005-06:00",
+        "percent": 1,
+        "resets_at": "2026-10-16T14:00:00.0009-06:00"
+      },
+      {
+        "t": "2026-10-09T18:00:00-06:00",
+        "percent": 4,
+        "resets_at": "2026-10-16T14:00:00.0009-06:00"
+      }
+    ]
+  },
+  "expected": {
+    "per_day": {
+      "2026-10-09": 3
+    },
+    "today_used": 3,
+    "quota_today": 14.142857,
+    "partial": true
+  }
+}

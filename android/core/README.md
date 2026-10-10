@@ -29,8 +29,8 @@ Todo con `-Werror`. Sale con código distinto de 0 si algo falla. No necesita Gr
 | `Projection` | R5 y R6: cuándo se llega al 100 % |
 | `Colors` | R7 |
 
-`UsageModel`, `Bar`, `ScopedLimit`, `BreakdownRow`, `Sample`, `DayUsage`, `Forecast`, `Color` y
-`Source` son el modelo; no llevan lógica.
+`UsageModel`, `Bar`, `ScopedLimit`, `BreakdownRow`, `Sample`, `DayUsage`, `Forecast`, `Color`,
+`TodayState`, `TodayFill` y `Source` son el modelo; no llevan lógica.
 
 ## Por qué el corredor es propio
 
@@ -44,13 +44,15 @@ fixtures con las tolerancias de R0 (1 s en instantes, 0.001 en números).
 bash android/core/mutantes.sh
 ```
 
-Rompe la implementación a propósito —veintidós mutaciones, catorce de ellas sobre el "hoy" de R4— y comprueba que el corredor
-las caza. Un corredor que nunca falla no prueba nada. No forma parte del build.
+Rompe la implementación a propósito —veintinueve mutaciones, una por llamada a `probar`:
+quince sobre el "hoy" de R4 (tres de ellas, las de resolución en milisegundos de R0), ocho sobre
+los colores y el relleno de hoy de R7, y seis sobre el resto (dos de R0, una del reparto por día de
+R3, y una de R1, R5 y R6)— y comprueba que el corredor las caza. Un corredor que nunca falla no prueba nada. No forma parte del build.
 
 ## Notas de portabilidad
 
 - `instant.atZone(tz).toLocalDate()` y no `LocalDate.ofInstant(...)`, que es de Java 9: Android
-  trae `java.time` desde API 26 con la superficie de Java 8, y el `minSdk` es 29.
+  trae `java.time` desde API 26 con la superficie de Java 8, y el `minSdk` es 31.
 - Zonas IANA de verdad (`ZoneId`), nunca desplazamiento fijo. El `tz` de los fixtures es entrada;
   en producción sale de `ZoneId.systemDefault()`.
 - `test/AndroidSmoke` existe para correr el núcleo bajo ART y comprobar justo eso.

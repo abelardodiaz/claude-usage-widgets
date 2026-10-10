@@ -1,0 +1,1 @@
+{"description": "Relleno de hoy: nada gastado con cuota positiva, fraccion 0", "input": {"bar": "today_fill", "today_used": 0, "quota_today": 14.285714}, "expected": {"state": "ok", "fraction": 0}}

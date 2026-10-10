@@ -8,6 +8,14 @@
 >
 > **F1 (núcleo `android/core`) ya está cerrada y mergeada** (PR #11, `cee8c06`). Este plan cubre
 > F2 a F6.
+>
+> **2026-10-09: el `minSdk` sube de 29 a 31** (decisión del dueño; el manifiesto se cambia en la
+> rama de Android). Este plan se actualizó donde fija el nivel mínimo. Lo que explica por qué se
+> evitan en `RemoteViews` llamadas de API 30-31 (`setColorStateList`, `setViewLayoutWidth`) sigue
+> siendo correcto, solo que ya no es obligatorio. **Ojo con el canario de lint** (Tarea 2.4): una
+> API 31 ya no hace fallar a lint con `minSdk` 31, así que el canario tiene que inyectar una API
+> posterior, p. ej. `android.app.LocaleManager` (API 33). Los registros de lo que se verificó con
+> el `minSdk` 29 se dejan como pasaron.
 
 **Objetivo:** un APK instalable que muestre en la pantalla de inicio, en un widget 4×1 y 4×2, el
 uso real de la cuenta de Claude del usuario —sesión de 5 h, semana, cuota de hoy y proyección—
@@ -33,13 +41,13 @@ sección **"Lo que W3 NO debe copiar del spike"**.
 |---|---|---|
 | `aapt2` | 2.20-android-16.0.0_r4 | Termux |
 | `javac` / `java` | OpenJDK 21.0.12 | el núcleo se compila con `--release 8` |
-| `d8` | 9.2.4-dev | `--min-api 29` |
+| `d8` | 9.2.4-dev | `--min-api 31` |
 | `apksigner` | 0.9 | v2/v3; **sin `zipalign`** (no existe en Termux y no hace falta: verificado en W0) |
 | `android.jar` | `~/android/platforms/android-34/android.jar` | `ANDROID_JAR` lo puede sobrescribir |
-| `minSdk` / `targetSdk` | 29 / 34 | |
+| `minSdk` / `targetSdk` | 31 / 34 | era 29 hasta el 2026-10-09 |
 | `actions/checkout` | `3d3c42e5aac5ba805825da76410c181273ba90b1` # v7.0.1 | mismo SHA que ya usa el repo |
 | `actions/setup-java` | `de7274f081f381c8f8158605e0321c36c376e2e6` # v6.0.1 | temurin 17 |
-| Dispositivo de prueba | Android 17 (SDK 37), One UI | el `minSdk` 29 **no se prueba en hardware**: ver Review Focus |
+| Dispositivo de prueba | Android 17 (SDK 37), One UI | el `minSdk` 31 **no se prueba en hardware**: ver Review Focus |
 
 **Sin Gradle, sin androidx, sin ninguna dependencia externa.** Todo lo que no esté en `android.jar`
 se escribe aquí. Es una restricción del proyecto, no una preferencia: hace que compilar en el
@@ -94,12 +102,13 @@ Cada una tiene su prueba asignada a la tarea que posee el código.
    → Tarea 4.4.
 5. **Widget añadido sin sesión.** Primera instalación: alguien pone el widget antes de iniciar
    sesión. Debe invitar a hacerlo, no quedarse en blanco ni mostrar ceros. → Tarea 4.3, paso 4.
-6. **`minSdk` 29 sin hardware que lo pruebe.** El teléfono de pruebas es Android 17 (SDK 37), así
-   que todo lo que este plan afirma sobre API 29 sale de la documentación, no de ejecutarlo. Las
+6. **`minSdk` 31 sin hardware que lo pruebe.** El teléfono de pruebas es Android 17 (SDK 37), así
+   que todo lo que este plan afirma sobre API 31 sale de la documentación, no de ejecutarlo. Las
    llamadas en riesgo, todas en `RemoteViews`: `setProgressBar` (API 1), `setViewVisibility`
    (API 1), `setTextViewText` (API 1), `setOnClickPendingIntent` (API 1) — elegidas a propósito
    por ser antiguas. Las que **no** se usan y habrían sido naturales: `setViewLayoutWidth`,
-   `setColorStateList` y `setCompoundButtonChecked`, todas API 31. → sin prueba asignada; va en
+   `setColorStateList` y `setCompoundButtonChecked`, todas API 31 (con el `minSdk` 31 ya
+   estarían disponibles, pero no hacen falta). → sin prueba asignada; va en
    "No ejercitado en W3".
 
 ## Decisiones abiertas (las confirma el dueño antes de F3)
@@ -357,7 +366,7 @@ Crear `android/app/AndroidManifest.xml`:
 
     <!-- lint lee el minSdk de AQUI, no de las banderas de aapt2: sin esto asumiria minSdk 1
          y NewApi marcaria medio SDK. Los valores tienen que coincidir con los de build.sh. -->
-    <uses-sdk android:minSdkVersion="29" android:targetSdkVersion="34" />
+    <uses-sdk android:minSdkVersion="31" android:targetSdkVersion="34" />
 
     <uses-permission android:name="android.permission.INTERNET" />
 
@@ -438,7 +447,7 @@ import android.widget.TextView;
 import com.claudewidgets.core.Colors;
 
 /**
- * En F2 solo demuestra que el nucleo quedo enlazado y dexeado para API 29. En F3 se convierte
+ * En F2 solo demuestra que el nucleo quedo enlazado y dexeado para API 31. En F3 se convierte
  * en el login de verdad.
  */
 public class LoginActivity extends Activity {
@@ -495,7 +504,7 @@ ANDROID_JAR="${ANDROID_JAR:-$HOME/android/platforms/android-34/android.jar}"
 KEYSTORE="${KEYSTORE:-$HOME/.android-cuw-debug.keystore}"
 KEYSTORE_PASSWORD="${KEYSTORE_PASSWORD:-android}"
 KEY_ALIAS="${KEY_ALIAS:-cuwdebug}"
-MIN_SDK=29
+MIN_SDK=31
 TARGET_SDK=34
 OUT=build
 APK="$OUT/claude-usage.apk"
@@ -695,7 +704,7 @@ git commit -m "test: APK instalado y comprobado en el telefono"
 —la palabra `red` es la que R7 asigna a 85, asi que el nucleo corrio dentro de la app—. Sin ajustes
 en el codigo: no hizo falta tocar nada. `adb logcat -d -s AndroidRuntime:E` salio **vacio** y no hay
 `NoClassDefFoundError`, de modo que `d8` si metio el nucleo entero. `dumpsys` confirma
-`minSdk=29 targetSdk=34 versionName=0.0.0-dev`.
+`minSdk=29 targetSdk=34 versionName=0.0.0-dev` (registro de entonces; hoy el `minSdk` es 31).
 
 ### Tarea 2.4: Job de CI
 
@@ -748,10 +757,10 @@ jobs:
         run: |
           set -euo pipefail
           unzip -lv android/app/build/claude-usage.apk | grep resources.arsc | grep -q Stored
-      # La UNICA comprobacion de que el codigo respeta minSdk 29. No la hace javac: con
+      # La UNICA comprobacion de que el codigo respeta minSdk 31. No la hace javac: con
       # android.jar en el classpath, las APIs java.* disponibles son las de la API 34, y ni
-      # `--release 8` lo evita. Y tampoco hay un dispositivo API 29 donde probarlo.
-      - name: lint NewApi (minSdk 29)
+      # `--release 8` lo evita. Y tampoco hay un dispositivo API 31 donde probarlo.
+      - name: lint NewApi (minSdk 31)
         run: |
           set -euo pipefail
           lint --check NewApi --exitcode \
@@ -772,8 +781,9 @@ El `sdkmanager` del paso anterior instala tambien `cmdline-tools;latest`, que es
    decorativo. Hay que buscar `sdkmanager` dentro del SDK, mirar su código real con `PIPESTATUS`, y
    comprobar con `test` que `android.jar`, `aapt2` y `lint` existen de verdad.
 2. **Un canario de lint en cada corrida.** `lint` también pasa cuando no analiza nada ("No issues
-   found"), así que el job copia `android/app`, le inyecta una llamada a `VibratorManager` (API 31)
-   y **exige que lint falle con `[NewApi]`**; si no falla, el job falla. Sin esto, que lint esté
+   found"), así que el job copia `android/app`, le inyecta una llamada a una API posterior al
+   `minSdk` (era `VibratorManager`, API 31; con `minSdk` 31 tiene que ser p. ej. `LocaleManager`,
+   API 33) y **exige que lint falle con `[NewApi]`**; si no falla, el job falla. Sin esto, que lint esté
    sano hoy no dice nada de mañana.
 
 Si se cambia la línea de `LoginActivity` donde el canario inyecta la llamada, hay que ajustar su
@@ -786,11 +796,11 @@ alternativa seria no comprobar el `minSdk` en ningun lado.
 - [ ] **Paso 1b: Hacer fallar a lint a proposito**
 
 Una comprobacion que nunca ha fallado no sirve. En una rama de usar y tirar, meter una llamada a
-una API posterior a 29 en `LoginActivity`:
+una API posterior a 31 en `LoginActivity`:
 
 ```java
-        // API 31: deberia hacer fallar a lint con minSdk 29
-        android.os.VibratorManager vm = getSystemService(android.os.VibratorManager.class);
+        // API 33: deberia hacer fallar a lint con minSdk 31
+        android.app.LocaleManager lm = getSystemService(android.app.LocaleManager.class);
 ```
 
 Empujar, comprobar que el job **falla** con `NewApi`, guardar la salida para el PR, y borrar la
@@ -3316,6 +3326,7 @@ import android.widget.RemoteViews;
 
 import com.claudewidgets.core.Color;
 import com.claudewidgets.core.Colors;
+import com.claudewidgets.core.TodayFill;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -3356,10 +3367,11 @@ public final class WidgetRenderer {
                         Colors.bar(s.model.session.percent));
                 bar(v, WEEKLY_BARS, s.model.weekly.percent,
                         Colors.bar(s.model.weekly.percent));
-                // Esto es DIBUJO, no regla: cuanto se llena la barra. El COLOR lo decide
-                // `Colors.today`, que es R7. No se toca uno pensando en el otro.
-                double todayPct = s.day.quotaToday == null || s.day.quotaToday <= 0
-                        ? 0 : 100 * s.day.todayUsed / s.day.quotaToday;
+                // Relleno y color vienen de R7 (`Colors.todayFill` y `Colors.today`): aqui no
+                // se recalcula nada. Sin cuota (UNKNOWN) la fraccion es nula y la barra va
+                // vacia; agotada (EXHAUSTED) llega 1, llena. `bar` acota a [0, 100] al dibujar.
+                TodayFill fill = Colors.todayFill(s.day.todayUsed, s.day.quotaToday);
+                double todayPct = fill.fraction == null ? 0 : 100 * fill.fraction;
                 bar(v, TODAY_BARS, todayPct,
                         Colors.today(s.day.todayUsed, s.day.quotaToday));
                 v.setTextViewText(R.id.today, ctx.getString(R.string.w_today,
@@ -4233,11 +4245,11 @@ Lo que este plan **no** demuestra, escrito en un solo sitio para que nadie lo le
    dispare de verdad solo se sabrá si ocurre en la prueba de 24 h.
 2. **Un `401` real del servidor.** Igual: la rama está probada por unidad; el recorrido prueba
    "cerrar sesión", que es otro camino.
-3. **API 29 en hardware.** El teléfono de pruebas es Android 17 (SDK 37). El nivel de API lo
+3. **API 31 en hardware.** El teléfono de pruebas es Android 17 (SDK 37). El nivel de API lo
    comprueba **lint (`NewApi`) en el CI**, no el compilador ni un dispositivo: con `android.jar`
    en el classpath, `javac` ve las APIs de la 34 y ni `--release 8` lo impide. Las llamadas de
    `RemoteViews` se eligieron entre las de API 1 de todas formas. Lo que sigue sin probarse es el
-   **comportamiento** en un dispositivo API 29, no la disponibilidad de las APIs.
+   **comportamiento** en un dispositivo API 31, no la disponibilidad de las APIs.
 4. **Otros lanzadores.** `exported="false"` en el `AppWidgetProvider` está verificado en One UI.
    Nova, Pixel Launcher y los demás no se han probado.
 5. **El plan B del WebView bajo `JobScheduler`.** El spike midió `postDelayed` con el proceso

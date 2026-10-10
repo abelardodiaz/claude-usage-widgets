@@ -32,6 +32,7 @@ public final class AndroidSmoke {
         System.out.println("project : " + Projection.session(50,
                 Instant.parse("2026-10-02T21:00:00Z"), Instant.parse("2026-10-02T18:00:00Z")));
         System.out.println("colors  : " + Colors.bar(85) + " " + Colors.today(0.5, -0.266667)
+                + " " + Colors.todayFill(0.5, 0.0).state
                 + " " + Colors.paceMark(Instant.parse("2026-10-10T06:00:00Z"), now));
 
         boolean ok = Math.abs(d.perDay.getOrDefault("2026-11-01", 0.0) - 25.0) < 0.001;

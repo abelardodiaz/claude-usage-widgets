@@ -16,7 +16,8 @@ public final class Assert {
 
     public void near(String what, double expected, double actual, double tol) {
         checks++;
-        if (Math.abs(expected - actual) > tol) {
+        // Negada a proposito: con NaN `abs(...) > tol` es falso y el fallo pasaria en verde.
+        if (!(Math.abs(expected - actual) <= tol)) {
             failures.add(what + ": esperado <" + expected + "> obtenido <" + actual
                     + "> (tolerancia " + tol + ")");
         }

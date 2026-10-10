@@ -17,15 +17,25 @@ public final class Colors {
     }
 
     /**
-     * Barra de hoy. El orden de R7 importa: el nulo va primero porque `quotaToday` es un
-     * {@link Double} y compararlo antes de descartarlo lanzaria NullPointerException.
+     * Relleno de la barra de hoy (R7). El orden importa: el nulo va primero porque `quotaToday`
+     * es un {@link Double} y compararlo antes de descartarlo lanzaria NullPointerException.
+     */
+    public static TodayFill todayFill(double todayUsed, Double quotaToday) {
+        if (quotaToday == null) return new TodayFill(TodayState.UNKNOWN, null);
+        double q = quotaToday;
+        if (q <= 0) return new TodayFill(TodayState.EXHAUSTED, 1.0);  // la semana ya se agoto
+        return new TodayFill(TodayState.OK, todayUsed / q);              // crudo, sin acotar
+    }
+
+    /**
+     * Barra de hoy, sobre {@link #todayFill}: UNKNOWN -> gris; EXHAUSTED (cuota <= 0) -> rojo;
+     * OK, por el cociente (nunca multiplicacion cruzada): verde < 0.7, ambar < 1, rojo >= 1.
      */
     public static Color today(double todayUsed, Double quotaToday) {
-        if (quotaToday == null) return Color.GRAY;
-        double q = quotaToday;
-        if (q < 0) return Color.RED;      // la cuota semanal ya se agoto
-        if (q == 0) return Color.GRAY;
-        double ratio = todayUsed / q;     // sobre el cociente, no con multiplicacion cruzada
+        TodayFill fill = todayFill(todayUsed, quotaToday);
+        if (fill.state == TodayState.UNKNOWN) return Color.GRAY;
+        if (fill.state == TodayState.EXHAUSTED) return Color.RED;
+        double ratio = fill.fraction;
         if (ratio < 0.7) return Color.GREEN;
         if (ratio < 1) return Color.AMBER;
         return Color.RED;

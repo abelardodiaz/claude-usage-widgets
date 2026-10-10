@@ -5,7 +5,7 @@ use jiff::tz::TimeZone;
 use jiff::{Span, Timestamp};
 use serde::Serialize;
 
-use crate::colors::{Color, bar_color, pace_mark, today_color};
+use crate::colors::{Color, TodayState, bar_color, pace_mark, today_color, today_fill};
 use crate::credentials::CredentialError;
 use crate::history::{prepare_samples, today_stats};
 use crate::model::{Projection, Sample, Usage};
@@ -65,6 +65,10 @@ pub struct TodayView {
     pub partial: bool,
     pub tracking_since: Option<Timestamp>,
     pub color: Color,
+    /// R7: "unknown" sin cuota, "exhausted" con cuota <= 0, "ok" si no.
+    pub state: TodayState,
+    /// R7: fraccion gastada del cupo, cruda (puede pasar de 1); la UI la acota para dibujar.
+    pub fraction: Option<f64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -122,21 +126,32 @@ pub fn build(
     let stats = today_stats(now, &usage.weekly, samples, tz);
     let prepared = prepare_samples(samples, now);
     let today = local_date(now, tz);
+    let today_key = day_key(today);
+    // R4: la columna de hoy muestra `today_used` (lo que cuenta contra la cuota semanal actual),
+    // no `per_day[hoy]`. Coinciden salvo el dia de un reinicio semanal, en el que `per_day[hoy]`
+    // tambien suma lo de la ventana anterior. Los dias pasados salen de `per_day`.
     view.history = (0..7_i64)
         .rev()
         .filter_map(|back| today.checked_sub(Span::new().days(back)).ok())
         .map(|date| {
             let key = day_key(date);
-            let used = stats.per_day.get(&key).copied().unwrap_or(0.0);
+            let used = if key == today_key {
+                stats.today_used
+            } else {
+                stats.per_day.get(&key).copied().unwrap_or(0.0)
+            };
             DayUsed { date: key, used }
         })
         .collect();
+    let fill = today_fill(stats.today_used, stats.quota_today);
     view.today = Some(TodayView {
         used: stats.today_used,
         quota: stats.quota_today,
         partial: stats.partial,
         tracking_since: prepared.first().map(|s| s.t),
         color: today_color(stats.today_used, stats.quota_today),
+        state: fill.state,
+        fraction: fill.fraction,
     });
     view.session_color = Some(bar_color(usage.session.percent));
     view.weekly_color = Some(bar_color(usage.weekly.percent));
@@ -292,7 +307,8 @@ mod tests {
 
     #[test]
     fn colores_de_hoy_vienen_del_nucleo() {
-        // D12: cuota nula o cero -> gris; negativa (semana agotada) -> rojo. La UI no decide.
+        // R7: cuota nula -> gris (unknown); cero o negativa (semana agotada) -> rojo (exhausted,
+        // barra llena). La UI no decide.
         let tz = zone_from_spec("-06:00").unwrap();
         let now = ts("2026-10-06T12:00:00-06:00");
         let mut u = usage();
@@ -318,7 +334,9 @@ mod tests {
         ];
         let today = build(&snapshot, &samples, now, &tz, "es").today.unwrap();
         assert_eq!(today.quota, Some(0.0));
-        assert_eq!(today.color, Color::Gray);
+        assert_eq!(today.color, Color::Red);
+        assert_eq!(today.state, TodayState::Exhausted);
+        assert_eq!(today.fraction, Some(1.0));
 
         u.weekly.percent = 110.0;
         let snapshot = Snapshot {
@@ -328,6 +346,7 @@ mod tests {
         let today = build(&snapshot, &[], now, &tz, "es").today.unwrap();
         assert!(today.quota.unwrap() < 0.0);
         assert_eq!(today.color, Color::Red);
+        assert_eq!(today.state, TodayState::Exhausted);
 
         u.weekly.resets_at = None;
         let snapshot = Snapshot {
@@ -337,7 +356,63 @@ mod tests {
         let today = build(&snapshot, &[], now, &tz, "es").today.unwrap();
         assert_eq!(today.quota, None);
         assert_eq!(today.color, Color::Gray);
-        assert_eq!(serde_json::to_value(today.color).unwrap(), "gray");
+        assert_eq!(today.state, TodayState::Unknown);
+        assert_eq!(today.fraction, None);
+        let json = serde_json::to_value(&today).unwrap();
+        assert_eq!(json["color"], "gray");
+        assert_eq!(json["state"], "unknown");
+        assert!(json["fraction"].is_null());
+    }
+
+    #[test]
+    fn grafica_el_dia_del_reinicio_usa_today_used() {
+        // R4: reinicio semanal hoy a las 14:00 (como history/19). per_day[hoy] = 14.4 suma la
+        // manana de la ventana anterior; la columna de hoy muestra today_used = 4. Ayer no cambia.
+        let tz = zone_from_spec("-06:00").unwrap();
+        let now = ts("2026-10-09T18:00:00-06:00");
+        let old = Some(ts("2026-10-09T14:00:00-06:00"));
+        let new = Some(ts("2026-10-16T14:00:00-06:00"));
+        let mut u = usage();
+        u.weekly = Window {
+            percent: 4.0,
+            resets_at: new,
+        };
+        let snapshot = Snapshot {
+            usage: Some(u),
+            ..Snapshot::default()
+        };
+        let samples = vec![
+            Sample {
+                t: ts("2026-10-08T22:00:00-06:00"),
+                percent: 80.0,
+                resets_at: old,
+            },
+            Sample {
+                t: ts("2026-10-09T13:00:00-06:00"),
+                percent: 92.0,
+                resets_at: old,
+            },
+            Sample {
+                t: now,
+                percent: 4.0,
+                resets_at: new,
+            },
+        ];
+        let stats = today_stats(now, &snapshot.usage.as_ref().unwrap().weekly, &samples, &tz);
+        assert!((stats.per_day["2026-10-09"] - 14.4).abs() < 1e-9);
+        let v = build(&snapshot, &samples, now, &tz, "es");
+        assert_eq!(v.history[6].date, "2026-10-09");
+        assert!(
+            (v.history[6].used - 4.0).abs() < 1e-9,
+            "{}",
+            v.history[6].used
+        );
+        assert_eq!(v.history[5].date, "2026-10-08");
+        assert!((v.history[5].used - 1.6).abs() < 1e-9);
+        let today = v.today.unwrap();
+        assert!((today.used - v.history[6].used).abs() < 1e-12);
+        assert_eq!(today.state, TodayState::Ok);
+        assert!((today.fraction.unwrap() - 4.0 / (100.0 / 7.0)).abs() < 1e-9);
     }
 
     /// Recorre el JSON y junta todas las claves y todas las cadenas.

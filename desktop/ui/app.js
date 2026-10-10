@@ -83,12 +83,12 @@ function render() {
 
   const u = data.usage;
   const t = data.today;
-  const quotaText = t.quota == null ? T.noQuota : T.ofQuota + t.quota.toFixed(1) + "%";
+  // Estado, fraccion y color vienen decididos por Rust (R7); aqui no se recalcula nada.
+  const quotaText = t.state === "exhausted" ? T.exhausted
+    : t.quota == null ? T.noQuota : T.ofQuota + t.quota.toFixed(1) + "%";
   $("todayNum").textContent = t.used.toFixed(1) + "%" + quotaText + (t.partial ? " (" + T.partial + ")" : "");
-  // Ancho de la barra de hoy: sin cupo o cupo 0 -> vacia; cupo negativo (semana agotada) ->
-  // llena; si no, el cociente. El color ya viene decidido por Rust (R7).
-  const todayWidth = t.quota == null || t.quota === 0 ? 0 : t.quota < 0 ? 100 : (t.used / t.quota) * 100;
-  setBar($("todayBar"), todayWidth, paint(t.color));
+  // La fraccion llega cruda (puede pasar de 1); setBar la acota a [0, 100] solo para dibujar.
+  setBar($("todayBar"), t.fraction == null ? 0 : t.fraction * 100, paint(t.color));
 
   $("sPct").textContent = Math.round(u.session.percent) + "%";
   $("sReset").textContent = T.reset + when(u.session.resets_at);
@@ -126,12 +126,8 @@ function renderHist() {
   const max = Math.max(q || 0, ...h.map((d) => d.used), 1) * 1.15;
   const todayIso = h[h.length - 1].date;
   const since = data.today.tracking_since;
-  // El dia de un reinicio semanal, la barra de hoy (per_day) suma lo de la semana anterior,
-  // que ya no cuenta contra el cupo (R4). Esa parte va abajo en gris. Umbral unico para la barra
-  // y la nota, que tambien descarta el ruido de redondeo de la resta.
-  const prevRaw = Math.max(h[h.length - 1].used - data.today.used, 0);
-  const prevToday = prevRaw >= 0.05 ? prevRaw : 0;
-  const prevNote = prevToday > 0 ? T.hist.prevWeek + prevToday.toFixed(1) + T.hist.prevWeekEnd : "";
+  // La columna de hoy ya viene de Rust con today_used, no con per_day[hoy] (R4): el dia de un
+  // reinicio semanal no lleva lo de la semana anterior.
   // La etiqueta del cupo va en el encabezado como leyenda, no sobre la linea: la barra de hoy
   // siempre es la de la derecha y su valor chocaba con la etiqueta cuando rondaba el cupo.
   const limit = q == null ? "" : `<div class="limit" style="bottom:${(q / max) * 78}px"></div>`;
@@ -142,18 +138,16 @@ function renderHist() {
         // Hoy lleva el color que decide el nucleo (R7); los dias pasados, gris neutro.
         const isToday = d.date === todayIso;
         const bg = isToday ? `;background:${paint(data.today.color)}` : "";
-        const prev = isToday ? prevToday : 0;
-        const prevPart = prev > 0 ? `<i style="height:${(prev / d.used) * 100}%"></i>` : "";
         return `<div class="col ${isToday ? "today" : ""}">
         <span class="v">${d.used > 0 ? d.used.toFixed(1) + "%" : ""}</span>
-        <div class="b" style="height:${(d.used / max) * 78}px${bg}">${prevPart}</div></div>`;
+        <div class="b" style="height:${(d.used / max) * 78}px${bg}"></div></div>`;
       }).join("")}
     </div>
     <div class="days">${h.map((d) => {
       const dt = new Date(d.date + "T12:00");
       return `<span class="${d.date === todayIso ? "today" : ""}">${d.date === todayIso ? T.todayShort : T.days[dt.getDay()]}</span>`;
     }).join("")}</div>
-    <div class="note">${T.hist.note}${prevNote}${since ? T.hist.since + esc(when(since)) + "." : ""}</div>`;
+    <div class="note">${T.hist.note}${since ? T.hist.since + esc(when(since)) + "." : ""}</div>`;
 }
 
 function renderMix() {

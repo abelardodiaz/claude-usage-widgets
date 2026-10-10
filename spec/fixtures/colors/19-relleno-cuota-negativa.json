@@ -1,0 +1,1 @@
+{"description": "Relleno de hoy: cuota negativa (semana por encima del 100 %) es exhausted con la barra llena (fraccion 1), sin calcular cociente", "input": {"bar": "today_fill", "today_used": 0.5, "quota_today": -0.266667}, "expected": {"state": "exhausted", "fraction": 1}}

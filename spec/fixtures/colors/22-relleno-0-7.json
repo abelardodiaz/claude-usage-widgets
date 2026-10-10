@@ -1,0 +1,1 @@
+{"description": "Relleno de hoy: cociente 0.7 exacto (umbral ambar de R7), fraccion cruda", "input": {"bar": "today_fill", "today_used": 7, "quota_today": 10}, "expected": {"state": "ok", "fraction": 0.7}}

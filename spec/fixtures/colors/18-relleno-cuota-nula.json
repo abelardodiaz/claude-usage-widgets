@@ -1,0 +1,1 @@
+{"description": "Relleno de hoy: sin cuota calculable (resets_at nulo o rancio) el estado es unknown y no hay fraccion", "input": {"bar": "today_fill", "today_used": 10, "quota_today": null}, "expected": {"state": "unknown", "fraction": null}}
