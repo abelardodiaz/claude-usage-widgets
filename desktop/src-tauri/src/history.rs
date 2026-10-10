@@ -101,7 +101,11 @@ fn window_start_today(
     weekly_resets_at
         .checked_sub(WEEK)
         .ok()
-        .filter(|start| midnight < *start && *start <= now)
+        // R0: a milisegundos con piso, como same_window y before_reset.
+        .filter(|start| {
+            let start = epoch_millis(*start);
+            epoch_millis(midnight) < start && start <= epoch_millis(now)
+        })
 }
 
 /// R4: consumo de la ventana de `weekly` desde `day_start`. Solo cuentan los aportes cuyo `b`
@@ -113,7 +117,11 @@ fn used_since(contribs: &[Contribution], day_start: Timestamp, weekly_resets_at:
         .map(|c| {
             let total = seconds_between(c.start, c.end);
             if total <= 0.0 {
-                if c.end >= day_start { c.delta } else { 0.0 }
+                if epoch_millis(c.end) >= epoch_millis(day_start) {
+                    c.delta
+                } else {
+                    0.0
+                }
             } else {
                 let inside = seconds_between(c.start.max(day_start), c.end).max(0.0);
                 c.delta * inside / total
@@ -178,7 +186,9 @@ pub fn today_stats(
                 .unwrap_or(0.0),
         ),
     };
-    let partial = !prepared.iter().any(|s| s.t < day_start);
+    let partial = !prepared
+        .iter()
+        .any(|s| epoch_millis(s.t) < epoch_millis(day_start));
     let quota_today = fresh_resets_at.map(|resets_at| {
         let base = (weekly.percent - today_used).max(0.0);
         let days_left = seconds_between(day_start, resets_at) / DAY.as_secs_f64();

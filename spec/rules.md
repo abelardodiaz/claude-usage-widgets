@@ -10,8 +10,10 @@ Las reglas con pasos numerados se evalúan **en ese orden**: la primera que apli
   no como texto, **a resolución de milisegundos**, y de una forma concreta porque cualquier otra
   hace divergir a las implementaciones:
   - Los dos operandos se llevan a **milisegundos desde la época con piso** (`toEpochMilli` en
-    Java, `div_euclid` en Rust) antes de comparar. Vale para `same_window` (R2) y para
-    `before_reset` (R5, R6).
+    Java, `div_euclid` en Rust) antes de comparar. Vale para `same_window` (R2), para
+    `before_reset` (R5, R6) y para las comparaciones de R4 con `day_start`:
+    `medianoche < inicio_ventana ≤ now`, `t < day_start` (`partial`) y `b.t ≥ day_start`
+    (intervalo de duración 0). Lo fija `history/31`.
   - `hits_at` se materializa como **piso en ms de `now`** más el **redondeo al milisegundo más
     cercano** de la duración en segundos.
   - `before_reset` compara esos dos enteros de milisegundos.
@@ -134,11 +136,14 @@ o si `|a.resets_at − b.resets_at| < 3600 s`.
   local de hoy (R0). En este orden:
   1. `weekly.resets_at` nulo, o `now ≥ weekly.resets_at` (dato rancio) → `day_start = medianoche`.
   2. Sea `inicio_ventana = weekly.resets_at − 7 días`. Si `medianoche < inicio_ventana ≤ now`
-     (la ventana semanal actual empezó **hoy**, después de las 00:00) →
+     (la ventana semanal actual empezó **hoy**, después de las 00:00; `inicio_ventana = now`
+     cuenta, `history/30`) →
      `day_start = inicio_ventana`. Lo de antes del reinicio es de la semana anterior y descuenta
      de un cupo que ya no existe.
   3. Si no → `day_start = medianoche`. Cubre todos los demás días (`inicio_ventana ≤ medianoche`,
-     incluido el reinicio exacto a las 00:00, `history/20`) y el dato incoherente
+     incluido el reinicio exacto a las 00:00: la desigualdad es estricta y lo fija `history/29`
+     con una muestra incoherente de la ventana vieja posterior a medianoche; con datos
+     coherentes las dos ramas dan lo mismo, `history/20`) y el dato incoherente
      `inicio_ventana > now` (`resets_at` a más de 7 días), que no se usa para recortar
      (`history/24`).
 
@@ -158,8 +163,9 @@ o si `|a.resets_at − b.resets_at| < 3600 s`.
 
     Si el intervalo dura 0 (`inicio = b.t`), el par aporta `delta` entero si `b.t ≥ day_start`
     y nada si no. Un par cuyo `b` es de otra ventana no aporta aunque caiga después de
-    `day_start` (`history/23`); los `resets_at` que oscilan menos de 3600 s cuentan como la
-    misma ventana (`history/23`, `27`).
+    `day_start` (`history/23`, `32`); los `resets_at` que oscilan menos de 3600 s cuentan como
+    la misma ventana (`history/23`, `27`). Un par que empieza antes de `day_start` aporta solo su
+    parte posterior (`history/27`, `33`).
 - `partial` = no existe ninguna muestra (depurada por R3 paso 1) con `t < day_start` (estricto:
   una muestra exactamente en `day_start` no cuenta como anterior; `history/07` y `21`). El día
   del reinicio basta una muestra de la mañana para que no sea parcial (`history/22`).

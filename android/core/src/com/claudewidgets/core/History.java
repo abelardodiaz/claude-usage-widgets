@@ -76,7 +76,9 @@ public final class History {
         double todayUsed = perDay.getOrDefault(today.toString(), 0.0);
         if (fresh) {
             Instant windowStart = weekly.resetsAt.minusSeconds((long) SEVEN_DAYS_SECONDS);
-            if (windowStart.isAfter(midnight) && !windowStart.isAfter(now)) {
+            // R0: a milisegundos con piso, como same_window y before_reset.
+            long startMs = windowStart.toEpochMilli();
+            if (startMs > midnight.toEpochMilli() && startMs <= now.toEpochMilli()) {
                 dayStart = windowStart;
                 todayUsed = usedSince(contribs, dayStart, weekly.resetsAt);
             }
@@ -85,7 +87,7 @@ public final class History {
         // R4: `partial` es estricto, una muestra exactamente en day_start no cuenta como anterior.
         boolean partial = true;
         for (Sample s : clean) {
-            if (s.t.isBefore(dayStart)) { partial = false; break; }
+            if (s.t.toEpochMilli() < dayStart.toEpochMilli()) { partial = false; break; }
         }
 
         Double quotaToday = null;
@@ -124,7 +126,7 @@ public final class History {
             if (!Projection.sameWindow(c.resetsAt, weeklyResetsAt)) continue;
             double total = Projection.seconds(c.start, c.end);
             if (total <= 0) {
-                if (!c.end.isBefore(dayStart)) used += c.delta;
+                if (c.end.toEpochMilli() >= dayStart.toEpochMilli()) used += c.delta;
                 continue;
             }
             Instant from = c.start.isAfter(dayStart) ? c.start : dayStart;
