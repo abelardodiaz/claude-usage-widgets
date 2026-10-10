@@ -62,7 +62,7 @@ WebView, ~3 MB de memoria frente a ~29 MB del widget completo (medido el 2026-10
 las dos barras con su reinicio y la marca de ritmo de la semana, y avisa al 50, 80 y 95 % de la
 cuota semanal. Desde la bandeja: intervalo de 3 o 5 min, siempre encima e iniciar con Windows.
 
-Descarga `claude-usage-widgets-lite_<versión>_x64.exe` del mismo
+A partir de v0.1.4, descarga `claude-usage-widgets-lite_<versión>_x64.exe` del mismo
 [Release](https://github.com/abelardodiaz/claude-usage-widgets/releases) y compáralo con
 `SHA256SUMS.txt`. Es un `.exe` portable, sin instalador ni actualizaciones automáticas. Tampoco
 está firmado, así que aplican los mismos avisos de SmartScreen y antivirus de arriba. Detalles
@@ -107,7 +107,7 @@ limits, today's budget, a weekly breakdown and a projection of when you would hi
   in with that account (with an API key there are no plan usage limits to show). The widget only
   reads the Claude Code token and never refreshes it. The installer is not code-signed, so SmartScreen may warn you:
   "More info" then "Run anyway". Updates are signed and verified by the app.
-- **Lite version (Windows):** `claude-usage-widgets-lite_<version>_x64.exe` in the same release.
+- **Lite version (Windows):** `claude-usage-widgets-lite_<version>_x64.exe` in the same release, from v0.1.4 on.
   Native Win32, one process, ~3 MB of RAM instead of ~29 MB; session and weekly bars only, no
   auto-update. Also unsigned. See [desktop/lite/README.md](desktop/lite/README.md).
 - **Android:** on the way. **Linux / macOS:** planned.

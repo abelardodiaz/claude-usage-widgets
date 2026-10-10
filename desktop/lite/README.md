@@ -32,7 +32,7 @@ del Release.
 
 ## Descargar
 
-Cada Release de Windows (tag `vX.Y.Z`) incluye `claude-usage-widgets-lite_<versión>_x64.exe`,
+A partir de v0.1.4, cada Release de Windows (tag `vX.Y.Z`) incluye `claude-usage-widgets-lite_<versión>_x64.exe`,
 con su línea en `SHA256SUMS.txt`. La versión de la lite es la misma que la de la app: el
 workflow de release exige que `desktop/lite/Cargo.toml` coincida con el tag.
 

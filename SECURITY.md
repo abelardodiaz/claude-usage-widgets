@@ -24,7 +24,10 @@ escritorio). Estas reglas no son negociables y cada fase se revisa contra ellas.
 5. Android: el WebView se usa solo para iniciar sesión; sin `addJavascriptInterface`,
    `usesCleartextTraffic=false`, `allowBackup=false`, sin permisos de red local.
 6. Releases firmados, con checksums SHA-256 publicados. Dependencias fijadas en lockfiles y
-   vigiladas por Dependabot.
+   vigiladas por Dependabot. Excepción: el `.exe` de la versión lite no lleva firma (ni
+   Authenticode ni minisign, porque no tiene updater); su única verificación es su línea en
+   `SHA256SUMS.txt`. Entrará en la firma de Windows cuando esta se active
+   (`docs/code-signing.html`).
 7. La única fuente oficial de instaladores es la página de Releases de este repositorio.
 
 ## Reportar una vulnerabilidad

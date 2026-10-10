@@ -369,7 +369,7 @@ fn toggle(hwnd: HWND, topmost: bool) {
         if IsWindowVisible(hwnd).as_bool() {
             let _ = ShowWindow(hwnd, SW_HIDE);
         } else {
-            show(hwnd, topmost);
+            show_requested(hwnd, topmost);
         }
     }
 }
@@ -393,14 +393,19 @@ fn apply_topmost(hwnd: HWND, topmost: bool) {
     }
 }
 
+/// Muestra la ventana sin activarla (arranque: no roba el foco al iniciar sesion).
 fn show(hwnd: HWND, topmost: bool) {
     unsafe {
         let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
     }
     apply_topmost(hwnd, topmost);
+}
+
+/// Muestra la ventana porque el usuario la pidio (bandeja o segunda instancia).
+fn show_requested(hwnd: HWND, topmost: bool) {
+    show(hwnd, topmost);
     if !topmost {
-        // Sin "Siempre encima" la ventana puede quedar detras de otras: al pedir mostrarla
-        // (bandeja o segunda instancia) se trae al frente.
+        // Sin "Siempre encima" la ventana puede quedar detras de otras: se trae al frente.
         unsafe {
             let _ = SetWindowPos(hwnd, Some(HWND_TOP), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
             let _ = SetForegroundWindow(hwnd);
@@ -926,7 +931,7 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
             LRESULT(0)
         }
         WM_SHOW_REQ => {
-            show(hwnd, topmost);
+            show_requested(hwnd, topmost);
             LRESULT(0)
         }
         WM_TRAY => {

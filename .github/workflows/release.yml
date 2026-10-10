@@ -44,6 +44,17 @@ jobs:
       - name: Dependencias npm
         working-directory: desktop
         run: pnpm install --frozen-lockfile
+      # Version lite (desktop/lite): un solo .exe portable, sin updater y sin llaves.
+      # Se compila desde cero (sin rust-cache), igual que la app, y ANTES del paso que recibe
+      # las llaves del updater, asi este build nunca corre con ellas en el entorno ni tras el.
+      # Se sube al release mas abajo, cuando el borrador ya existe.
+      - name: Build de la version lite
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd desktop/lite && cargo build --release --locked)
+          cp desktop/lite/target/release/claude-usage-widgets-lite.exe \
+            "$GITHUB_WORKSPACE/claude-usage-widgets-lite_${GITHUB_REF_NAME#v}_x64.exe"
       # Unico paso que recibe las llaves de firma del updater.
       - name: Build y Release (borrador)
         id: tauri
@@ -113,15 +124,6 @@ jobs:
             found=$((found + 1))
           done
           [ "$found" -ge 2 ] || { echo "faltan firmas (.msi.sig y .exe.sig)"; exit 1; }
-      # Version lite (desktop/lite): un solo .exe portable, sin updater y sin llaves.
-      # Se compila desde cero (sin rust-cache), igual que la app.
-      - name: Build de la version lite
-        shell: bash
-        run: |
-          set -euo pipefail
-          (cd desktop/lite && cargo build --release --locked)
-          cp desktop/lite/target/release/claude-usage-widgets-lite.exe \
-            "$GITHUB_WORKSPACE/claude-usage-widgets-lite_${GITHUB_REF_NAME#v}_x64.exe"
       - name: Checksums SHA-256
         shell: bash
         run: |
