@@ -1,6 +1,6 @@
 [package]
 name = "claude-usage-widgets"
-version = "0.1.3"
+version = "0.1.4"
 description = "Widget de escritorio con el uso de tu plan de Claude"
 authors = ["Abelardo Diaz"]
 license = "MIT"

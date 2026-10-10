@@ -22,9 +22,10 @@ jobs:
           conf="$(node -p "require('./desktop/src-tauri/tauri.conf.json').version")"
           pkg="$(node -p "require('./desktop/package.json').version")"
           cargo_v="$(sed -n 's/^version = "\(.*\)"$/\1/p' desktop/src-tauri/Cargo.toml | head -n 1)"
-          for v in "$conf" "$pkg" "$cargo_v"; do
+          lite_v="$(sed -n 's/^version = "\(.*\)"$/\1/p' desktop/lite/Cargo.toml | head -n 1)"
+          for v in "$conf" "$pkg" "$cargo_v" "$lite_v"; do
             if [ "$tag" != "$v" ]; then
-              echo "tag v$tag no coincide: tauri.conf.json=$conf package.json=$pkg Cargo.toml=$cargo_v"
+              echo "tag v$tag no coincide: tauri.conf.json=$conf package.json=$pkg Cargo.toml=$cargo_v lite/Cargo.toml=$lite_v"
               exit 1
             fi
           done
@@ -43,6 +44,17 @@ jobs:
       - name: Dependencias npm
         working-directory: desktop
         run: pnpm install --frozen-lockfile
+      # Version lite (desktop/lite): un solo .exe portable, sin updater y sin llaves.
+      # Se compila desde cero (sin rust-cache), igual que la app, y ANTES del paso que recibe
+      # las llaves del updater, asi este build nunca corre con ellas en el entorno ni tras el.
+      # Se sube al release mas abajo, cuando el borrador ya existe.
+      - name: Build de la version lite
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd desktop/lite && cargo build --release --locked)
+          cp desktop/lite/target/release/claude-usage-widgets-lite.exe \
+            "$GITHUB_WORKSPACE/claude-usage-widgets-lite_${GITHUB_REF_NAME#v}_x64.exe"
       # Unico paso que recibe las llaves de firma del updater.
       - name: Build y Release (borrador)
         id: tauri
@@ -56,7 +68,7 @@ jobs:
           tauriScript: pnpm tauri
           tagName: ${{ github.ref_name }}
           releaseName: claude-usage-widgets ${{ github.ref_name }}
-          releaseBody: "Instaladores para Windows (.msi y -setup.exe). Verifica el SHA-256 con SHA256SUMS.txt. Proyecto no oficial, no afiliado a Anthropic. Code signing policy: https://abelardodiaz.github.io/claude-usage-widgets/code-signing.html"
+          releaseBody: "Instaladores para Windows (.msi y -setup.exe) y version lite portable (claude-usage-widgets-lite_<version>_x64.exe, sin instalador ni actualizaciones automaticas). Verifica el SHA-256 con SHA256SUMS.txt. Proyecto no oficial, no afiliado a Anthropic. Code signing policy: https://abelardodiaz.github.io/claude-usage-widgets/code-signing.html"
           releaseDraft: true
           prerelease: false
           updaterJsonPreferNsis: true
@@ -115,13 +127,18 @@ jobs:
       - name: Checksums SHA-256
         shell: bash
         run: |
+          set -euo pipefail
           cd desktop/src-tauri/target/release/bundle
           for f in msi/*.msi nsis/*.exe; do
             (cd "$(dirname "$f")" && sha256sum "$(basename "$f")")
           done > "$GITHUB_WORKSPACE/SHA256SUMS.txt"
+          (cd "$GITHUB_WORKSPACE" && sha256sum "claude-usage-widgets-lite_${GITHUB_REF_NAME#v}_x64.exe") >> "$GITHUB_WORKSPACE/SHA256SUMS.txt"
           cat "$GITHUB_WORKSPACE/SHA256SUMS.txt"
-      - name: Subir checksums al release
+      - name: Subir version lite y checksums al release
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "$GITHUB_REF_NAME" SHA256SUMS.txt --clobber --repo "$GITHUB_REPOSITORY"
+        run: |
+          gh release upload "$GITHUB_REF_NAME" \
+            "claude-usage-widgets-lite_${GITHUB_REF_NAME#v}_x64.exe" SHA256SUMS.txt \
+            --clobber --repo "$GITHUB_REPOSITORY"

@@ -1,0 +1,52 @@
+[package]
+name = "claude-usage-widgets-lite"
+version = "0.1.4"
+description = "Version lite: widget nativo minimo (Win32 + GDI, sin WebView) del uso de Claude"
+authors = ["Abelardo Diaz"]
+license = "MIT"
+repository = "https://github.com/abelardodiaz/claude-usage-widgets"
+edition = "2024"
+rust-version = "1.90"
+publish = false
+
+[[bin]]
+name = "claude-usage-widgets-lite"
+path = "src/main.rs"
+# `cargo test` aqui corre las pruebas unitarias del nucleo compartido + las de la version lite.
+test = true
+
+# Mismas versiones fijadas que desktop/src-tauri para el nucleo compartido (sin tauri).
+[dependencies]
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.151"
+jiff = { version = "=0.2.38", default-features = false, features = ["std", "serde", "tz-system", "tz-fat", "tzdb-bundle-always", "perf-inline"] }
+thiserror = "=2.0.21"
+ureq = { version = "=3.4.2", default-features = false, features = ["rustls"] }
+dirs = "=7.0.0"
+sys-locale = "=0.3.2"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "=0.62.2", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Dwm",
+    "Win32_Graphics_Gdi",
+    "Win32_System_LibraryLoader",
+    "Win32_Security",
+    "Win32_System_Registry",
+    "Win32_System_Threading",
+    "Win32_UI_HiDpi",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true
+
+# Las que usan las pruebas unitarias del nucleo compartido (mismas versiones que src-tauri).
+[dev-dependencies]
+tempfile = "=3.27.0"
+log = "=0.4.34"
