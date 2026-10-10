@@ -17,6 +17,11 @@ public final class SessionTest {
     private static final String TEST_PREFS = "cuw-logout-test";
 
     public static void run(Assert a, Context ctx) {
+        // Ata la ruta de produccion: logout(ctx) borra SampleStore.of(ctx); esa ruta es filesDir/DIR_NAME,
+        // el sitio donde escribira la Tarea 4.2. Si alguien cambia una, esto falla.
+        a.eq("SampleStore.of apunta al directorio de produccion",
+                new java.io.File(ctx.getFilesDir(), SampleStore.DIR_NAME).getAbsolutePath(),
+                SampleStore.of(ctx).dir().getAbsolutePath());
         SessionStore s = new SessionStore(ctx, TEST_FILE, TEST_ALIAS);
         s.clear();
         // Almacen de muestras PROPIO: nunca el real del dueno.

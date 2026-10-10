@@ -42,6 +42,7 @@ public final class SampleStore {
     static final String DIR_NAME = "samples";
     private static final String TMP_NAME = FILE_NAME + ".tmp";
     private static final long WINDOW_DAYS = 15;
+    private static final long FUTURE_TOLERANCE_SECONDS = 120;
     private static final Object LOCK = new Object();
 
     private final File dir;
@@ -53,21 +54,29 @@ public final class SampleStore {
         }
     }
 
+    /** Directorio del almacen. Lo usan las pruebas para atar la ruta de produccion. */
+    File dir() { return dir; }
+
     /** El almacen real de la app. Unico sitio que decide la ruta de produccion. */
     public static SampleStore of(Context ctx) {
         return new SampleStore(new File(ctx.getFilesDir(), DIR_NAME));
     }
 
     /**
-     * Anade una muestra. Devuelve false, sin escribir, si no es aceptable: porcentaje no finito,
-     * `t` posterior a `now` (reloj saltado) o `t` fuera de la ventana. Asi la muestra que se acaba
+     * Anade una muestra. Devuelve false, sin escribir, si no es aceptable: nula, `t` nulo,
+     * porcentaje no finito, `t` mas de 2 min posterior a `now` (reloj saltado) o `t` fuera de la ventana. Asi la muestra que se acaba
      * de dar nunca se descarta en silencio al podar. Lanza IOException si no se pudo escribir.
      */
     public boolean append(Sample s, Instant now) throws IOException {
-        if (s == null || now == null || Double.isNaN(s.percent) || Double.isInfinite(s.percent)) {
+        if (s == null || s.t == null || now == null
+                || Double.isNaN(s.percent) || Double.isInfinite(s.percent)) {
             return false;
         }
-        if (s.t.isAfter(now) || s.t.isBefore(cutoff(now))) return false;
+        // Tolerancia al desfase de reloj: un t hasta 2 min "en el futuro" se acota a `now`; mas
+        // alla se rechaza. Contrato: lo normal es que el llamador pase now >= t.
+        if (s.t.isAfter(now.plusSeconds(FUTURE_TOLERANCE_SECONDS))) return false;
+        if (s.t.isAfter(now)) s = new Sample(now, s.percent, s.resetsAt);
+        if (s.t.isBefore(cutoff(now))) return false;
         synchronized (LOCK) {
             List<Sample> all = readAll();
             all.add(s);

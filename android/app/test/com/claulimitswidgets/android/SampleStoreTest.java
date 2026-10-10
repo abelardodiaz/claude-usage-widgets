@@ -60,6 +60,24 @@ public final class SampleStoreTest {
             a.eq("el historico viejo no se devuelve", 0, s.load(later).size());
             a.isTrue("pero sigue en disco hasta que se pode o se borre", file.length() > 0);
 
+            // Borde exacto: t == now - 15 dias se acepta y se lee (paridad rechazo/poda).
+            s.clear();
+            Instant edge = now.minusSeconds(15 * DAY);
+            a.isTrue("el borde exacto de la ventana se acepta", s.append(new Sample(edge, 7, null), now));
+            a.eq("el borde exacto aparece en load", 1, s.load(now).size());
+            a.isTrue("un segundo mas viejo se rechaza",
+                    !s.append(new Sample(edge.minusSeconds(1), 7, null), now));
+            // Tolerancia de reloj: unos segundos en el futuro se acotan a now; mas de 2 min no.
+            a.isTrue("t 30 s en el futuro se acepta", s.append(new Sample(now.plusSeconds(30), 8, null), now));
+            a.isTrue("el t acotado no supera now", !s.load(now).get(1).t.isAfter(now));
+            a.isTrue("t 3 min en el futuro se rechaza",
+                    !s.append(new Sample(now.plusSeconds(180), 8, null), now));
+            a.isTrue("muestra nula se rechaza sin lanzar", !s.append(null, now));
+            a.isTrue("t nulo se rechaza sin lanzar", !s.append(new Sample(null, 5, null), now));
+            s.clear();
+            s.append(new Sample(now, 12, null), now);
+            s.append(new Sample(now.minusSeconds(14 * DAY), 3, null), now);
+
             // Muestras no aceptables: futuro, NaN, infinito. No tiran las buenas.
             int before = s.load(now).size();
             a.isTrue("t futuro se rechaza",
@@ -77,7 +95,7 @@ public final class SampleStoreTest {
             int n = s.load(now).size();
             a.isTrue("con basura futura en disco, append sigue guardando",
                     s.append(new Sample(now.minusSeconds(30), 14, null), now));
-            a.isTrue("y las reales no se borraron", s.load(now).size() >= n);
+            a.eq("y las reales no se borraron", n + 1, s.load(now).size());
 
             // Lineas corruptas varias, incluida truncada sin salto.
             raw(file, false, "");
