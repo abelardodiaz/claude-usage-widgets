@@ -45,7 +45,7 @@ public final class SampleStoreTest {
             a.eq("dos lineas a mano", 2, got.size());
             a.near("load ordena: la mas vieja primero", 1.0, got.get(0).percent, 0.001);
             s.clear();
-            s.append(new Sample(now, 12, null), now);
+            a.isTrue("siembra 1 aceptada", s.append(new Sample(now, 12, null), now));
 
             // Ventana: una muestra de 16 dias se RECHAZA (false) y no entra.
             a.isTrue("la de 16 dias se rechaza",
@@ -68,15 +68,20 @@ public final class SampleStoreTest {
             a.isTrue("un segundo mas viejo se rechaza",
                     !s.append(new Sample(edge.minusSeconds(1), 7, null), now));
             // Tolerancia de reloj: unos segundos en el futuro se acotan a now; mas de 2 min no.
-            a.isTrue("t 30 s en el futuro se acepta", s.append(new Sample(now.plusSeconds(30), 8, null), now));
+            a.isTrue("t 30 s en el futuro se acepta",
+                    s.append(new Sample(now.plusSeconds(30), 8, now.plusSeconds(DAY)), now));
             a.isTrue("el t acotado no supera now", !s.load(now).get(1).t.isAfter(now));
+            // El acotado reconstruye la muestra: resetsAt (del que depende sameWindow en R3/R6)
+            // y el porcentaje tienen que sobrevivir.
+            a.eq("la muestra acotada conserva su resetsAt", now.plusSeconds(DAY), s.load(now).get(1).resetsAt);
+            a.near("la muestra acotada conserva su porcentaje", 8.0, s.load(now).get(1).percent, 0.001);
             a.isTrue("t 3 min en el futuro se rechaza",
                     !s.append(new Sample(now.plusSeconds(180), 8, null), now));
             a.isTrue("muestra nula se rechaza sin lanzar", !s.append(null, now));
             a.isTrue("t nulo se rechaza sin lanzar", !s.append(new Sample(null, 5, null), now));
             s.clear();
-            s.append(new Sample(now, 12, null), now);
-            s.append(new Sample(now.minusSeconds(14 * DAY), 3, null), now);
+            a.isTrue("siembra 2 aceptada", s.append(new Sample(now, 12, null), now));
+            a.isTrue("siembra 3 aceptada", s.append(new Sample(now.minusSeconds(14 * DAY), 3, null), now));
 
             // Muestras no aceptables: futuro, NaN, infinito. No tiran las buenas.
             int before = s.load(now).size();
@@ -99,7 +104,7 @@ public final class SampleStoreTest {
 
             // Lineas corruptas varias, incluida truncada sin salto.
             raw(file, false, "");
-            s.append(new Sample(now.minusSeconds(100), 5, null), now);
+            a.isTrue("siembra 4 aceptada", s.append(new Sample(now.minusSeconds(100), 5, null), now));
             raw(file, true, "{esto no es json}\n\n{\"t\":\"ayer\",\"percent\":5}\n"
                     + "{\"t\":\"2026-10-03T11:00:00Z\",\"percent\":\"x\"}\n"
                     + "{\"t\":\"2026-10-03T1");

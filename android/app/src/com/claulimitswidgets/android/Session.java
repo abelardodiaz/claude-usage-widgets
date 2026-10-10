@@ -28,11 +28,19 @@ public final class Session {
     public static boolean logout(Context ctx) {
         SampleStore samples;
         try {
-            samples = SampleStore.of(ctx);
+            samples = samplesFor(ctx);
         } catch (RuntimeException e) {
             samples = null;   // no se pudo abrir el directorio: no se sabe si hay muestras -> false
         }
         return logout(ctx, new SessionStore(ctx), samples, SettingsActivity.PREFS, true);
+    }
+
+    /**
+     * El almacen de muestras de produccion. UNA sola via: el logout borra por aqui y
+     * UsageRefresher escribe por aqui, asi que no pueden divergir sin romper la prueba de la ruta.
+     */
+    static SampleStore samplesFor(Context ctx) {
+        return SampleStore.of(ctx);
     }
 
     /**
@@ -50,6 +58,10 @@ public final class Session {
         // Historico de uso. El almacen viene inyectado: la prueba pasa uno propio, asi que borrarlo
         // no depende de realDevice. null = no se pudo abrir el directorio: cuenta como fallo.
         ok &= samples != null && samples.clear();
+        // Ultimo modelo, organizaciones conocidas y hora de la consulta: datos de la cuenta.
+        // Hoy viven en el mismo archivo de preferencias que vacia el paso siguiente, pero no se
+        // depende de eso: si manana se mueven a otro archivo, esta linea sigue borrandolos.
+        ok &= new SnapshotStore(app, prefsName).clear();
 
         // Preferencias: manual_org (uuid de cuenta) y lo que se anada. commit() y no apply():
         // tiene que estar en disco cuando el metodo vuelve.
@@ -62,7 +74,6 @@ public final class Session {
             ok &= deleteContents(app.getCacheDir());              // cache (incluye la del WebView)
         }
 
-        // F4: borrar aqui el ultimo modelo/orgs/hora (SnapshotStore.clear()).
         // cancel y push tocan el job y los widgets REALES del dueno: la prueba (realDevice=false)
         // no debe cancelarlos ni repintarlos cuando F4 los llene.
         if (realDevice) {
