@@ -48,6 +48,27 @@ public final class LoginActivityTest {
                 LoginActivity.cookiesToSave("x_sessionKey=Z;sessionKeyExtra=Z"));
         a.eq("control: con sessionKey se guarda solo lo minimo", "sessionKey=A",
                 LoginActivity.cookiesToSave("cf_clearance=Z; sessionKey=A"));
+        runAfterLogin(a);
+    }
+
+    /** Tras guardar la sesion: la espera se borra ANTES de programar, por las dos ramas. */
+    public static void runAfterLogin(Assert a) {
+        java.util.List<String> log = new java.util.ArrayList<>();
+        LoginActivity.scheduleAfterLogin(() -> log.add("clearBackoff"), () -> log.add("schedule"),
+                () -> log.add("runNow"));
+        a.eq("tras el login: clearBackoff, schedule y runNow, en ese orden",
+                java.util.Arrays.asList("clearBackoff", "schedule", "runNow"), log);
+
+        // Pantalla cerrandose con la sesion guardada: sigue pasando por scheduleAfterLogin
+        // (que es donde vive clearBackoff).
+        java.util.List<String> closing = new java.util.ArrayList<>();
+        boolean done = LoginActivity.closeOrFail(true, true, () -> closing.add("after"));
+        a.isTrue("pantalla cerrandose y guardado bien: hay que programar", done && closing.size() == 1);
+        closing.clear();
+        done = LoginActivity.closeOrFail(false, true, () -> closing.add("after"));
+        a.isTrue("pantalla cerrandose y guardado fallido: no se programa", done && closing.isEmpty());
+        done = LoginActivity.closeOrFail(true, false, () -> closing.add("after"));
+        a.isTrue("pantalla abierta: sigue el camino normal", !done && closing.isEmpty());
     }
 
     private static boolean ok(String url) {

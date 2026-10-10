@@ -94,7 +94,8 @@ public final class SessionStoreTest {
                         got instanceof java.security.GeneralSecurityException);
                 // NO se borra: UnrecoverableKeyException puede ser un hipo disfrazado (keystore2,
                 // Android 12+), y borrar cerraria la sesion del dueno por un fallo transitorio.
-                a.isTrue(n + ": la sesion NO se borra (puede ser un hipo)", dead.hasSession());
+                // hasSession() deja de decir "sesion iniciada" (marcador), pero el archivo NO se toca.
+                a.isTrue(n + ": hasSession ya no miente (marcador de llave perdida)", !dead.hasSession());
                 a.isTrue(n + ": el archivo sigue", f.exists());
                 a.eq(n + ": y cuando la llave vuelve, se lee", COOKIE, call(a, () -> ok.load()));
             }
