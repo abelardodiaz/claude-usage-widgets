@@ -42,7 +42,7 @@ public final class History {
         List<Sample> clean = cleanSamples(samples, now);
 
         // R3 pasos 2 y 3.
-        Map<String, Double> perDay = new TreeMap<>();
+        List<Contribution> contribs = new ArrayList<>();
         for (int i = 1; i < clean.size(); i++) {
             Sample a = clean.get(i - 1);
             Sample b = clean.get(i);
@@ -59,27 +59,79 @@ public final class History {
                 if (start.isAfter(b.t)) start = b.t;
             }
             if (delta <= 0) continue;
-            spread(perDay, start, b.t, delta, tz);
+            contribs.add(new Contribution(start, b.t, delta, b.resetsAt));
         }
+        Map<String, Double> perDay = new TreeMap<>();
+        for (Contribution c : contribs) spread(perDay, c.start, c.end, c.delta, tz);
         perDay.values().removeIf(v -> v <= 0);
 
         LocalDate today = now.atZone(tz).toLocalDate();
-        double todayUsed = perDay.getOrDefault(today.toString(), 0.0);
-
-        // R4: `partial` es estricto, una muestra exactamente a medianoche no cuenta como anterior.
         Instant midnight = today.atStartOfDay(tz).toInstant();
+        boolean fresh = weekly.resetsAt != null && now.isBefore(weekly.resetsAt);
+
+        // R4: si la ventana actual empezo hoy (medianoche < resets_at - 7 dias <= now), "hoy"
+        // empieza en el reinicio y solo cuenta el consumo de esa ventana. Si no, a medianoche
+        // y today_used = per_day[hoy], como siempre. per_day no cambia en ningun caso.
+        Instant dayStart = midnight;
+        double todayUsed = perDay.getOrDefault(today.toString(), 0.0);
+        if (fresh) {
+            Instant windowStart = weekly.resetsAt.minusSeconds((long) SEVEN_DAYS_SECONDS);
+            if (windowStart.isAfter(midnight) && !windowStart.isAfter(now)) {
+                dayStart = windowStart;
+                todayUsed = usedSince(contribs, dayStart, weekly.resetsAt);
+            }
+        }
+
+        // R4: `partial` es estricto, una muestra exactamente en day_start no cuenta como anterior.
         boolean partial = true;
         for (Sample s : clean) {
-            if (s.t.isBefore(midnight)) { partial = false; break; }
+            if (s.t.isBefore(dayStart)) { partial = false; break; }
         }
 
         Double quotaToday = null;
-        if (weekly.resetsAt != null && now.isBefore(weekly.resetsAt)) {
+        if (fresh) {
             double base = Math.max(weekly.percent - todayUsed, 0);
-            double daysLeft = Projection.seconds(midnight, weekly.resetsAt) / 86400.0;
+            double daysLeft = Projection.seconds(dayStart, weekly.resetsAt) / 86400.0;
             quotaToday = (100 - base) / Math.max(daysLeft, 1);
         }
         return new DayUsage(perDay, todayUsed, quotaToday, partial);
+    }
+
+    /** R3 paso 2: aporte de un par con delta > 0, consumido en [start, end]; resetsAt es el de b. */
+    private static final class Contribution {
+        final Instant start;
+        final Instant end;
+        final double delta;
+        final Instant resetsAt;
+
+        Contribution(Instant start, Instant end, double delta, Instant resetsAt) {
+            this.start = start;
+            this.end = end;
+            this.delta = delta;
+            this.resetsAt = resetsAt;
+        }
+    }
+
+    /**
+     * R4: consumo de la ventana de `weekly` desde `dayStart`. Solo cuentan los aportes cuyo `b`
+     * esta en esa ventana (R2), y de cada uno la parte de [start, end] posterior a `dayStart`.
+     * Un intervalo de duracion 0 aporta entero si `end >= dayStart` y nada si no.
+     */
+    private static double usedSince(List<Contribution> contribs, Instant dayStart,
+                                    Instant weeklyResetsAt) {
+        double used = 0;
+        for (Contribution c : contribs) {
+            if (!Projection.sameWindow(c.resetsAt, weeklyResetsAt)) continue;
+            double total = Projection.seconds(c.start, c.end);
+            if (total <= 0) {
+                if (!c.end.isBefore(dayStart)) used += c.delta;
+                continue;
+            }
+            Instant from = c.start.isAfter(dayStart) ? c.start : dayStart;
+            double inside = Math.max(Projection.seconds(from, c.end), 0);
+            used += c.delta * inside / total;
+        }
+        return used;
     }
 
     /**
