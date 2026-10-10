@@ -51,7 +51,7 @@ public final class WidgetUpdateJobTest {
         gate(a);
         cycles(a);
         pushLock(a);
-        logoutPushLock(a, ctx);
+        logoutPushLock(a);
         jobLifecycle(a);
         logoutHooks(a, ctx);
         runNowDoesNotBlock(a);
@@ -311,25 +311,18 @@ public final class WidgetUpdateJobTest {
                 WidgetUpdateJob.pushIfCurrent(s, 1, () -> 1, x -> log.add("B")));
     }
 
-    /**
-     * El camino REAL del logout: `pushToWidgets`, con el pintado desviado a un recolector por
-     * `paintHook` para no tocar los widgets del dueno. Borrar `pushLocked` de ese camino falla.
-     */
-    private static void logoutPushLock(Assert a, Context ctx) {
+    /** El pintado incondicional del logout (`pushLocked`) toma el mismo candado que el del refresco. */
+    private static void logoutPushLock(Assert a) {
         Snapshot s = Snapshot.of(Snapshot.Problem.NO_SESSION);
-        try {
-            exclusion(a, "refresco vs pintado del logout", log -> {
-                WidgetUpdateJob.paintHook = x -> log.add("B");
-                WidgetUpdateJob.pushToWidgets(ctx, s);
-            });
-        } finally {
-            WidgetUpdateJob.paintHook = null;
-        }
+        exclusion(a, "refresco vs pintado del logout", log ->
+                WidgetUpdateJob.pushLocked(s, x -> log.add("B")));
     }
 
     // ---- el ciclo de vida del servicio --------------------------------------------------
 
     private static void jobLifecycle(Assert a) {
+        a.isTrue("onStopJob (real, ignora params) no pide reintento",
+                !new WidgetUpdateJob().onStopJob(null));
         a.isTrue("onStopJob no pide reintento", !WidgetUpdateJob.RETRY_ON_STOP);
         a.isTrue("jobFinished no pide reprogramar", !WidgetUpdateJob.RESCHEDULE_ON_FINISH);
         java.util.concurrent.Executor sync = Runnable::run;

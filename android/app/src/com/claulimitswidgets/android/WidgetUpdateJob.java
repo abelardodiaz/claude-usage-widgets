@@ -154,7 +154,7 @@ public class WidgetUpdateJob extends JobService {
     public static void runNow(Context ctx) {
         Context app = ctx.getApplicationContext() != null ? ctx.getApplicationContext() : ctx;
         runNowWith(GATE, () -> new UsageRefresher(app).refresh(), Session.EPOCH::get,
-                s -> pushToWidgets(app, s));
+                s -> paintAll(app, s));
     }
 
     /** `runNow` con todo inyectado: las pruebas no pueden tocar la red ni los widgets del dueno. */
@@ -225,26 +225,17 @@ public class WidgetUpdateJob extends JobService {
     }
 
     /**
-     * Pinta ya, sin condiciones: lo usa Session.logout (con "sin sesion"). Pasa por el mismo
-     * candado que `pushIfCurrent` ({@link #pushLocked}).
+     * El unico sitio donde el pintado incondicional (el de Session.logout, con "sin sesion") toma
+     * el candado: el llamador pasa el sumidero (`paintAll` en produccion), como los ganchos de
+     * Session.logout; asi las pruebas ejercen este camino sin tocar los widgets del dueno.
      */
-    static void pushToWidgets(Context ctx, Snapshot s) {
-        pushLocked(s, x -> paintAll(ctx, x));
-    }
-
-    /** El unico sitio donde el pintado incondicional toma el candado. */
     static void pushLocked(Snapshot s, Consumer<Snapshot> sink) {
         synchronized (PUSH_LOCK) {
             sink.accept(s);
         }
     }
 
-    /** Solo para las pruebas: recoge el pintado en vez de tocar los widgets del dueno. */
-    static volatile Consumer<Snapshot> paintHook;
-
-    private static void paintAll(Context ctx, Snapshot s) {
-        Consumer<Snapshot> hook = paintHook;
-        if (hook != null) { hook.accept(s); return; }
+    static void paintAll(Context ctx, Snapshot s) {
         AppWidgetManager awm = AppWidgetManager.getInstance(ctx);
         for (int id : awm.getAppWidgetIds(new ComponentName(ctx, Widget4x1Provider.class))) {
             paint(awm, id, ctx, s, true);
@@ -349,7 +340,7 @@ public class WidgetUpdateJob extends JobService {
         Context app = getApplicationContext();
         return runJob(r -> new Thread(r, "cuw-job").start(), () -> countAll(app), () -> cancel(app),
                 () -> new UsageRefresher(app).refresh(), Session.EPOCH::get,
-                s -> pushToWidgets(app, s), () -> jobFinished(params, RESCHEDULE_ON_FINISH));
+                s -> paintAll(app, s), () -> jobFinished(params, RESCHEDULE_ON_FINISH));
     }
 
     /** `finish` como mucho una vez: dos avisos de `jobFinished` por el mismo trabajo son un error. */

@@ -69,7 +69,7 @@ public final class Session {
         Context a = ctx.getApplicationContext() != null ? ctx.getApplicationContext() : ctx;
         return logout(ctx, store, samples, snapshot, prefsName, realDevice,
                 realDevice ? () -> WidgetUpdateJob.cancel(a) : null,
-                realDevice ? s -> WidgetUpdateJob.pushToWidgets(a, s) : null);
+                realDevice ? s -> WidgetUpdateJob.pushLocked(s, x -> WidgetUpdateJob.paintAll(a, x)) : null);
     }
 
     /**
