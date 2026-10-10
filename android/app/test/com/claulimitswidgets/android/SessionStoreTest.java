@@ -51,7 +51,7 @@ public final class SessionStoreTest {
 
         // Archivo corrupto: null, archivo borrado (y llave borrada: es corrupcion autentica).
         corrupt(a, ctx, s, f, "1 byte", new byte[] {7});
-        corrupt(a, ctx, s, f, "ivLen invalido", new byte[] {0, 1, 2, 3, 4});
+        corrupt(a, ctx, s, f, "5 bytes con primer byte 0: corto y IV invalido", new byte[] {0, 1, 2, 3, 4});
         byte[] ivCinco = new byte[20];
         ivCinco[0] = 5;
         corrupt(a, ctx, s, f, "ivLen valido en forma pero distinto de 12", ivCinco);
@@ -69,7 +69,7 @@ public final class SessionStoreTest {
         s.clear();
         File f = new File(ctx.getFilesDir(), TEST_FILE);
         shape(a, s, f, "1 byte", new byte[] {7}, false);
-        shape(a, s, f, "ivLen invalido", new byte[] {0, 1, 2, 3, 4}, false);
+        shape(a, s, f, "5 bytes con primer byte 0: corto y IV invalido", new byte[] {0, 1, 2, 3, 4}, false);
         byte[] ivCinco = new byte[40];
         ivCinco[0] = 5;
         shape(a, s, f, "iv de 5 bytes", ivCinco, false);
@@ -80,6 +80,13 @@ public final class SessionStoreTest {
         // Control: con forma valida (aunque el contenido no descifre) SI cuenta; si no, lo
         // anterior pasaria en vacio.
         shape(a, s, f, "forma valida", ok, true);
+        // Borde exacto del largo minimo (1+12+16 = 29), con primer byte valido.
+        byte[] b28 = new byte[28];
+        b28[0] = 12;
+        shape(a, s, f, "borde: 28 bytes", b28, false);
+        byte[] b29 = new byte[29];
+        b29[0] = 12;
+        shape(a, s, f, "borde: 29 bytes", b29, true);
         s.clear();
         // Un archivo valido de verdad sigue contando y se carga.
         call(a, () -> { s.save(COOKIE); return null; });

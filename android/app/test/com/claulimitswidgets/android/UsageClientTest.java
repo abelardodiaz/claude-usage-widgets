@@ -120,11 +120,14 @@ public final class UsageClientTest {
         }
         // Mismo recorrido para los mensajes de check().
         String body = "SECRETO-DEL-CUERPO";
-        try {
-            UsageClient.check(403, "text/html", body, null);
-            a.fail("check 403 no lanzo");
-        } catch (Exception e) {
-            a.eq("check 403: cadena sin cuerpo", false, chainContains(e, body));
+        Object[][] casos = {{403, "403"}, {418, "418"}, {200, "200 con html"}};
+        for (Object[] c : casos) {
+            try {
+                UsageClient.check((Integer) c[0], "text/html", body, null);
+                a.fail("check " + c[1] + " no lanzo");
+            } catch (Exception e) {
+                a.eq("check " + c[1] + ": cadena sin cuerpo", false, chainContains(e, body));
+            }
         }
 
         a.eq("org vacia y luego buena", "B",
