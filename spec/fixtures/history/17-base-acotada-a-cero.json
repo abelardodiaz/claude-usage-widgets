@@ -1,5 +1,5 @@
 {
-  "description": "R4: con reinicio a media jornada today_used supera al semanal y base se acota a 0",
+  "description": "R4: reinicio a media jornada (12:00): hoy empieza en el reinicio, lo de la manana es de la semana anterior y today_used solo cuenta los 2 puntos posteriores; base = 0 y quedan 7 dias",
   "input": {
     "tz": "-06:00",
     "now": "2026-10-02T13:00:00-06:00",
@@ -29,8 +29,8 @@
     "per_day": {
       "2026-10-02": 8
     },
-    "today_used": 8,
-    "quota_today": 13.333333,
-    "partial": true
+    "today_used": 2,
+    "quota_today": 14.285714,
+    "partial": false
   }
 }

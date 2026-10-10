@@ -1,0 +1,37 @@
+{
+  "description": "R4 en el dia de 25 h (fin del horario de verano): reinicio a las 14:00 EST; days_left = 7 exactos aunque la medianoche fuera en EDT",
+  "input": {
+    "tz": "America/New_York",
+    "now": "2026-11-01T18:00:00-05:00",
+    "weekly": {
+      "percent": 6,
+      "resets_at": "2026-11-08T14:00:00-05:00"
+    },
+    "samples": [
+      {
+        "t": "2026-10-31T23:00:00-04:00",
+        "percent": 80,
+        "resets_at": "2026-11-01T14:00:00-05:00"
+      },
+      {
+        "t": "2026-11-01T12:00:00-05:00",
+        "percent": 90,
+        "resets_at": "2026-11-01T14:00:00-05:00"
+      },
+      {
+        "t": "2026-11-01T18:00:00-05:00",
+        "percent": 6,
+        "resets_at": "2026-11-08T14:00:00-05:00"
+      }
+    ]
+  },
+  "expected": {
+    "per_day": {
+      "2026-10-31": 0.714286,
+      "2026-11-01": 15.285714
+    },
+    "today_used": 6,
+    "quota_today": 14.285714,
+    "partial": false
+  }
+}

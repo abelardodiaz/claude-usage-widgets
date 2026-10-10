@@ -125,18 +125,53 @@ o si `|a.resets_at − b.resets_at| < 3600 s`.
 
 ## R4. Hoy
 
-- `per_day[d]` = suma de lo repartido al día `d`. Solo contiene días con aporte > 0; al comparar,
-  una entrada con 0 equivale a ausente.
-- `today_used` = `per_day[hoy]` (0 si no hay).
-- `partial` = no existe ninguna muestra con `t < medianoche local de hoy` (estricto: una muestra
-  exactamente a las 00:00 no cuenta como anterior).
+- `per_day[d]` = suma de lo repartido al día `d` por R3. Solo contiene días con aporte > 0; al
+  comparar, una entrada con 0 equivale a ausente. **`per_day` no mira ventanas**: el día de un
+  reinicio suma todo su consumo, el de la ventana anterior (la mañana) y el de la nueva. Es el
+  historial de 7 días; "hoy" se calcula aparte y puede ser menor que `per_day[hoy]`
+  (lo fija `history/22`).
+- **`day_start`**, el instante en que empieza "hoy" para la cuota. Sea `medianoche` la medianoche
+  local de hoy (R0). En este orden:
+  1. `weekly.resets_at` nulo, o `now ≥ weekly.resets_at` (dato rancio) → `day_start = medianoche`.
+  2. Sea `inicio_ventana = weekly.resets_at − 7 días`. Si `medianoche < inicio_ventana ≤ now`
+     (la ventana semanal actual empezó **hoy**, después de las 00:00) →
+     `day_start = inicio_ventana`. Lo de antes del reinicio es de la semana anterior y descuenta
+     de un cupo que ya no existe.
+  3. Si no → `day_start = medianoche`. Cubre todos los demás días (`inicio_ventana ≤ medianoche`,
+     incluido el reinicio exacto a las 00:00, `history/20`) y el dato incoherente
+     `inicio_ventana > now` (`resets_at` a más de 7 días), que no se usa para recortar
+     (`history/24`).
+
+  Equivale a `max(medianoche, inicio_ventana)` siempre que `inicio_ventana ≤ now`.
+- `today_used`:
+  - Si `day_start = medianoche` (pasos 1 y 3): `per_day[hoy]` (0 si no hay), como siempre.
+  - Si `day_start = inicio_ventana` (paso 2): consumo de la **ventana actual** desde
+    `day_start`. Se suman los pares `(a, b)` de R3 con `delta > 0` **cuyo `b` está en la misma
+    ventana que `weekly`** (R2: `|b.resets_at − weekly.resets_at| < 3600 s`, o
+    `b.resets_at` nulo), y de cada uno solo la parte de su intervalo `[inicio, b.t]` de R3 (en
+    un par cruzado, ya recortado a `max(a.t, b.resets_at − 7 días)`) que cae en
+    `[day_start, now]`:
+
+    ```
+    aporte = delta × (b.t − max(inicio, day_start)) / (b.t − inicio)   acotado a ≥ 0
+    ```
+
+    Si el intervalo dura 0 (`inicio = b.t`), el par aporta `delta` entero si `b.t ≥ day_start`
+    y nada si no. Un par cuyo `b` es de otra ventana no aporta aunque caiga después de
+    `day_start` (`history/23`); los `resets_at` que oscilan menos de 3600 s cuentan como la
+    misma ventana (`history/23`, `27`).
+- `partial` = no existe ninguna muestra (depurada por R3 paso 1) con `t < day_start` (estricto:
+  una muestra exactamente en `day_start` no cuenta como anterior; `history/07` y `21`). El día
+  del reinicio basta una muestra de la mañana para que no sea parcial (`history/22`).
 - Si `weekly.resets_at` es nulo, o `now ≥ weekly.resets_at` (dato rancio) → `quota_today = null`.
   Lo segundo iguala a R5 y R6: un dato vencido no sostiene ninguna afirmación. Sin esta condición,
   `days_left` saldría negativo y el `max(days_left, 1)` de abajo fingiría que queda justo un día.
 - Si no: `base = max(weekly.percent − today_used, 0)`,
-  `days_left = (weekly.resets_at − medianoche local de hoy)` en días (fraccionario),
+  `days_left = (weekly.resets_at − day_start)` en días (fraccionario),
   `quota_today = (100 − base) / max(days_left, 1)`.
-  Excluido el caso rancio, `days_left` es siempre > 0 (medianoche de hoy ≤ `now` < `resets_at`),
+  El día del reinicio `days_left = 7` exactos, aunque el día tenga 23 o 25 h (`history/25`):
+  `quota_today = (100 − base) / 7`.
+  Excluido el caso rancio, `days_left` es siempre > 0 (`day_start ≤ now < resets_at`),
   así que `max(days_left, 1)` solo redondea hacia arriba el último día de la ventana, nunca tapa
   un negativo.
 - `quota_today` puede salir **negativo** si `weekly.percent > 100` (R0 lo permite) y

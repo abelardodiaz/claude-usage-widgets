@@ -1,0 +1,46 @@
+{
+  "description": "R4 con resets_at que oscilan (R2): un par cruzado de duracion 0 aporta entero si b.t >= day_start (14:30) y nada si b.t < day_start (13:30); el par de 13:30 a 14:20 solo aporta sus 20 min posteriores a las 14:00",
+  "input": {
+    "tz": "-06:00",
+    "now": "2026-10-09T15:00:00-06:00",
+    "weekly": {
+      "percent": 6,
+      "resets_at": "2026-10-16T14:00:00-06:00"
+    },
+    "samples": [
+      {
+        "t": "2026-10-09T12:00:00-06:00",
+        "percent": 80,
+        "resets_at": "2026-10-09T14:00:00-06:00"
+      },
+      {
+        "t": "2026-10-09T13:30:00-06:00",
+        "percent": 1,
+        "resets_at": "2026-10-16T14:40:00-06:00"
+      },
+      {
+        "t": "2026-10-09T14:20:00-06:00",
+        "percent": 3,
+        "resets_at": "2026-10-16T13:30:00-06:00"
+      },
+      {
+        "t": "2026-10-09T14:30:00-06:00",
+        "percent": 4,
+        "resets_at": "2026-10-16T14:45:00-06:00"
+      },
+      {
+        "t": "2026-10-09T15:00:00-06:00",
+        "percent": 6,
+        "resets_at": "2026-10-16T14:00:00-06:00"
+      }
+    ]
+  },
+  "expected": {
+    "per_day": {
+      "2026-10-09": 10
+    },
+    "today_used": 7.2,
+    "quota_today": 14.285714,
+    "partial": false
+  }
+}

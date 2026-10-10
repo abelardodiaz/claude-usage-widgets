@@ -1,0 +1,46 @@
+{
+  "description": "R4 con R2: solo cuentan los pares cuyo b esta en la ventana de weekly (resets_at a menos de 3600 s). El par que termina a las 14:20 en la ventana vieja no aporta aunque caiga en parte despues de day_start",
+  "input": {
+    "tz": "-06:00",
+    "now": "2026-10-09T17:00:00-06:00",
+    "weekly": {
+      "percent": 5,
+      "resets_at": "2026-10-16T14:00:00-06:00"
+    },
+    "samples": [
+      {
+        "t": "2026-10-09T08:00:00-06:00",
+        "percent": 50,
+        "resets_at": "2026-10-09T14:40:00-06:00"
+      },
+      {
+        "t": "2026-10-09T12:00:00-06:00",
+        "percent": 60,
+        "resets_at": "2026-10-09T14:40:00-06:00"
+      },
+      {
+        "t": "2026-10-09T14:20:00-06:00",
+        "percent": 65,
+        "resets_at": "2026-10-09T14:40:00-06:00"
+      },
+      {
+        "t": "2026-10-09T15:00:00-06:00",
+        "percent": 2,
+        "resets_at": "2026-10-16T14:30:00-06:00"
+      },
+      {
+        "t": "2026-10-09T17:00:00-06:00",
+        "percent": 5,
+        "resets_at": "2026-10-16T14:00:00-06:00"
+      }
+    ]
+  },
+  "expected": {
+    "per_day": {
+      "2026-10-09": 20
+    },
+    "today_used": 5,
+    "quota_today": 14.285714,
+    "partial": false
+  }
+}
