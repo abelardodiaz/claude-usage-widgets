@@ -1,6 +1,8 @@
 :root {
   --bg: #16181d; --panel: #1d2027; --line: #2a2e37; --track: #262a32;
   --text: #e7e9ee; --muted: #8b919c; --dim: #5f6570;
+  /* Texto secundario pequeno: 4.6:1 sobre --panel (WCAG AA). --dim queda solo para barras y lineas. */
+  --faint: #838993;
   --green: #3fbf6f; --amber: #e8b03f; --red: #e5534b;
   --cc: #e88a5c; --cowork: #a98bf0; --chat: #5aa7e8; --other: #7d828c;
 }
@@ -27,7 +29,7 @@ html, body { background: var(--bg); color: var(--text); overflow: hidden;
 .bar .mark { position: absolute; top: -1px; bottom: -1px; width: 2px; background: var(--muted); opacity: .7; }
 .extra .t b { font-weight: 600; color: var(--muted); letter-spacing: .03em; }
 .extra .bar { height: 4px; }
-.foot { margin-top: 9px; font-size: 11px; transform: translateZ(0); color: var(--dim); display: flex; justify-content: space-between; gap: 8px; }
+.foot { margin-top: 9px; font-size: 11px; transform: translateZ(0); color: var(--faint); display: flex; justify-content: space-between; gap: 8px; }
 .foot span { pointer-events: none; }
 .foot #status { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .err { color: var(--amber); }
@@ -39,18 +41,18 @@ html, body { background: var(--bg); color: var(--text); overflow: hidden;
 .chart .col .v { font-size: 9.5px; color: var(--muted); margin-bottom: 2px; }
 .chart .col .b { width: 100%; max-width: 26px; border-radius: 3px 3px 1px 1px; background: var(--dim); min-height: 2px; }
 .days { display: flex; gap: 8px; margin-top: 4px; }
-.days span { flex: 1; text-align: center; font-size: 10px; color: var(--dim); }
+.days span { flex: 1; text-align: center; font-size: 10px; color: var(--faint); }
 .days span.today { color: var(--text); font-weight: 600; }
 .limit { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--dim); }
-.panel h4 .qkey { margin-left: auto; margin-right: 8px; letter-spacing: 0; font-weight: normal; font-size: 9.5px; color: var(--dim); display: flex; align-items: center; gap: 4px; }
+.panel h4 .qkey { margin-left: auto; margin-right: 8px; letter-spacing: 0; font-weight: normal; font-size: 9.5px; color: var(--faint); display: flex; align-items: center; gap: 4px; }
 .panel h4 .qkey i { width: 14px; border-top: 1px dashed var(--dim); }
 .stack { display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: var(--track); margin-bottom: 8px; gap: 2px; }
 .legend div { display: flex; align-items: center; gap: 7px; font-size: 11.5px; padding: 2px 0; }
 .legend i { width: 8px; height: 8px; border-radius: 2px; }
 .legend b { margin-left: auto; font-variant-numeric: tabular-nums; }
-.note { font-size: 10px; color: var(--dim); margin-top: 6px; }
+.note { font-size: 10px; color: var(--faint); margin-top: 6px; }
 .proj { border-left: 2px solid var(--line); padding: 4px 0 4px 9px; margin-bottom: 7px; }
-.proj small { font-size: 9.5px; color: var(--dim); letter-spacing: .08em; }
+.proj small { font-size: 9.5px; color: var(--faint); letter-spacing: .08em; }
 .proj p { font-weight: 600; font-size: 12px; }
 /* 11px: a 10px se leia muy chico en 1920x1080. translateZ(0) fuerza antialias en grises: sin
    eso, el suavizado subpixel de ClearType pinta de azul el texto gris sobre fondo oscuro. */
