@@ -316,7 +316,14 @@ public final class WidgetRendererTest {
         a.eq("sin cupo: gris", "gray", lit(nq, TODAY));
         a.eq("sin cupo: barra vacia", 0, progressOf(nq, TODAY, "gray"));
         View zq = paint(en, fine(10, 10, 5.0, 0.0), false);
-        a.eq("cupo 0: gris", "gray", lit(zq, TODAY));
+        a.eq("cupo 0 (semana agotada justa): rojo, ya no gris", "red", lit(zq, TODAY));
+        a.eq("cupo 0: barra llena", 100, progressOf(zq, TODAY, "red"));
+        // El dia que la semana LLEGA al 100% el cupo no es 0: es positivo y se rebasa (OK, >1).
+        View arrive = paint(en, fine(10, 10, 12.0, 4.0), false);
+        a.eq("llega al 100%: rojo y llena, por otro camino", "red", lit(arrive, TODAY));
+        a.eq("llega al 100%: se acota a 100", 100, progressOf(arrive, TODAY, "red"));
+        a.eq("llega al 100%: texto normal, no 'agotada'", "Today 12.0% of 4.0%",
+                text(a, "arr", arrive, R.id.today));
         View neg = paint(en, fine(10, 10, 5.0, -3.0), false);
         a.eq("cupo negativo: rojo", "red", lit(neg, TODAY));
         a.eq("cupo negativo: barra llena", 100, progressOf(neg, TODAY, "red"));
@@ -411,7 +418,7 @@ public final class WidgetRendererTest {
             View v = paint(en, fine(10, 10, 5.0, q), false);
             a.eq("cupo " + q + ": texto", "Weekly quota used up", text(a, "ex", v, R.id.today));
             a.eq("cupo " + q + ": barra llena", 100, progressOf(v, TODAY,
-                    q < 0 ? "red" : "gray"));
+                    "red"));
             a.eq("cupo " + q + " (es)", "Cuota semanal agotada",
                     text(a, "ex", paint(es, fine(10, 10, 5.0, q), false), R.id.today));
         }

@@ -7,6 +7,8 @@ import android.widget.RemoteViews;
 
 import com.claudewidgets.core.Color;
 import com.claudewidgets.core.Colors;
+import com.claudewidgets.core.TodayFill;
+import com.claudewidgets.core.TodayState;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -61,13 +63,13 @@ public final class WidgetRenderer {
                         Colors.bar(s.model.session.percent));
                 bar(v, WEEKLY_BARS, s.model.weekly.percent,
                         Colors.bar(s.model.weekly.percent));
-                // PENDIENTE DE CONTRATO (llevar a PC): el nucleo decide el COLOR de hoy
-                // (`Colors.today`) pero no expone la FRACCION de la barra, y la rama de cupo
-                // agotado es semantica de R7. `todayFraction` es lo minimo que la cascara
-                // necesita para dibujar; si el nucleo expone la fraccion, se borra de aqui.
-                bar(v, TODAY_BARS, todayFraction(s.day),
+                // Estado, fraccion y color de hoy salen del nucleo (R7). La fraccion viene CRUDA
+                // (puede pasar de 1: el dia que la semana LLEGA al 100%, estado OK y rojo; con
+                // cuota 0 es EXHAUSTED y vale 1); aqui solo se acota para dibujar.
+                TodayFill fill = Colors.todayFill(s.day.todayUsed, s.day.quotaToday);
+                bar(v, TODAY_BARS, fill.fraction == null ? 0 : 100 * fill.fraction,
                         Colors.today(s.day.todayUsed, s.day.quotaToday));
-                v.setTextViewText(R.id.today, todayText(ctx, s.day));
+                v.setTextViewText(R.id.today, todayText(ctx, s.day, fill));
                 // Marca de ritmo parejo: cuanto de la ventana semanal transcurrio (R7).
                 v.setViewVisibility(R.id.pace, s.paceMark == null
                         ? android.view.View.GONE : android.view.View.VISIBLE);
@@ -128,17 +130,10 @@ public final class WidgetRenderer {
 
     private static int whole(double percent) { return (int) Math.floor(percent); }
 
-    /** Cuanto se llena la barra de hoy, en [0, 100]. Ver el aviso de contrato en `render`. */
-    private static double todayFraction(com.claudewidgets.core.DayUsage d) {
-        if (d.quotaToday == null) return 0;
-        if (d.quotaToday <= 0) return 100;   // semana agotada: llena, no vacia
-        return 100 * d.todayUsed / d.quotaToday;
-    }
-
-    private static String todayText(Context ctx, com.claudewidgets.core.DayUsage d) {
-        if (d.quotaToday != null && d.quotaToday <= 0) return ctx.getString(R.string.w_today_exhausted);
+    private static String todayText(Context ctx, com.claudewidgets.core.DayUsage d, TodayFill fill) {
+        if (fill.state == TodayState.EXHAUSTED) return ctx.getString(R.string.w_today_exhausted);
         return ctx.getString(R.string.w_today, one(ctx, d.todayUsed),
-                d.quotaToday == null ? "\u2014" : one(ctx, d.quotaToday));
+                fill.state == TodayState.UNKNOWN ? "\u2014" : one(ctx, d.quotaToday));
     }
 
     private static Locale locale(Context ctx) {
