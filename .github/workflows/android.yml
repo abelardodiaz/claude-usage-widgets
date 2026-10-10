@@ -1,4 +1,4 @@
-# Job del APK de Android (W3 F2): construye el APK y corre lint NewApi (minSdk 29).
+# Job del APK de Android (W3 F2): construye el APK y corre lint NewApi (minSdk 31).
 name: android
 on:
   pull_request:
@@ -56,23 +56,23 @@ jobs:
           assert off % 4 == 0, f"resources.arsc desalineado: offset {off}"
           print(f"resources.arsc Stored, offset {off} alineado a 4")
           EOF
-      # La UNICA comprobacion de que el codigo respeta minSdk 29. No la hace javac: con
+      # La UNICA comprobacion de que el codigo respeta minSdk 31. No la hace javac: con
       # android.jar en el classpath, las APIs java.* disponibles son las de la API 34, y ni
-      # `--release 8` lo evita. Y tampoco hay un dispositivo API 29 donde probarlo.
-      - name: lint NewApi (minSdk 29), con canario
+      # `--release 8` lo evita. Y tampoco hay un dispositivo API 31 donde probarlo.
+      - name: lint NewApi (minSdk 31), con canario
         run: |
           set -euo pipefail
           lint --version
-          # Canario: una copia con una API 31 inyectada DEBE fallar. Si lint no la detecta, la
+          # Canario: una copia con una API 33 inyectada DEBE fallar. Si lint no la detecta, la
           # comprobacion no mira nada (fuentes movidas, manifiesto perdido...) y el job falla.
           cp -r android/app "$RUNNER_TEMP/canario"
-          sed -i 's|super.onCreate(state);|super.onCreate(state); android.os.VibratorManager vm = getSystemService(android.os.VibratorManager.class);|' \
+          sed -i 's|super.onCreate(state);|super.onCreate(state); android.app.LocaleManager lm = getSystemService(android.app.LocaleManager.class);|' \
             "$RUNNER_TEMP/canario/src/com/claulimitswidgets/android/LoginActivity.java"
-          grep -q VibratorManager "$RUNNER_TEMP/canario/src/com/claulimitswidgets/android/LoginActivity.java"
+          grep -q LocaleManager "$RUNNER_TEMP/canario/src/com/claulimitswidgets/android/LoginActivity.java"
           if lint --check NewApi --exitcode --sdk-home "$ANDROID_HOME" \
                --libraries "$ANDROID_HOME/platforms/android-34/android.jar" \
                "$RUNNER_TEMP/canario" >"$RUNNER_TEMP/canario.txt" 2>&1; then
-            echo "ERROR: lint no detecto la API 31 del canario; la comprobacion no sirve"
+            echo "ERROR: lint no detecto la API 33 del canario; la comprobacion no sirve"
             cat "$RUNNER_TEMP/canario.txt"; exit 1
           fi
           grep -q '\[NewApi\]' "$RUNNER_TEMP/canario.txt"
