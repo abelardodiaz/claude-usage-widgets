@@ -28,12 +28,11 @@ public final class Session {
     public static boolean logout(Context ctx) {
         SampleStore samples;
         try {
-            samples = new SampleStore(new File(ctx.getFilesDir(), "samples"));
+            samples = SampleStore.of(ctx);
         } catch (RuntimeException e) {
-            samples = null;   // sin directorio no hay muestras que borrar... pero no se sabe: false
+            samples = null;   // no se pudo abrir el directorio: no se sabe si hay muestras -> false
         }
-        boolean ok = logout(ctx, new SessionStore(ctx), samples, SettingsActivity.PREFS, true);
-        return ok;
+        return logout(ctx, new SessionStore(ctx), samples, SettingsActivity.PREFS, true);
     }
 
     /**
@@ -43,7 +42,7 @@ public final class Session {
     static boolean logout(Context ctx, SessionStore store, SampleStore samples,
                           String prefsName, boolean realDevice) {
         // F4: envolver esto en synchronized (UsageRefresher.LOCK) para no borrar mientras un
-        // refresco escribe.
+        // refresco escribe. (SampleStore ya serializa su propio append/clear con su candado.)
         Context app = ctx.getApplicationContext() != null ? ctx.getApplicationContext() : ctx;
         boolean ok = true;
 

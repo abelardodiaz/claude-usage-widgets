@@ -10,6 +10,12 @@ import java.util.List;
 
 public final class SampleStoreTest {
 
+    private static final long DAY = 86400;
+
+    private static void raw(File f, boolean append, String text) throws Exception {
+        try (FileWriter w = new FileWriter(f, append)) { w.write(text); }
+    }
+
     public static void run(Assert a, File tmp) {
         File dir = new File(tmp, "samples-" + System.nanoTime());
         SampleStore s = new SampleStore(dir);
@@ -17,48 +23,102 @@ public final class SampleStoreTest {
         File file = new File(dir, SampleStore.FILE_NAME);
 
         try {
-            a.eq("vacio al empezar", 0, s.load().size());
-            a.isTrue("sin archivo no hay nada que borrar y clear no falla", s.clear());
+            a.eq("vacio al empezar", 0, s.load(now).size());
+            a.isTrue("sin archivo clear no falla", s.clear());
 
-            // Fuera de orden a proposito: load debe ordenar, no confiar en el orden de escritura.
-            s.append(new Sample(now, 12, now.plusSeconds(86400)));
-            s.append(new Sample(now.minusSeconds(3600), 10, null));
-            List<Sample> got = s.load();
+            // Fuera de orden a proposito al anadir.
+            a.isTrue("acepta", s.append(new Sample(now, 12, now.plusSeconds(DAY)), now));
+            a.isTrue("acepta la anterior",
+                    s.append(new Sample(now.minusSeconds(3600), 10, null), now));
+            List<Sample> got = s.load(now);
             a.eq("dos muestras", 2, got.size());
             a.isTrue("orden ascendente", got.get(0).t.isBefore(got.get(1).t));
             a.near("el porcentaje sobrevive", 12.0, got.get(1).percent, 0.001);
-            a.eq("resets_at sobrevive", now.plusSeconds(86400), got.get(1).resetsAt);
+            a.eq("resets_at sobrevive", now.plusSeconds(DAY), got.get(1).resetsAt);
             a.isTrue("resets_at null sobrevive", got.get(0).resetsAt == null);
 
-            // Mas de 15 dias respecto a la muestra mas reciente: fuera.
-            s.append(new Sample(now.minusSeconds(16L * 86400), 1, now));
-            a.eq("la vieja no vuelve", 2, s.load().size());
-            // Justo dentro de la ventana: se queda.
-            s.append(new Sample(now.minusSeconds(14L * 86400), 3, now));
-            a.eq("la de 14 dias se queda", 3, s.load().size());
+            // load ordena de verdad: dos lineas validas escritas INVERTIDAS a mano.
+            raw(file, false,
+                "{\"t\":\"2026-10-03T11:00:00Z\",\"percent\":2,\"resets_at\":null}\n"
+              + "{\"t\":\"2026-10-03T10:00:00Z\",\"percent\":1,\"resets_at\":null}\n");
+            got = s.load(now);
+            a.eq("dos lineas a mano", 2, got.size());
+            a.near("load ordena: la mas vieja primero", 1.0, got.get(0).percent, 0.001);
+            s.clear();
+            s.append(new Sample(now, 12, null), now);
 
-            // Una linea corrupta no puede tirar el widget entero.
-            try (FileWriter w = new FileWriter(file, true)) {
-                w.write("{esto no es json}\n");
-                w.write("\n");
-                w.write("{\"t\":\"ayer\",\"percent\":5}\n");
-                w.write("{\"t\":\"2026-10-03T11:00:00Z\",\"percent\":\"x\"}\n");
-                w.write("{\"t\":\"2026-10-03T1");   // apagon a mitad de linea, sin salto
-            }
-            a.eq("las lineas corruptas se ignoran", 3, s.load().size());
-            // Y se sigue escribiendo despues de un archivo danado.
-            s.append(new Sample(now.plusSeconds(60), 13, null));
-            a.eq("se puede seguir anadiendo tras corrupcion", 4, s.load().size());
+            // Ventana: una muestra de 16 dias se RECHAZA (false) y no entra.
+            a.isTrue("la de 16 dias se rechaza",
+                    !s.append(new Sample(now.minusSeconds(16 * DAY), 1, now), now));
+            a.eq("la vieja no vuelve", 1, s.load(now).size());
+            a.isTrue("la de 14 dias entra",
+                    s.append(new Sample(now.minusSeconds(14 * DAY), 3, now), now));
+            a.eq("la de 14 dias se queda", 2, s.load(now).size());
+
+            // load aplica la ventana con el now del que llama, aunque nadie escriba mas.
+            Instant later = now.plusSeconds(20 * DAY);
+            a.eq("el historico viejo no se devuelve", 0, s.load(later).size());
+            a.isTrue("pero sigue en disco hasta que se pode o se borre", file.length() > 0);
+
+            // Muestras no aceptables: futuro, NaN, infinito. No tiran las buenas.
+            int before = s.load(now).size();
+            a.isTrue("t futuro se rechaza",
+                    !s.append(new Sample(now.plusSeconds(30 * DAY), 50, null), now));
+            a.isTrue("NaN se rechaza", !s.append(new Sample(now, Double.NaN, null), now));
+            a.isTrue("infinito se rechaza",
+                    !s.append(new Sample(now, Double.POSITIVE_INFINITY, null), now));
+            a.eq("las buenas siguen", before, s.load(now).size());
+            // Tras un intento futuro, una muestra normal sigue entrando (no se atasca).
+            a.isTrue("sigue creciendo", s.append(new Sample(now.minusSeconds(60), 11, null), now));
+            a.eq("una mas", before + 1, s.load(now).size());
+
+            // Una linea futura PARSEABLE ya en disco no gobierna la poda de las nuevas.
+            raw(file, true, "{\"t\":\"2030-01-01T00:00:00Z\",\"percent\":1,\"resets_at\":null}\n");
+            int n = s.load(now).size();
+            a.isTrue("con basura futura en disco, append sigue guardando",
+                    s.append(new Sample(now.minusSeconds(30), 14, null), now));
+            a.isTrue("y las reales no se borraron", s.load(now).size() >= n);
+
+            // Lineas corruptas varias, incluida truncada sin salto.
+            raw(file, false, "");
+            s.append(new Sample(now.minusSeconds(100), 5, null), now);
+            raw(file, true, "{esto no es json}\n\n{\"t\":\"ayer\",\"percent\":5}\n"
+                    + "{\"t\":\"2026-10-03T11:00:00Z\",\"percent\":\"x\"}\n"
+                    + "{\"t\":\"2026-10-03T1");
+            a.eq("las lineas corruptas se ignoran", 1, s.load(now).size());
+            a.isTrue("se puede seguir anadiendo tras corrupcion",
+                    s.append(new Sample(now, 13, null), now));
+            a.eq("dos tras corrupcion", 2, s.load(now).size());
 
             // Archivo vacio (0 bytes).
-            try (FileWriter w = new FileWriter(file, false)) { w.write(""); }
-            a.eq("archivo vacio", 0, s.load().size());
+            raw(file, false, "");
+            a.eq("archivo vacio", 0, s.load(now).size());
+            a.isTrue("append sobre archivo vacio", s.append(new Sample(now, 12, null), now));
 
-            s.append(new Sample(now, 12, null));
+            // Concurrencia: dos productores no se pisan.
+            s.clear();
+            final SampleStore shared = s;
+            final Throwable[] err = {null};
+            Thread[] ts = new Thread[2];
+            for (int k = 0; k < 2; k++) {
+                final int base = k * 1000;
+                ts[k] = new Thread(() -> {
+                    try {
+                        for (int i = 0; i < 15; i++) {
+                            shared.append(new Sample(now.minusSeconds(base + i + 1), 5, null), now);
+                        }
+                    } catch (Throwable e) { err[0] = e; }
+                });
+                ts[k].start();
+            }
+            for (Thread t : ts) t.join();
+            a.isTrue("los hilos no fallaron", err[0] == null);
+            a.eq("ninguna muestra se perdio entre hilos", 30, s.load(now).size());
+
             a.isTrue("antes de clear existe el archivo", file.isFile());
             a.isTrue("clear devuelve true", s.clear());
             a.isTrue("clear borra el archivo", !file.exists());
-            a.eq("clear deja vacio", 0, s.load().size());
+            a.eq("clear deja vacio", 0, s.load(now).size());
         } catch (Exception e) {
             a.fail("SampleStore lanzo " + e.getClass().getSimpleName() + ": " + e.getMessage());
         }

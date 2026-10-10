@@ -24,8 +24,9 @@ public final class SessionTest {
         SampleStore samples = new SampleStore(samplesDir);
         java.io.File samplesFile = new java.io.File(samplesDir, SampleStore.FILE_NAME);
         try {
-            samples.append(new com.claudewidgets.core.Sample(
-                    java.time.Instant.parse("2026-10-03T12:00:00Z"), 12, null));
+            java.time.Instant now = java.time.Instant.parse("2026-10-03T12:00:00Z");
+            a.isTrue("la muestra de prueba se acepta",
+                    samples.append(new com.claudewidgets.core.Sample(now, 12, null), now));
         } catch (Exception e) {
             a.fail("no se pudo preparar la muestra de prueba: " + e.getClass().getSimpleName());
             return;

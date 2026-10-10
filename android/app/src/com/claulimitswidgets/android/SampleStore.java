@@ -1,12 +1,18 @@
 package com.claulimitswidgets.android;
 
+import android.content.Context;
+
 import com.claudewidgets.core.Json;
 import com.claudewidgets.core.Sample;
 
 import java.io.BufferedReader;
 import java.io.File;
-import java.io.FileReader;
-import java.io.FileWriter;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStreamWriter;
+import java.io.Writer;
+import java.nio.charset.StandardCharsets;
 import java.io.IOException;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -22,14 +28,21 @@ import java.util.Map;
  * credenciales; `allowBackup=false` y el aislamiento de la app ya las protegen de otras apps.
  * Lo que revelan es el patron de uso del dueno, por eso Session.logout las borra.
  *
- * Ventana: 15 dias contados hacia atras desde la muestra MAS RECIENTE guardada (no desde el reloj),
- * para que sea determinista. Se poda al escribir.
+ * Ventana: 15 dias contados hacia atras desde el `now` que pasa quien llama (nunca desde el `t`
+ * de una muestra: un `t` futuro o un reloj atrasado no puede gobernar la poda). Se aplica al
+ * escribir Y al leer, de modo que un historico viejo no se devuelve aunque la app deje de refrescar.
+ *
+ * Concurrencia: un candado estatico serializa append/load/clear dentro de UN proceso (el job y la
+ * interfaz comparten proceso). No protege entre procesos distintos.
  */
 public final class SampleStore {
 
     static final String FILE_NAME = "samples.jsonl";
+    /** Subdirectorio de filesDir. Lo usan la escritura (Tarea 4.2) y el logout: una sola fuente. */
+    static final String DIR_NAME = "samples";
     private static final String TMP_NAME = FILE_NAME + ".tmp";
     private static final long WINDOW_DAYS = 15;
+    private static final Object LOCK = new Object();
 
     private final File dir;
 
@@ -40,18 +53,65 @@ public final class SampleStore {
         }
     }
 
-    public void append(Sample s) throws IOException {
-        List<Sample> all = load();
-        all.add(s);
-        rewrite(all);
+    /** El almacen real de la app. Unico sitio que decide la ruta de produccion. */
+    public static SampleStore of(Context ctx) {
+        return new SampleStore(new File(ctx.getFilesDir(), DIR_NAME));
     }
 
-    /** Ascendente por `t`. Una linea ilegible se ignora. */
-    public List<Sample> load() throws IOException {
+    /**
+     * Anade una muestra. Devuelve false, sin escribir, si no es aceptable: porcentaje no finito,
+     * `t` posterior a `now` (reloj saltado) o `t` fuera de la ventana. Asi la muestra que se acaba
+     * de dar nunca se descarta en silencio al podar. Lanza IOException si no se pudo escribir.
+     */
+    public boolean append(Sample s, Instant now) throws IOException {
+        if (s == null || now == null || Double.isNaN(s.percent) || Double.isInfinite(s.percent)) {
+            return false;
+        }
+        if (s.t.isAfter(now) || s.t.isBefore(cutoff(now))) return false;
+        synchronized (LOCK) {
+            List<Sample> all = readAll();
+            all.add(s);
+            rewrite(all, now);
+        }
+        return true;
+    }
+
+    /** Ascendente por `t`, solo las de los ultimos 15 dias respecto a `now`. Lineas ilegibles se ignoran. */
+    public List<Sample> load(Instant now) throws IOException {
+        Instant cut = cutoff(now);
+        List<Sample> out = new ArrayList<>();
+        synchronized (LOCK) {
+            for (Sample s : readAll()) {
+                if (!s.t.isBefore(cut)) out.add(s);
+            }
+        }
+        return out;
+    }
+
+    /** Borra el archivo. true si ya no queda nada (incluido si no existia). */
+    public boolean clear() {
+        synchronized (LOCK) {
+            boolean ok = deleteIfExists(new File(dir, FILE_NAME));
+            ok &= deleteIfExists(new File(dir, TMP_NAME));
+            return ok;
+        }
+    }
+
+    private static Instant cutoff(Instant now) {
+        return now.minusSeconds(WINDOW_DAYS * 86400);
+    }
+
+    private static boolean deleteIfExists(File f) {
+        return !f.exists() || f.delete();
+    }
+
+    /** Todo lo legible del archivo, ordenado, sin aplicar ventana. Llamar con LOCK tomado. */
+    private List<Sample> readAll() throws IOException {
         File f = new File(dir, FILE_NAME);
         List<Sample> out = new ArrayList<>();
         if (!f.isFile()) return out;
-        try (BufferedReader r = new BufferedReader(new FileReader(f))) {
+        try (BufferedReader r = new BufferedReader(
+                new InputStreamReader(new FileInputStream(f), StandardCharsets.UTF_8))) {
             String line;
             while ((line = r.readLine()) != null) {
                 Sample s = parseLine(line);
@@ -60,17 +120,6 @@ public final class SampleStore {
         }
         out.sort(Comparator.comparing(s -> s.t));
         return out;
-    }
-
-    /** Borra el archivo. true si ya no queda nada (incluido si no existia). */
-    public boolean clear() {
-        boolean ok = deleteIfExists(new File(dir, FILE_NAME));
-        ok &= deleteIfExists(new File(dir, TMP_NAME));
-        return ok;
-    }
-
-    private static boolean deleteIfExists(File f) {
-        return !f.exists() || f.delete();
     }
 
     private static Sample parseLine(String line) {
@@ -91,19 +140,25 @@ public final class SampleStore {
         }
     }
 
-    /** Escribe a un temporal y renombra: un apagon a medias no deja el archivo truncado. */
-    private void rewrite(List<Sample> all) throws IOException {
-        all.sort(Comparator.comparing(s -> s.t));
-        Instant newest = all.get(all.size() - 1).t;
-        Instant cutoff = newest.minusSeconds(WINDOW_DAYS * 86400);
+    /**
+     * Escribe a un temporal, lo sincroniza a disco y lo renombra. Frente a la muerte del proceso
+     * es atomico; frente a un apagon, el fsync del archivo ayuda pero no se sincroniza el
+     * directorio, asi que en el peor caso se pierde la ultima escritura (nunca el aislamiento:
+     * un archivo danado se ignora linea a linea al leer). Llamar con LOCK tomado.
+     */
+    private void rewrite(List<Sample> all, Instant now) throws IOException {
+        Instant cut = cutoff(now);
         File tmp = new File(dir, TMP_NAME);
-        try (FileWriter w = new FileWriter(tmp, false)) {
+        try (FileOutputStream fos = new FileOutputStream(tmp, false);
+             Writer w = new OutputStreamWriter(fos, StandardCharsets.UTF_8)) {
             for (Sample s : all) {
-                if (s.t.isBefore(cutoff)) continue;
+                if (s.t.isBefore(cut)) continue;
                 w.write("{\"t\":\"" + s.t + "\",\"percent\":" + s.percent
                         + ",\"resets_at\":" + (s.resetsAt == null ? "null" : "\"" + s.resetsAt + "\"")
                         + "}\n");
             }
+            w.flush();
+            fos.getFD().sync();
         }
         File f = new File(dir, FILE_NAME);
         if (!tmp.renameTo(f)) {
