@@ -1,5 +1,5 @@
 //! Icono de bandeja: clic izquierdo muestra/oculta; menu contextual con actualizar,
-//! autoarranque y salir. Todo corre en Rust: la UI no necesita permisos de bandeja.
+//! autoarranque, buscar actualizaciones y salir. Todo corre en Rust: la UI no necesita permisos de bandeja.
 
 use std::error::Error;
 
@@ -13,6 +13,7 @@ use crate::i18n::Strings;
 pub const ID_TOGGLE: &str = "toggle";
 pub const ID_REFRESH: &str = "refresh";
 pub const ID_AUTOSTART: &str = "autostart";
+pub const ID_UPDATE: &str = "update";
 pub const ID_QUIT: &str = "quit";
 /// Evento que la UI escucha para volver a pedir datos.
 pub const REFRESH_EVENT: &str = "refresh";
@@ -33,6 +34,7 @@ pub fn build_tray<R: Runtime>(
         autostart_enabled,
         None::<&str>,
     )?;
+    let update = MenuItem::with_id(app, ID_UPDATE, strings.tray_update, true, None::<&str>)?;
     let quit = MenuItem::with_id(app, ID_QUIT, strings.tray_quit, true, None::<&str>)?;
     let separator_a = PredefinedMenuItem::separator(app)?;
     let separator_b = PredefinedMenuItem::separator(app)?;
@@ -43,6 +45,7 @@ pub fn build_tray<R: Runtime>(
             &refresh,
             &separator_a,
             &autostart,
+            &update,
             &separator_b,
             &quit,
         ],
@@ -109,6 +112,10 @@ fn handle_menu<R: Runtime>(app: &AppHandle<R>, id: &str, autostart_item: &CheckM
             }
             // El menu ya cambio la marca al hacer clic; se alinea con el estado real.
             let _ = autostart_item.set_checked(manager.is_enabled().unwrap_or(false));
+        }
+        // Unico disparador del updater (D1): solo a peticion del usuario.
+        ID_UPDATE => {
+            tauri::async_runtime::spawn(crate::updater::check_and_install(app.clone()));
         }
         ID_QUIT => app.exit(0),
         _ => {}

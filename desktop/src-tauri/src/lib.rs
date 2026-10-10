@@ -14,6 +14,7 @@ pub mod source_claude_code;
 pub mod store;
 pub mod timez;
 pub mod tray;
+pub mod updater;
 pub mod view;
 
 use std::sync::Arc;
@@ -91,6 +92,8 @@ pub fn run() {
             MacosLauncher::LaunchAgent,
             None,
         ))
+        // Sin red al registrarse: solo consulta cuando la bandeja llama a `updater` (D1).
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![commands::get_usage])
         // Cerrar la ventana la oculta; salir de verdad es el item de la bandeja.
         .on_window_event(|window, event| {
@@ -165,5 +168,37 @@ mod tests {
         want.sort_unstable();
         assert_eq!(got, want);
         assert_eq!(json["windows"], serde_json::json!(["main"]));
+    }
+
+    /// Guarda del updater (D1 y revision de F6): `latest.json` no va firmado, asi que sin
+    /// `requireSignedVersion` un manifiesto manipulado podria emparejar una version nueva con
+    /// un instalador viejo firmado (downgrade). Tambien fija la llave publica y el unico
+    /// endpoint permitido.
+    #[test]
+    fn updater_exige_version_firmada_y_endpoint_exacto() {
+        let raw = include_str!("../tauri.conf.json");
+        let json: serde_json::Value = serde_json::from_str(raw).expect("tauri.conf.json valido");
+        let updater = &json["plugins"]["updater"];
+        assert_eq!(updater["requireSignedVersion"], serde_json::json!(true));
+        let pubkey = updater["pubkey"].as_str().expect("pubkey es una cadena");
+        assert!(!pubkey.trim().is_empty(), "pubkey vacia");
+        assert_eq!(
+            updater["endpoints"],
+            serde_json::json!([
+                "https://github.com/abelardodiaz/claude-usage-widgets/releases/latest/download/latest.json"
+            ])
+        );
+        for flag in [
+            "dangerousInsecureTransportProtocol",
+            "dangerousAcceptInvalidCerts",
+            "dangerousAcceptInvalidHostnames",
+            "allowDowngrades",
+        ] {
+            assert!(updater.get(flag).is_none(), "{flag} no debe estar");
+        }
+        assert_eq!(
+            json["bundle"]["createUpdaterArtifacts"],
+            serde_json::json!(true)
+        );
     }
 }

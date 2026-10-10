@@ -1,0 +1,127 @@
+name: release
+# Solo tags v* (Windows). Los de Android son android-v* y no coinciden con este patron.
+# Nunca corre en pull_request: es el unico workflow que ve las llaves de firma del updater.
+on:
+  push:
+    tags: ["v*"]
+permissions: {}
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: El tag debe coincidir con la version de la app
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          conf="$(node -p "require('./desktop/src-tauri/tauri.conf.json').version")"
+          pkg="$(node -p "require('./desktop/package.json').version")"
+          cargo_v="$(sed -n 's/^version = "\(.*\)"$/\1/p' desktop/src-tauri/Cargo.toml | head -n 1)"
+          for v in "$conf" "$pkg" "$cargo_v"; do
+            if [ "$tag" != "$v" ]; then
+              echo "tag v$tag no coincide: tauri.conf.json=$conf package.json=$pkg Cargo.toml=$cargo_v"
+              exit 1
+            fi
+          done
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          package_json_file: desktop/package.json
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: desktop/pnpm-lock.yaml
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # rama stable
+        with:
+          toolchain: stable
+      # Sin rust-cache a proposito: los binarios publicados se compilan desde cero.
+      - name: Dependencias npm
+        working-directory: desktop
+        run: pnpm install --frozen-lockfile
+      # Unico paso que recibe las llaves de firma del updater.
+      - name: Build y Release (borrador)
+        id: tauri
+        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # action-v1.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: desktop
+          tauriScript: pnpm tauri
+          tagName: ${{ github.ref_name }}
+          releaseName: claude-usage-widgets ${{ github.ref_name }}
+          releaseBody: "Instaladores para Windows (.msi y -setup.exe). Verifica el SHA-256 con SHA256SUMS.txt. Proyecto no oficial, no afiliado a Anthropic."
+          releaseDraft: true
+          prerelease: false
+          updaterJsonPreferNsis: true
+      # tauri-action v1 escribe en latest.json URLs de api.github.com/.../releases/assets/<id>.
+      # SECURITY.md (regla 2) solo permite github.com y *.githubusercontent.com, asi que se
+      # reescriben a github.com/<repo>/releases/download/<tag>/<archivo> (302 al CDN).
+      - name: latest.json solo con URLs de github.com (D1)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_ID: ${{ steps.tauri.outputs.releaseId }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID/assets?per_page=100" > assets.json
+          json_id="$(node -p "(JSON.parse(require('fs').readFileSync('assets.json','utf8')).find(a => a.name === 'latest.json') || {}).id || ''")"
+          if [ -z "$json_id" ]; then
+            echo "el release no tiene latest.json"
+            exit 1
+          fi
+          gh api -H "Accept: application/octet-stream" "repos/$GITHUB_REPOSITORY/releases/assets/$json_id" > latest.json
+          node -e '
+            const fs = require("fs");
+            const repo = process.env.GITHUB_REPOSITORY;
+            const tag = process.env.GITHUB_REF_NAME;
+            const names = new Map(JSON.parse(fs.readFileSync("assets.json", "utf8")).map(a => [String(a.id), a.name]));
+            const doc = JSON.parse(fs.readFileSync("latest.json", "utf8"));
+            const prefix = "https://github.com/" + repo + "/releases/download/" + tag + "/";
+            for (const [key, p] of Object.entries(doc.platforms)) {
+              const m = /\/releases\/assets\/(\d+)$/.exec(p.url);
+              if (m && names.has(m[1])) p.url = prefix + encodeURIComponent(names.get(m[1]));
+              if (!p.url.startsWith(prefix)) { console.error("URL fuera de github.com en " + key + ": " + p.url); process.exit(1); }
+            }
+            fs.writeFileSync("latest.json", JSON.stringify(doc, null, 2) + "\n");
+          '
+          cat latest.json
+          gh release upload "$GITHUB_REF_NAME" latest.json --clobber --repo "$GITHUB_REPOSITORY"
+      # requireSignedVersion (tauri.conf.json) rechaza firmas sin "version:" en el comentario
+      # firmado; si el CLI no la grabara, el updater fallaria en todos los equipos. Se comprueba
+      # aqui, antes de que el duenio publique el borrador.
+      - name: Las firmas llevan la version del tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          want="version:${GITHUB_REF_NAME#v}"
+          found=0
+          for sig in desktop/src-tauri/target/release/bundle/msi/*.sig desktop/src-tauri/target/release/bundle/nsis/*.sig; do
+            comment="$(base64 -d "$sig" | sed -n 's/^trusted comment: //p')"
+            echo "$(basename "$sig"): $comment"
+            if ! printf '%s\n' "$comment" | tr '\t' '\n' | grep -qx "$want"; then
+              echo "la firma $sig no lleva $want"
+              exit 1
+            fi
+            found=$((found + 1))
+          done
+          [ "$found" -ge 2 ] || { echo "faltan firmas (.msi.sig y .exe.sig)"; exit 1; }
+      - name: Checksums SHA-256
+        shell: bash
+        run: |
+          cd desktop/src-tauri/target/release/bundle
+          for f in msi/*.msi nsis/*.exe; do
+            (cd "$(dirname "$f")" && sha256sum "$(basename "$f")")
+          done > "$GITHUB_WORKSPACE/SHA256SUMS.txt"
+          cat "$GITHUB_WORKSPACE/SHA256SUMS.txt"
+      - name: Subir checksums al release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "$GITHUB_REF_NAME" SHA256SUMS.txt --clobber --repo "$GITHUB_REPOSITORY"

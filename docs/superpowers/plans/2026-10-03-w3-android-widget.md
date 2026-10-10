@@ -4010,6 +4010,18 @@ checksum SHA-256 y una guía para instalarlo con Obtainium.
 **Lo que esta fase NO hace:** generar la llave. Eso lo hace el dueño (decisión D3) y la sube como
 secret. Esta sesión no debe ver la llave ni su contraseña.
 
+> **Choque con el updater de Windows (anotado en la revisión de W1 F6, 2026-10-09).** La app de
+> Windows busca actualizaciones en
+> `https://github.com/abelardodiaz/claude-usage-widgets/releases/latest/download/latest.json`.
+> `/releases/latest` es el último Release publicado que **no** es prerelease ni borrador, sea del
+> tag que sea. Si un Release `android-v*` se publica como Release normal, pasa a ser "el último",
+> no trae `latest.json` y todas las PCs ven "No se pudo comprobar actualizaciones". Antes de
+> publicar el primer APK, una de dos: (a) los Releases de Android se publican **como
+> prerelease** (`prerelease: true` en el workflow, o `gh release edit <tag> --prerelease`), o
+> (b) se cambia el endpoint de Windows a un Release rodante fijo (por ejemplo un tag
+> `windows-latest` que el workflow de Windows reescribe), lo que exige un release nuevo de
+> Windows antes. Recomendado (a): no toca a los usuarios de Windows.
+
 ### Tarea 6.1: Workflow de release
 
 **Archivos:** crear `android/app/ci/release.yml`

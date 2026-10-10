@@ -8,8 +8,9 @@ escritorio). Estas reglas no son negociables y cada fase se revisa contra ellas.
 
 1. La credencial no sale de tu dispositivo. Nunca se escribe en logs, en el historial ni en
    mensajes de error.
-2. Red: solo `api.anthropic.com` y `claude.ai`. Cero telemetría, cero analíticas, cero
-   servidores del proyecto.
+2. Red: solo `api.anthropic.com` y `claude.ai`. Excepción única: `github.com` y el CDN al que
+   GitHub redirige sus Releases (`*.githubusercontent.com`), **solo cuando el usuario pulsa
+   "Buscar actualizaciones"**; nunca al arrancar ni de forma periódica. Cero telemetría, cero analíticas, cero servidores del proyecto.
 3. Almacenamiento: solo en el almacén seguro del sistema (Credential Manager, Secret Service,
    Keychain, Android Keystore). El token de Claude Code no se copia: se lee en cada consulta
    y **nunca se refresca** (refrescarlo invalidaría el de Claude Code).

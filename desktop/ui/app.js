@@ -210,6 +210,10 @@ document.querySelectorAll(".ico[data-p]").forEach((el) => el.addEventListener("c
 $("btnRefresh").addEventListener("click", () => load(true));
 $("btnClose").addEventListener("click", () => getCurrentWindow().hide());
 listen("refresh", () => load(true));
+listen("update-status", (event) => {
+  $("status").textContent = T.update[event.payload] || "";
+  $("status").classList.toggle("err", event.payload === "failed" || event.payload === "install_failed");
+});
 setLang("es");
 load();
 setInterval(() => load(false), POLL_MS);
