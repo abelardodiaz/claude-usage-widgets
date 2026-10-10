@@ -221,8 +221,8 @@ public class LoginActivity extends Activity {
         } catch (RuntimeException ignored) {
             // F4 usara su UA por omision.
         }
-        // F4: aqui engancha UsageRefresher.clearBackoff(this): volver a entrar arregla el
-        // problema y la espera acumulada ya no aplica.
+        // Volver a entrar arregla el problema: la espera acumulada ya no aplica.
+        UsageRefresher.clearBackoff(this);
         wipeWebView();
         status.setText(R.string.login_ok);   // ya no se queda en "Comprobando..."
         showIntro();

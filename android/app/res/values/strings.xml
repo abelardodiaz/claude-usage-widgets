@@ -22,4 +22,25 @@
     <string name="login_no_session">No session yet. Finish signing in on the page above.</string>
     <string name="login_ok">Signed in. Your session is saved. The widget arrives in the next update.</string>
     <string name="login_save_failed">Signed in, but the session could not be saved. Try signing in again.</string>
+    <string name="widget_desc">Claude usage: session, week and today\'s quota.</string>
+    <string name="w_session">Session %1$d%%</string>
+    <string name="w_weekly">Week %1$d%%</string>
+    <string name="w_today">Today %1$s of %2$s</string>
+    <string name="w_age_now">just now</string>
+    <string name="w_age_min">%1$d min ago</string>
+    <string name="w_age_hour">%1$d h ago</string>
+    <string name="w_full_at">Full at %1$s</string>
+    <string name="w_no_forecast">No forecast yet</string>
+    <string name="p_no_session">Tap to sign in</string>
+    <string name="p_auth_expired">Session expired — tap to sign in</string>
+    <string name="p_blocked">Blocked by Claude — retrying</string>
+    <string name="p_offline">No connection</string>
+    <string name="p_bad_format">Unexpected response format</string>
+    <string name="p_choose_org">Pick an organization in Settings</string>
+    <string name="p_loading">Updating…</string>
+    <string name="pv_session">Session 42%</string>
+    <string name="pv_weekly">Week 68%</string>
+    <string name="pv_today">Today 3.5% of 10.0%</string>
+    <string name="pv_forecast">Full at Fri 18:30</string>
+    <string name="pv_age">5 min ago</string>
 </resources>

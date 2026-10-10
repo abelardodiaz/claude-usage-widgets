@@ -1,5 +1,7 @@
 package com.claulimitswidgets.android;
 
+import android.appwidget.AppWidgetManager;
+import android.content.ComponentName;
 import android.content.Context;
 
 /**
@@ -9,6 +11,16 @@ import android.content.Context;
  */
 public final class WidgetUpdateJob {
     private WidgetUpdateJob() {}
+
+    /** Accion del toque sobre un widget sin problema que arreglar: pide un refresco. */
+    public static final String ACTION_TAP = "com.claulimitswidgets.android.WIDGET_TAP";
+
+    /** Cuantos widgets hay puestos, de los dos tamanios. F4 (4.4) decide con esto si cancela. */
+    public static int countAll(Context ctx) {
+        AppWidgetManager awm = AppWidgetManager.getInstance(ctx);
+        return awm.getAppWidgetIds(new ComponentName(ctx, Widget4x1Provider.class)).length
+                + awm.getAppWidgetIds(new ComponentName(ctx, Widget4x2Provider.class)).length;
+    }
 
     /** F3: no programa nada. F4: registrar el job periodico (cada 15 min) en JobScheduler. */
     public static void schedule(Context ctx) {

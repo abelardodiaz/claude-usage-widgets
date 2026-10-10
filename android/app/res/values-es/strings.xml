@@ -23,4 +23,25 @@
     <string name="login_no_session">Todavía no hay sesión. Termina de entrar en la página de arriba.</string>
     <string name="login_ok">Sesión iniciada. Tu sesión quedó guardada. El widget llega en la próxima actualización.</string>
     <string name="login_save_failed">Entraste, pero no se pudo guardar la sesión. Vuelve a iniciar sesión.</string>
+    <string name="widget_desc">Uso de Claude: sesión, semana y cuota de hoy.</string>
+    <string name="w_session">Sesión %1$d%%</string>
+    <string name="w_weekly">Semana %1$d%%</string>
+    <string name="w_today">Hoy %1$s de %2$s</string>
+    <string name="w_age_now">ahora mismo</string>
+    <string name="w_age_min">hace %1$d min</string>
+    <string name="w_age_hour">hace %1$d h</string>
+    <string name="w_full_at">Al 100%% a las %1$s</string>
+    <string name="w_no_forecast">Sin proyección todavía</string>
+    <string name="p_no_session">Toca para iniciar sesión</string>
+    <string name="p_auth_expired">Sesión vencida — toca para entrar</string>
+    <string name="p_blocked">Claude está bloqueando — reintentando</string>
+    <string name="p_offline">Sin conexión</string>
+    <string name="p_bad_format">Formato de respuesta no reconocido</string>
+    <string name="p_choose_org">Elige organización en Ajustes</string>
+    <string name="p_loading">Actualizando…</string>
+    <string name="pv_session">Sesión 42%</string>
+    <string name="pv_weekly">Semana 68%</string>
+    <string name="pv_today">Hoy 3.5% de 10.0%</string>
+    <string name="pv_forecast">Al 100% a las vie 18:30</string>
+    <string name="pv_age">hace 5 min</string>
 </resources>

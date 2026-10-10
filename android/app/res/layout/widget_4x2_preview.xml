@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:orientation="vertical" android:padding="12dp" android:background="#CC14161B">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="0dp"
+        android:layout_weight="1" android:orientation="vertical">
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="@string/pv_session" android:textColor="#FFFFFFFF" android:textSize="13sp" />
+        <ProgressBar style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent" android:layout_height="8dp"
+            android:layout_marginBottom="6dp" android:max="100" android:progress="42"
+            android:progressDrawable="@drawable/bar_green" />
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="@string/pv_weekly" android:textColor="#FFFFFFFF" android:textSize="13sp" />
+        <ProgressBar style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent" android:layout_height="8dp"
+            android:layout_marginBottom="6dp" android:max="100" android:progress="68"
+            android:progressDrawable="@drawable/bar_amber" />
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="@string/pv_today" android:textColor="#FFFFFFFF" android:textSize="13sp" />
+        <ProgressBar style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent" android:layout_height="8dp"
+            android:layout_marginBottom="0dp" android:max="100" android:progress="35"
+            android:progressDrawable="@drawable/bar_green" />
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="@string/pv_forecast" android:textColor="#FF9AA3B2" android:textSize="11sp" android:paddingTop="6dp" />
+    </LinearLayout>
+    <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:text="@string/pv_age" android:textColor="#FF6B7280" android:textSize="10sp" />
+</LinearLayout>

@@ -65,7 +65,8 @@ public class SettingsActivity extends Activity {
         auto.setChecked(current == null);
         auto.setOnClickListener(v -> {
             prefs.edit().remove(KEY_ORG).apply();
-            // F4: UsageRefresher.clearBackoff(this); volver a automatica es accion del usuario.
+            // Volver a automatica es accion del usuario: no espera un backoff previo.
+            UsageRefresher.clearBackoff(this);
             WidgetUpdateJob.runNow(this);
         });
         group.addView(auto);
@@ -81,7 +82,8 @@ public class SettingsActivity extends Activity {
             b.setChecked(o.uuid.equals(current));
             b.setOnClickListener(v -> {
                 prefs.edit().putString(KEY_ORG, o.uuid).apply();
-                // F4: UsageRefresher.clearBackoff(this); elegir es accion del usuario, no espera.
+                // Elegir es accion del usuario: no espera un backoff previo.
+                UsageRefresher.clearBackoff(this);
                 WidgetUpdateJob.runNow(this);
             });
             group.addView(b);

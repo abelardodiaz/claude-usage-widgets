@@ -1,0 +1,61 @@
+package com.claulimitswidgets.android;
+
+import android.appwidget.AppWidgetManager;
+import android.appwidget.AppWidgetProvider;
+import android.content.Context;
+import android.content.Intent;
+
+/**
+ * 4x2 con barras y proyeccion. `exported="false"`: verificado en One UI (spike B).
+ *
+ * Se repite entero en vez de heredarlo del otro proveedor: el sistema instancia cada
+ * `AppWidgetProvider` por su cuenta y heredar entre proveedores registrados confunde el
+ * despacho de `onUpdate`.
+ */
+public class Widget4x2Provider extends AppWidgetProvider {
+
+    @Override
+    public void onUpdate(Context ctx, AppWidgetManager awm, int[] ids) {
+        // `onUpdate` corre en el hilo principal y `UsageRefresher.last()` hace disco y pasa por
+        // el nucleo: StrictMode lo castigaria. `goAsync` mantiene vivo el receptor mientras tanto.
+        final PendingResult pending = goAsync();
+        final Context app = ctx.getApplicationContext();
+        new Thread(() -> {
+            try {
+                Snapshot s = new UsageRefresher(app).last();
+                for (int id : ids) awm.updateAppWidget(id, WidgetRenderer.render(app, s, compact()));
+                WidgetUpdateJob.schedule(app);
+                // Primera vez: hay sesion pero ningun dato todavia. Sin esto el widget se queda en
+                // "Actualizando..." hasta el primer ciclo del job, que puede tardar 15 minutos.
+                if (s.problem == Snapshot.Problem.LOADING) WidgetUpdateJob.runNow(app);
+            } catch (RuntimeException e) {
+                // Un fallo aqui no puede dejar el widget en blanco: se pinta un aviso.
+                try {
+                    for (int id : ids) awm.updateAppWidget(id, WidgetRenderer.render(app,
+                            Snapshot.of(Snapshot.Problem.OFFLINE), compact()));
+                } catch (RuntimeException ignored) {
+                    // Sin nada mas que hacer; el siguiente ciclo del job lo repinta.
+                }
+            } finally {
+                pending.finish();
+            }
+        }, "widget-update").start();
+    }
+
+    @Override
+    public void onReceive(Context ctx, Intent intent) {
+        if (WidgetUpdateJob.ACTION_TAP.equals(intent.getAction())) {
+            WidgetUpdateJob.runNow(ctx);
+            return;
+        }
+        super.onReceive(ctx, intent);
+    }
+
+    @Override
+    public void onDisabled(Context ctx) {
+        // Si no queda ningun widget de ningun tamanio, no hay a quien actualizar.
+        if (WidgetUpdateJob.countAll(ctx) == 0) WidgetUpdateJob.cancel(ctx);
+    }
+
+    boolean compact() { return false; }
+}
