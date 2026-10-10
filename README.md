@@ -35,11 +35,19 @@ widget lo avisa y basta con abrir Claude Code.
 
 ### Aviso de SmartScreen
 
-El instalador no tiene firma de código de Windows (cuesta dinero cada año y este es un proyecto
-personal), así que SmartScreen puede decir "Windows protegió su PC". Para seguir: **Más
+El instalador todavía no tiene firma de código de Windows (está en trámite con SignPath
+Foundation; ver la [Code signing policy](https://abelardodiaz.github.io/claude-usage-widgets/code-signing.html)),
+así que SmartScreen puede decir "Windows protegió su PC". Para seguir: **Más
 información** y luego **Ejecutar de todas formas**. Si prefieres no hacerlo, compara antes el
 checksum del paso 2. Las actualizaciones sí van firmadas: la app rechaza cualquier instalador que
 no venga firmado con la llave de este proyecto.
+
+### Antivirus
+
+Por la misma falta de firma, unos pocos antivirus con detección por aprendizaje automático marcan el
+instalador como genérico o "potencialmente no deseado". En la v0.1.3 fueron 3 de 71 en VirusTotal
+(Arctic Wolf, SecureAge y Sophos); Microsoft Defender, Kaspersky, ESET, BitDefender y el resto, no.
+Compara el SHA-256 con `SHA256SUMS.txt` y, si quieres, sube el archivo a VirusTotal tú mismo.
 
 ### Datos que guarda
 
