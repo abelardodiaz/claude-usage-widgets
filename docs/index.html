@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>claude-usage-widgets</title>
+<meta name="description" content="Widgets siempre visibles con tu uso del plan de Claude, para Windows y Android. Código abierto, no oficial.">
+<style>
+  :root {
+    --ink: #111; --muted: #444; --rule: #111; --soft: #f2f2f2;
+    --hecho: #1f8a4c; --curso: #b8860b; --plan: #777;
+  }
+  * { box-sizing: border-box; }
+  body { font-family: Arial, "Liberation Sans", Helvetica, sans-serif; background: #fff; color: var(--ink);
+         margin: 0; line-height: 1.45; font-size: 15px; }
+  main { max-width: 1060px; margin: 0 auto; padding: 28px 16px 40px; }
+  h1 { font-size: 30px; margin: 0 0 6px; }
+  h2 { font-size: 19px; margin: 34px 0 10px; padding-top: 10px; border-top: 3px solid var(--rule); }
+  h3 { font-size: 15px; margin: 0 0 6px; }
+  p { margin: 0 0 10px; }
+  .sub { color: var(--muted); font-size: 16px; margin-bottom: 14px; }
+  a { color: var(--ink); }
+  code { font-family: Consolas, "Liberation Mono", monospace; font-size: 13px; background: var(--soft); padding: 1px 4px; overflow-wrap: anywhere; }
+  .aviso { border: 3px solid var(--rule); padding: 10px 14px; margin: 14px 0; }
+  .boton { display: inline-block; border: 3px solid var(--rule); padding: 8px 14px; font-weight: bold; text-decoration: none; margin: 4px 8px 4px 0; }
+  .boton:hover { background: var(--soft); }
+  .estado { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
+  .caja { border: 3px solid var(--rule); padding: 12px 14px; }
+  .caja ul { margin: 6px 0 0; padding-left: 18px; }
+  .caja li { margin-bottom: 3px; }
+  .et { font-weight: bold; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+  .hecho { color: var(--hecho); } .curso { color: var(--curso); } .plan { color: var(--plan); }
+  .galeria { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
+  figure { margin: 0; max-width: 100%; }
+  figure img { display: block; border: 3px solid var(--rule); max-width: 100%; height: auto; }
+  figcaption { font-size: 13px; color: var(--muted); margin-top: 4px; max-width: 493px; }
+  .tabla { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { border: 2px solid var(--rule); padding: 6px 9px; text-align: left; vertical-align: top; }
+  th { background: var(--soft); }
+  ol.pasos { padding-left: 22px; } ol.pasos li { margin-bottom: 6px; }
+  .medida { font-family: Consolas, "Liberation Mono", monospace; font-size: 13px; background: var(--soft);
+            border: 2px solid var(--rule); padding: 8px 12px; display: inline-block; white-space: pre; max-width: 100%; overflow-x: auto; }
+  footer { margin-top: 40px; padding-top: 12px; border-top: 3px solid var(--rule); font-size: 14px; color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+
+<h1>claude-usage-widgets</h1>
+<p class="sub">Widgets siempre visibles con tu uso de Claude: sesión de 5 horas, semana, límites por modelo,
+cuánto llevas hoy contra lo que te toca, en qué lo gastaste y cuándo llegarías al límite.</p>
+
+<p>
+  <a class="boton" href="https://github.com/abelardodiaz/claude-usage-widgets/releases/latest">Descargar para Windows</a>
+  <a class="boton" href="https://github.com/abelardodiaz/claude-usage-widgets">Código en GitHub</a>
+</p>
+
+<p>Hoy el uso se revisa a mano (<code>/usage</code> en Claude Code o la página de ajustes). Si trabajas cerca
+del límite semanal conviene tenerlo a la vista, como la batería, para repartir la cuota en la semana y no
+quedarte sin servicio a media semana. El widget lee los mismos números que Anthropic reporta:
+lado a lado con <code>/usage</code> dan lo mismo.</p>
+
+<div class="aviso"><strong>Proyecto no oficial, no afiliado a Anthropic.</strong> Usa endpoints no
+documentados que pueden cambiar sin aviso. Tu credencial nunca sale de tu equipo y no hay servidores
+del proyecto. Código abierto con licencia MIT.</div>
+
+<h2>Cómo se ve en Windows (datos reales)</h2>
+<div class="galeria">
+  <figure><img src="img/pagina/principal.png" width="493" height="259" alt="Vista principal del widget"><figcaption>Vista principal: hoy contra el cupo del día, sesión de 5 h, semana y límite semanal por modelo.</figcaption></figure>
+  <figure><img src="img/pagina/ultimos-7-dias.png" width="493" height="486" alt="Panel de últimos 7 días"><figcaption>Últimos 7 días: cuánto de la cuota semanal gastaste cada día, con la línea del cupo de hoy.</figcaption></figure>
+  <figure><img src="img/pagina/proyeccion.png" width="493" height="516" alt="Panel de proyección"><figcaption>Proyección: a qué hora llegarías al 100 % con tu ritmo actual y si eso pasa antes del reinicio.</figcaption></figure>
+  <figure><img src="img/pagina/desglose.png" width="493" height="468" alt="Panel de desglose de la semana"><figcaption>Desglose de la semana por superficie: Claude Code, Chats, Cowork y otros.</figcaption></figure>
+  <figure><img src="img/pagina/bandeja.png" width="260" height="152" alt="Menú de la bandeja"><figcaption>Menú de la bandeja: mostrar u ocultar, actualizar, iniciar con Windows, buscar actualizaciones y salir.</figcaption></figure>
+</div>
+
+<h2>Android: el widget en la pantalla de inicio</h2>
+<p>Dos tamaños, 4×1 y 4×2, con los mismos números que el escritorio. Se actualizan solos en segundo plano
+(cada ciclo completo, de despertar a repintar, tarda unos 200 ms) y llenan su celda sin recortarse.
+Lectura real del 4×2 en el teléfono de prueba:</p>
+<div class="medida">Sesión 24%
+Semana 16%
+Hoy 3.1% de 12.9%
+Al 100% a las dom 5:08 a.m.
+ahora mismo</div>
+<p>Las capturas del widget de Android llegarán con su primer release.</p>
+
+<h2>Estado por plataforma</h2>
+<div class="estado">
+  <div class="caja">
+    <h3>Windows</h3>
+    <div class="et hecho">Disponible</div>
+    <ul>
+      <li><span class="hecho">Hecho:</span> instalador <code>.exe</code> / <code>.msi</code> por usuario, sin permisos de administrador; ventana sin marco siempre encima; icono en la bandeja; inicio con Windows; una sola instancia; recuerda la posición; español e inglés.</li>
+      <li><span class="hecho">Hecho:</span> actualización firmada desde la bandeja, solo cuando tú la pides.</li>
+    </ul>
+  </div>
+  <div class="caja">
+    <h3>Android</h3>
+    <div class="et curso">Funciona en el teléfono; falta el release</div>
+    <ul>
+      <li><span class="hecho">Hecho:</span> inicio de sesión en claude.ai, sesión guardada cifrada, widgets 4×1 y 4×2 con datos reales y actualización automática.</li>
+      <li><span class="curso">En curso:</span> pantalla de ajustes y cierre de sesión que borra todo, y APK firmado en GitHub Releases (instalable con Obtainium).</li>
+      <li><span class="plan">Planeado:</span> burbuja flotante.</li>
+    </ul>
+  </div>
+  <div class="caja">
+    <h3>Linux y macOS</h3>
+    <div class="et plan">Planeado</div>
+    <ul>
+      <li>El mismo código de Windows compila en Linux (ya corre en el CI de Ubuntu). Falta empaquetarlo (AppImage, deb) y el llavero de macOS.</li>
+    </ul>
+  </div>
+</div>
+
+<h2>Instalar en Windows</h2>
+<ol class="pasos">
+  <li>Necesitas un plan <strong>Pro o Max</strong> y <a href="https://docs.claude.com/en/docs/claude-code">Claude Code</a> con sesión iniciada en esa PC. Con una clave de API no hay límites de plan que mostrar.</li>
+  <li>Descarga el <code>-setup.exe</code> (o el <code>.msi</code>) del <a href="https://github.com/abelardodiaz/claude-usage-widgets/releases/latest">último release</a> y compara su SHA-256 con <code>SHA256SUMS.txt</code>: <code>certutil -hashfile &lt;archivo&gt; SHA256</code>.</li>
+  <li>Ejecútalo. Windows puede mostrar "Windows protegió su PC": <em>Más información</em> → <em>Ejecutar de todas formas</em>.</li>
+  <li>El widget aparece arriba a la derecha y deja un icono en la bandeja. Las nuevas versiones se instalan desde <em>Buscar actualizaciones</em>.</li>
+</ol>
+
+<h2>De dónde salen los datos</h2>
+<div class="tabla"><table>
+  <tr><th>Plataforma</th><th>Credencial</th><th>Consulta</th></tr>
+  <tr><td>Windows / Linux</td><td>El token que Claude Code ya guarda en <code>~/.claude/.credentials.json</code>. Se lee en cada consulta y <strong>nunca se refresca</strong> (refrescarlo dejaría a Claude Code con uno inválido).</td><td><code>GET api.anthropic.com/api/oauth/usage</code></td></tr>
+  <tr><td>Android</td><td>Inicias sesión en la página real de claude.ai dentro de la app (solo por correo; Google bloquea los navegadores embebidos). La cookie se guarda cifrada con una llave del Android Keystore que no se puede extraer.</td><td><code>GET claude.ai/api/organizations/{org}/usage</code></td></tr>
+</table></div>
+<p>Las dos respuestas tienen la misma forma, así que las dos plataformas comparten el mismo modelo de datos.</p>
+
+<h2>Stack</h2>
+<div class="tabla"><table>
+  <tr><th></th><th>Windows (y Linux)</th><th>Android</th></tr>
+  <tr><td>Base</td><td>Tauri 2 sobre WebView2</td><td>Java puro, APIs del sistema, sin Gradle ni androidx; Android 12 o superior (minSdk 31)</td></tr>
+  <tr><td>Lógica</td><td>Rust: <code>jiff</code> (zonas horarias con tzdata incluida), <code>ureq</code> con rustls, <code>serde</code></td><td>Java 8 de lenguaje, lector JSON propio con límites duros</td></tr>
+  <tr><td>Interfaz</td><td>HTML, CSS y JavaScript sin frameworks; la interfaz no recibe nunca credenciales</td><td>AppWidget con RemoteViews y JobScheduler; WebView solo para el inicio de sesión</td></tr>
+  <tr><td>Compilación</td><td><code>cargo</code> + <code>pnpm tauri</code>; instaladores firmados en GitHub Actions</td><td><code>aapt2</code> + <code>javac</code> + <code>d8</code> + <code>apksigner</code>, el mismo script en el teléfono (Termux) y en el CI</td></tr>
+  <tr><td>Comprobaciones</td><td><code>cargo test</code>, <code>clippy -D warnings</code>, <code>fmt</code> en Windows y Ubuntu</td><td>corredor de pruebas propio en el dispositivo, mutantes, <code>lint NewApi</code> con canario en cada corrida</td></tr>
+</table></div>
+
+<h2>Cómo se trabaja</h2>
+<ol class="pasos">
+  <li><strong>Un contrato compartido.</strong> Las reglas de cálculo (cupo de hoy, reparto por día, proyecciones, colores, relleno de la barra) están escritas en <code>spec/rules.md</code> y fijadas con 92 casos de prueba con el resultado calculado a mano. El núcleo de Rust (Windows) y el de Java (Android) se escriben por separado y los dos tienen que dar exactamente esos resultados en el CI. Dos implementaciones independientes del mismo contrato son las que encuentran sus ambigüedades: horario de verano, medianoche repetida, reinicio semanal a media jornada, comparaciones al milisegundo.</li>
+  <li><strong>Diseño, especificación y plan antes del código.</strong> Lluvia de ideas, especificación, y un plan por oleadas, fases y tareas pequeñas con pruebas primero.</li>
+  <li><strong>Una revisión independiente por fase.</strong> Cada fase cierra con un pull request y una revisión de un modelo que no escribió el código: recalcula los casos, intenta romperlo con entradas hostiles y verifica la seguridad. Lo que se corrige se vuelve a revisar, y nada entra a <code>main</code> sin los cinco controles del CI en verde.</li>
+  <li><strong>Comprobaciones que se ven fallar.</strong> Cada prueba nueva se estrena rompiendo a propósito lo que vigila (mutantes), para que no pase en vacío.</li>
+  <li><strong>Pruebas contra el sistema real.</strong> El widget de Android se prueba en el teléfono, no solo con dobles: así apareció un permiso que faltaba y sin el cual el widget no se habría actualizado nunca.</li>
+  <li><strong>Dos sesiones de Claude Code.</strong> Una en la PC orquesta el repositorio, construye Windows y publica los releases en borrador; otra corre en el propio teléfono Android (Termux), compila, instala y prueba la app en el dispositivo. Se coordinan con memos, se revisan el trabajo una a la otra y el código solo viaja por GitHub. Las decisiones de producto y la publicación de cada release las toma el dueño del proyecto.</li>
+</ol>
+
+<h2>Seguridad</h2>
+<div class="tabla"><table>
+  <tr><td>La credencial nunca sale del dispositivo: no se escribe en logs, errores ni historial, y la interfaz nunca la ve.</td></tr>
+  <tr><td>Red: solo <code>api.anthropic.com</code> y <code>claude.ai</code>. Única excepción: <code>github.com</code> cuando tú pides buscar una actualización. Cero telemetría.</td></tr>
+  <tr><td>Windows: política de contenido estricta (sin scripts en línea) y permisos mínimos para la interfaz, fijados por una prueba. Las actualizaciones solo se instalan si traen la firma del proyecto y su versión.</td></tr>
+  <tr><td>Android: cookie cifrada con el Keystore, sin respaldo en la nube, sin tráfico sin cifrar, navegación del inicio de sesión limitada a claude.ai.</td></tr>
+  <tr><td>Releases firmados con sumas SHA-256; acciones del CI fijadas por commit y dependencias vigiladas por Dependabot.</td></tr>
+</table></div>
+
+<footer>
+  Repositorio público: <a href="https://github.com/abelardodiaz/claude-usage-widgets">github.com/abelardodiaz/claude-usage-widgets</a> · Licencia MIT<br>
+  Hecho por <a href="https://abelardodiaz.dev">abelardodiaz.dev</a>
+</footer>
+
+</main>
+</body>
+</html>
