@@ -12,6 +12,7 @@ import com.claudewidgets.core.UnrecognizedFormatException;
 import com.claudewidgets.core.UsageModel;
 
 import java.io.IOException;
+import java.security.GeneralSecurityException;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.util.ArrayList;
@@ -43,18 +44,25 @@ public final class UsageRefresher {
 
     interface Clock { Instant now(); }
 
+    /** De donde sale la cookie. En produccion es `SessionStore.load`. */
+    interface Cookies { String load() throws GeneralSecurityException, IOException; }
+
+    /** Cuanto vale la lista de organizaciones recordada antes de volver a pedirla a la red. */
+    private static final long ORGS_TTL_SECONDS = 6 * 3600;
+
     private final SessionStore session;
+    private final Cookies cookieSource;
     private final SampleStore samples;      // null si no se pudo abrir el directorio
     private final SnapshotStore meta;
     private final SharedPreferences prefs;
     private final RemoteFactory remoteFactory;
     private final Clock clock;
 
-    /** true si la muestra de la ultima consulta buena se guardo; false si el almacen la rechazo. */
-    volatile boolean lastSampleStored;
+    /** Epoca de sesion al empezar el refresco en curso (ver Session.EPOCH). Bajo LOCK. */
+    private long epoch;
 
     public UsageRefresher(Context ctx) {
-        this(new SessionStore(app(ctx)), openSamples(app(ctx)), new SnapshotStore(app(ctx)),
+        this(new SessionStore(app(ctx)), openSamples(app(ctx)), Session.snapshotFor(app(ctx)),
                 app(ctx).getSharedPreferences(SettingsActivity.PREFS, Context.MODE_PRIVATE),
                 cookies -> productionRemote(app(ctx), cookies),
                 Instant::now);
@@ -83,7 +91,14 @@ public final class UsageRefresher {
     /** Para las pruebas: todo inyectado. */
     UsageRefresher(SessionStore session, SampleStore samples, SnapshotStore meta,
                    SharedPreferences prefs, RemoteFactory remoteFactory, Clock clock) {
+        this(session, session::load, samples, meta, prefs, remoteFactory, clock);
+    }
+
+    UsageRefresher(SessionStore session, Cookies cookieSource, SampleStore samples,
+                   SnapshotStore meta, SharedPreferences prefs, RemoteFactory remoteFactory,
+                   Clock clock) {
         this.session = session;
+        this.cookieSource = cookieSource;
         this.samples = samples;
         this.meta = meta;
         this.prefs = prefs;
@@ -103,6 +118,9 @@ public final class UsageRefresher {
     /** Almacen de muestras que usa este refrescador. Lo ata la prueba de la ruta. */
     SampleStore samples() { return samples; }
 
+    /** Almacen de modelo/orgs/hora que usa este refrescador. Lo ata la prueba de la ruta. */
+    SnapshotStore meta() { return meta; }
+
     /**
      * Un solo refresco a la vez. `runNow` (toque, login) y el JobService pueden coincidir, y
      * `SampleStore.append` es leer-y-reescribir: sin esto, dos a la vez se pisarian.
@@ -111,12 +129,13 @@ public final class UsageRefresher {
 
     public Snapshot refresh() {
         synchronized (LOCK) {
+            epoch = Session.EPOCH.get();
             try {
                 return refreshLocked();
             } catch (RuntimeException e) {
                 // Algo inesperado (p. ej. del analizador). No se cita el mensaje: podria llevar
                 // un trozo de la respuesta. Cuenta para el backoff, para no insistir en bucle.
-                return keepOld(Snapshot.Problem.BAD_FORMAT);
+                return safeKeepOld(Snapshot.Problem.BAD_FORMAT);
             }
         }
     }
@@ -125,14 +144,27 @@ public final class UsageRefresher {
     private static final String KEY_NEXT_ALLOWED = "backoff_next_allowed_at";
     private static final String KEY_LAST_PROBLEM = "backoff_last_problem";
 
+    /**
+     * Mientras no se cierre sesion se puede escribir. Si el usuario cerro sesion (la epoca cambio o
+     * la sesion ya no existe), NINGUNA escritura de este refresco debe ocurrir: resucitaria datos
+     * de cuenta (uuid, muestras, claves de espera) que el logout acaba de borrar.
+     */
+    private boolean alive() {
+        return Session.EPOCH.get() == epoch && session.hasSession();
+    }
+
     private Snapshot refreshLocked() {
         String cookies;
         try {
-            cookies = session.load();
-        } catch (Exception e) {
-            return Snapshot.of(Snapshot.Problem.NO_SESSION);
+            cookies = cookieSource.load();
+        } catch (GeneralSecurityException | IOException e) {
+            // El Keystore puede fallar de forma transitoria (SessionStore lo propaga a proposito
+            // sin borrar nada). No es "sin sesion": se conserva el dato y se reintenta. Decir
+            // NO_SESSION aqui podria llevar a quien reaccione a eso a cerrar sesion de verdad.
+            return keepOld(Snapshot.Problem.OFFLINE);
         }
-        if (cookies == null || !cookies.contains("sessionKey=")) {
+        // Mismo criterio que minimalCookies: un `sessionKey=` vacio no es una sesion.
+        if (cookies == null || !UsageClient.minimalCookies(cookies).contains("sessionKey=")) {
             return Snapshot.of(Snapshot.Problem.NO_SESSION);
         }
 
@@ -150,53 +182,35 @@ public final class UsageRefresher {
         try {
             String manual = prefs.getString(SettingsActivity.KEY_ORG, null);
             String lastActive = UsageClient.lastActiveOrg(cookies);
+            Instant at = clock.now();
 
-            // Con una pista basta: no se llama a /organizations en cada refresco.
-            List<UsageClient.Org> orgs =
-                    (manual != null || lastActive != null) && !meta.knownOrgs().isEmpty()
-                            ? meta.knownOrgs()
-                            : remote.organizations();
-            meta.rememberOrgs(orgs);   // Ajustes los necesita aunque el resto falle
-            // `OrgSelector` recibe solo uuids: con "uuid|nombre" el uuid no pasaria la validacion.
-            List<String> uuids = new ArrayList<>();
-            for (UsageClient.Org o : orgs) uuids.add(o.uuid);
+            // Con una pista basta: no se llama a /organizations en cada refresco. Pero la lista
+            // recordada caduca, y se revalida tambien si con ella no hay eleccion (abajo).
+            List<UsageClient.Org> known = meta.knownOrgs();
+            boolean cached = (manual != null || lastActive != null) && !known.isEmpty()
+                    && orgsFresh(at);
+            List<UsageClient.Org> orgs = cached ? known : fetchOrgs(remote, at);
 
-            // La sonda guarda el modelo por organizacion: la consulta que decide cual es la
-            // misma que se muestra, en vez de tirarla y repetirla.
-            final Map<String, UsageModel> fetched = new HashMap<>();
-            final Exception[] fatal = new Exception[1];
-            OrgSelector.Choice choice = OrgSelector.choose(uuids, manual, lastActive, uuid -> {
-                try {
-                    fetched.put(uuid, remote.usage(uuid));
-                    return OrgSelector.Answer.RESPONDS;
-                } catch (UnrecognizedFormatException e) {
-                    // El servidor contesto y esta organizacion no sirve: se prueba la siguiente.
-                    return OrgSelector.Answer.NO;
-                } catch (AuthExpiredException | BlockedException
-                        | UsageClient.RetryLaterException | IOException e) {
-                    // Fallo del intento entero, NO un descarte: UNKNOWN (nunca NO) para que una
-                    // red mala no haga elegir en silencio una organizacion ajena.
-                    fatal[0] = e;
-                    return OrgSelector.Answer.UNKNOWN;
-                }
-            });
-            // El fracaso real gana sobre "que elija el usuario": sin red se dice "sin conexion".
-            if (fatal[0] instanceof AuthExpiredException) throw (AuthExpiredException) fatal[0];
-            if (fatal[0] instanceof BlockedException) throw (BlockedException) fatal[0];
-            if (fatal[0] instanceof UsageClient.RetryLaterException) {
-                throw (UsageClient.RetryLaterException) fatal[0];
+            Selection sel = select(remote, orgs, manual, lastActive);
+            sel.rethrow();   // el fracaso real gana sobre "que elija el usuario"
+            if (cached && (sel.choice.ambiguous || sel.choice.orgUuid == null)) {
+                // La cache puede estar vieja (el usuario salio de una organizacion o entro en
+                // otra): sin esto el widget se quedaria en BAD_FORMAT sin salida. Una vez por ciclo.
+                orgs = fetchOrgs(remote, at);
+                sel = select(remote, orgs, manual, lastActive);
+                sel.rethrow();
             }
-            if (fatal[0] instanceof IOException) throw (IOException) fatal[0];
+            OrgSelector.Choice choice = sel.choice;
             if (choice.ambiguous) return keepOld(Snapshot.Problem.CHOOSE_ORG);
             if (choice.orgUuid == null) return keepOld(Snapshot.Problem.BAD_FORMAT);
 
             // Si la eleccion vino del manual, la sonda no corrio: hay que consultar.
-            UsageModel model = fetched.get(choice.orgUuid);
+            UsageModel model = sel.fetched.get(choice.orgUuid);
             if (model == null) model = remote.usage(choice.orgUuid);
 
             // Si el usuario cerro sesion mientras se consultaba, no se escribe nada: la muestra
             // resucitaria el historico que el logout acaba de borrar.
-            if (!session.hasSession()) return Snapshot.of(Snapshot.Problem.NO_SESSION);
+            if (!alive()) return Snapshot.of(Snapshot.Problem.NO_SESSION);
 
             Instant now = clock.now();
             clearBackoff();
@@ -213,9 +227,79 @@ public final class UsageRefresher {
         }
     }
 
+    private boolean orgsFresh(Instant at) {
+        Instant f = meta.orgsFetchedAt();
+        if (f == null || f.isAfter(at)) return false;   // sin hora o reloj atrasado: no se fia
+        return at.getEpochSecond() - f.getEpochSecond() < ORGS_TTL_SECONDS;
+    }
+
+    private List<UsageClient.Org> fetchOrgs(Remote remote, Instant at) throws IOException,
+            AuthExpiredException, BlockedException, UsageClient.RetryLaterException,
+            UnrecognizedFormatException {
+        List<UsageClient.Org> orgs = remote.organizations();
+        if (alive()) meta.rememberOrgs(orgs, at);   // Ajustes los necesita aunque el resto falle
+        return orgs;
+    }
+
+    /** Resultado de aplicar D2: la eleccion, los modelos ya consultados y el fracaso, si lo hubo. */
+    private static final class Selection {
+        OrgSelector.Choice choice;
+        final Map<String, UsageModel> fetched = new HashMap<>();
+        Exception fatal;
+
+        void rethrow() throws IOException, AuthExpiredException, BlockedException,
+                UsageClient.RetryLaterException {
+            if (fatal instanceof AuthExpiredException) throw (AuthExpiredException) fatal;
+            if (fatal instanceof BlockedException) throw (BlockedException) fatal;
+            if (fatal instanceof UsageClient.RetryLaterException) {
+                throw (UsageClient.RetryLaterException) fatal;
+            }
+            if (fatal instanceof IOException) throw (IOException) fatal;
+        }
+    }
+
+    private static Selection select(Remote remote, List<UsageClient.Org> orgs, String manual,
+                                    String lastActive) {
+        // `OrgSelector` recibe solo uuids: con "uuid|nombre" el uuid no pasaria la validacion.
+        List<String> uuids = new ArrayList<>();
+        for (UsageClient.Org o : orgs) uuids.add(o.uuid);
+        // La sonda guarda el modelo por organizacion: la consulta que decide cual es la
+        // misma que se muestra, en vez de tirarla y repetirla.
+        final Selection sel = new Selection();
+        sel.choice = OrgSelector.choose(uuids, manual, lastActive, uuid -> {
+            try {
+                sel.fetched.put(uuid, remote.usage(uuid));
+                return OrgSelector.Answer.RESPONDS;
+            } catch (UnrecognizedFormatException e) {
+                // El servidor contesto y esta organizacion no sirve: se prueba la siguiente.
+                return OrgSelector.Answer.NO;
+            } catch (AuthExpiredException | BlockedException
+                    | UsageClient.RetryLaterException | IOException e) {
+                // Fallo del intento entero, NO un descarte: UNKNOWN (nunca NO) para que una
+                // red mala no haga elegir en silencio una organizacion ajena.
+                //
+                // CONTRADICCION CONOCIDA entre contrato e implementacion: `Answer.NO` dice que
+                // un 403 de ESA organizacion es "no sirve", pero `UsageClient.check` lanza el
+                // mismo BlockedException para ese 403 y para el reto de Cloudflare
+                // (cf-mitigated / HTML), y desde aqui no se pueden distinguir. Se elige el lado
+                // seguro: se trata como bloqueo global. Coste: en una cuenta con varias
+                // organizaciones donde una da 403, el dueno ve BLOCKED y no la que si funciona.
+                // Para cerrarlo hace falta un tipo distinto en UsageClient (403 por organizacion
+                // vs reto); queda para la 4.3 o la F5.
+                sel.fatal = e;
+                return OrgSelector.Answer.UNKNOWN;
+            }
+        });
+        return sel;
+    }
+
     /** Un 200 reinicia la cuenta: el siguiente fallo vuelve a esperar un minuto, no media hora. */
     private void clearBackoff() {
-        prefs.edit().remove(KEY_ATTEMPT).remove(KEY_NEXT_ALLOWED).remove(KEY_LAST_PROBLEM).apply();
+        wipeBackoff(prefs.edit()).apply();
+    }
+
+    private static SharedPreferences.Editor wipeBackoff(SharedPreferences.Editor e) {
+        return e.remove(KEY_ATTEMPT).remove(KEY_NEXT_ALLOWED).remove(KEY_LAST_PROBLEM);
     }
 
     /**
@@ -223,10 +307,8 @@ public final class UsageRefresher {
      * la espera acumulada ya no tiene sentido.
      */
     public static void clearBackoff(Context ctx) {
-        ctx.getApplicationContext()
-                .getSharedPreferences(SettingsActivity.PREFS, Context.MODE_PRIVATE)
-                .edit().remove(KEY_ATTEMPT).remove(KEY_NEXT_ALLOWED).remove(KEY_LAST_PROBLEM)
-                .apply();
+        wipeBackoff(app(ctx).getSharedPreferences(SettingsActivity.PREFS, Context.MODE_PRIVATE)
+                .edit()).apply();
     }
 
     private static Snapshot.Problem problemFromName(String name) {
@@ -242,12 +324,23 @@ public final class UsageRefresher {
      * Lo ultimo que se pudo calcular, marcado con el problema de ahora, y se anota el backoff:
      * sin esto `Backoff` quedaria definido y probado pero nunca aplicado.
      */
+    /** `refresh()` no lanza ni siquiera en el camino de recuperacion. */
+    private Snapshot safeKeepOld(Snapshot.Problem p) {
+        try {
+            return keepOld(p);
+        } catch (RuntimeException e) {
+            return Snapshot.of(p);
+        }
+    }
+
     private Snapshot keepOld(Snapshot.Problem p) {
         // Solo cuentan los fallos que se arreglan esperando. Un 401 o una organizacion por
         // elegir no mejoran con el tiempo: los arregla el usuario, y hacerle esperar media hora
         // despues de volver a entrar seria absurdo.
-        if (p == Snapshot.Problem.OFFLINE || p == Snapshot.Problem.BLOCKED
-                || p == Snapshot.Problem.BAD_FORMAT) {
+        // Y solo si la sesion sigue viva: tras un logout, estas claves resucitarian en un archivo
+        // de preferencias recien borrado.
+        if ((p == Snapshot.Problem.OFFLINE || p == Snapshot.Problem.BLOCKED
+                || p == Snapshot.Problem.BAD_FORMAT) && alive()) {
             int attempt = prefs.getInt(KEY_ATTEMPT, 0);
             prefs.edit()
                     .putInt(KEY_ATTEMPT, attempt + 1)
@@ -267,6 +360,16 @@ public final class UsageRefresher {
      * (Review Focus 1). Si devolviera un Snapshot sin modelo, el widget se quedaria en blanco.
      */
     public Snapshot last() {
+        try {
+            return lastUnsafe();
+        } catch (RuntimeException e) {
+            // Un modelo guardado que el nucleo no digiere no puede dejar al widget sin pintar,
+            // ni hacer que cada refresco siguiente lance.
+            return Snapshot.of(Snapshot.Problem.BAD_FORMAT);
+        }
+    }
+
+    private Snapshot lastUnsafe() {
         if (!session.hasSession()) return Snapshot.of(Snapshot.Problem.NO_SESSION);
         UsageModel model = meta.lastModel();
         Instant fetchedAt = meta.lastFetchInstant();
@@ -283,11 +386,12 @@ public final class UsageRefresher {
     private Snapshot compute(UsageModel model, Instant now) {
         // El mismo `now` construye la muestra y se pasa al almacen: el rechazo de `t` futuro no
         // tiene tolerancia suficiente para dos instantes capturados por separado.
-        lastSampleStored = false;
         if (samples != null) {
             try {
-                lastSampleStored = samples.append(
-                        new Sample(now, model.weekly.percent, model.weekly.resetsAt), now);
+                // `false` = el almacen descarto la muestra. No hay nada util que hacer: el
+                // Snapshot se calcula con lo que SI hay en disco, asi que un descarte nunca
+                // pinta un numero falso. Las pruebas comprueban el disco, no este valor.
+                samples.append(new Sample(now, model.weekly.percent, model.weekly.resetsAt), now);
             } catch (IOException ignored) {
                 // Si no se pudo guardar la muestra, el dato de ahora igual se muestra.
             }

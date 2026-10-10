@@ -49,14 +49,14 @@ public final class SessionTest {
         a.isTrue("antes: hay sesion", s.hasSession());
         a.isTrue("antes: hay preferencias", p.getAll().size() == 2);
 
-        boolean ok = Session.logout(ctx, s, samples, TEST_PREFS, false);
+        boolean ok = Session.logout(ctx, s, samples, new SnapshotStore(ctx, TEST_PREFS), TEST_PREFS, false);
 
         a.isTrue("logout devuelve true", ok);
         a.isTrue("logout borra la sesion", !s.hasSession());
         a.isTrue("logout vacia las preferencias",
                 ctx.getSharedPreferences(TEST_PREFS, Context.MODE_PRIVATE).getAll().isEmpty());
         a.isTrue("logout borra el archivo de muestras", !samplesFile.exists());
-        a.isTrue("logout es repetible", Session.logout(ctx, s, samples, TEST_PREFS, false));
+        a.isTrue("logout es repetible", Session.logout(ctx, s, samples, new SnapshotStore(ctx, TEST_PREFS), TEST_PREFS, false));
 
         // Rama de fallo: deleteSharedPreferences falla -> false, pero sigue y borra la sesion.
         try {
@@ -84,7 +84,7 @@ public final class SessionTest {
             return;
         }
         a.isTrue("control: el envoltorio sin fallo devuelve true",
-                Session.logout(passthrough, s2, samples, TEST_PREFS, false));
+                Session.logout(passthrough, s2, samples, new SnapshotStore(ctx, TEST_PREFS), TEST_PREFS, false));
         s2.clear();
 
         Context failing = new ContextWrapper(ctx) {
@@ -94,7 +94,7 @@ public final class SessionTest {
                 return false;
             }
         };
-        boolean ok2 = Session.logout(failing, s, samples, TEST_PREFS, false);
+        boolean ok2 = Session.logout(failing, s, samples, new SnapshotStore(ctx, TEST_PREFS), TEST_PREFS, false);
         a.eq("el unico fallo inyectado fue deleteSharedPreferences de las prefs de prueba",
                 TEST_PREFS, deleted[0]);
         a.isTrue("si un borrado falla, logout devuelve false", !ok2);

@@ -45,11 +45,13 @@ public final class UsageRefresherTest {
         final List<String> usageCalls = new ArrayList<>();
         int orgCalls;
         Runnable onUsage;
+        Runnable onOrgs;
 
         @Override public List<UsageClient.Org> organizations() throws IOException,
                 AuthExpiredException, BlockedException, UsageClient.RetryLaterException,
                 UnrecognizedFormatException {
             orgCalls++;
+            if (onOrgs != null) onOrgs.run();
             if (orgsFail != null) throwIt(orgsFail);
             return orgs;
         }
@@ -122,6 +124,10 @@ public final class UsageRefresherTest {
         serialized(a, ctx);
         productionPathTied(a, ctx);
         logoutClearsSnapshot(a, ctx);
+        logoutInFlightWritesNothing(a, ctx);
+        transientKeystore(a, ctx);
+        recoveryPathNeverThrows(a, ctx);
+        orgCacheRevalidates(a, ctx);
     }
 
     // ---------- SnapshotStore ----------
@@ -150,16 +156,21 @@ public final class UsageRefresherTest {
             a.isTrue("resets null sobrevive (semana)", s.lastModel().weekly.resetsAt == null);
 
             s.rememberOrgs(Arrays.asList(new UsageClient.Org(ORG1, "Mia, la buena"),
-                    new UsageClient.Org(ORG2, null)));
+                    new UsageClient.Org(ORG2, null)), T0);
+            a.eq("rememberOrgs guarda la hora de la lista", T0, s.orgsFetchedAt());
+            // Independencia, en el orden que puede fallar: lo que rememberOrgs acaba de hacer no
+            // debe haber pisado el modelo guardado antes por remember.
+            a.eq("rememberOrgs no toca el modelo", 2.0, s.lastModel().weekly.percent);
             List<UsageClient.Org> orgs = s.knownOrgs();
             a.eq("dos orgs", 2, orgs.size());
             a.eq("uuid 1", ORG1, orgs.get(0).uuid);
             a.eq("la coma del nombre no parte la lista", "Mia  la buena", orgs.get(0).name);
             a.eq("uuid 2", ORG2, orgs.get(1).uuid);
             a.isTrue("nombre null sobrevive", orgs.get(1).name == null);
-            a.isTrue("remember no toco las orgs", s.knownOrgs().size() == 2);
+            // Y al reves: remember (despues de rememberOrgs) no pisa las orgs.
             s.remember(model(5, 6), T0);
-            a.eq("rememberOrgs no toca el modelo", 6.0, s.lastModel().weekly.percent);
+            a.eq("remember no toca las orgs", 2, s.knownOrgs().size());
+            a.eq("remember guardo lo suyo", 6.0, s.lastModel().weekly.percent);
 
             // Valor corrupto: se trata como "no hay", sin lanzar.
             ctx.getSharedPreferences(name, Context.MODE_PRIVATE).edit()
@@ -170,6 +181,7 @@ public final class UsageRefresherTest {
             a.isTrue("clear: sin modelo", s.lastModel() == null);
             a.isTrue("clear: sin hora", s.lastFetchInstant() == null);
             a.eq("clear: sin orgs", 0, s.knownOrgs().size());
+            a.isTrue("clear: sin hora de orgs", s.orgsFetchedAt() == null);
         } finally {
             ctx.deleteSharedPreferences(name);
         }
@@ -186,6 +198,13 @@ public final class UsageRefresherTest {
             a.eq("sin sesion no se toco la red", 0, r.fake.orgCalls + r.fake.usageCalls.size());
             a.eq("last() sin sesion", Snapshot.Problem.NO_SESSION, r.refresher.last().problem);
         } finally { r.close(); }
+
+        // Un sessionKey vacio tampoco (mismo criterio que minimalCookies).
+        Rig r3 = new Rig(ctx, true, "sessionKey=; otra=cosa");
+        try {
+            a.eq("sessionKey vacio -> NO_SESSION", Snapshot.Problem.NO_SESSION,
+                    r3.refresher.refresh().problem);
+        } finally { r3.close(); }
 
         // Una cookie sin sessionKey no es una sesion.
         Rig r2 = new Rig(ctx, true, "otra=cosa");
@@ -210,7 +229,6 @@ public final class UsageRefresherTest {
             a.isTrue("exito: el nucleo calculo la marca", s.paceMark != null);
             a.isTrue("exito: hay pronostico de sesion", s.sessionForecast != null);
             a.isTrue("exito: hay pronostico semanal", s.weeklyForecast != null);
-            a.isTrue("la muestra se guardo (append devolvio true)", r.refresher.lastSampleStored);
             try {
                 List<Sample> got = r.samples.load(T0);
                 a.eq("hay una muestra en disco", 1, got.size());
@@ -244,7 +262,6 @@ public final class UsageRefresherTest {
                 t.fake.orgs = r.fake.orgs;
                 t.fake.usage.put(ORG1, model(1, 2));
                 Snapshot ts = t.refresher.refresh();
-                a.isTrue("reloj que avanza: la muestra no se rechazo", t.refresher.lastSampleStored);
                 List<Sample> got = t.samples.load(T0.plusSeconds(60));
                 a.eq("reloj que avanza: una muestra", 1, got.size());
                 a.eq("la muestra y el Snapshot comparten instante", ts.fetchedAt, got.get(0).t);
@@ -321,13 +338,23 @@ public final class UsageRefresherTest {
             Rig r = new Rig(ctx, true, COOKIES);
             try {
                 r.fake.orgs = Arrays.asList(new UsageClient.Org(ORG1, "Uno"));
+                r.fake.usage.put(ORG1, model(30, 40));
+                a.isTrue(what + ": preparacion, primer refresco bueno", r.refresher.refresh().problem == null);
+                int calls = r.fake.usageCalls.size();
+
+                r.now[0] = T0.plusSeconds(3600);
                 r.fake.usage.put(ORG1, c[0]);
                 Snapshot s = r.refresher.refresh();
                 a.eq(what + " -> problema", c[1], s.problem);
-                a.eq(what + " sin datos previos: sin modelo", false, s.hasData());
+                // Lo que de verdad importa: el dato bueno anterior SIGUE ahi, con su hora vieja.
+                a.isTrue(what + " conserva el dato viejo", s.hasData());
+                a.eq(what + ": dato viejo exacto", 40.0, s.model.weekly.percent);
+                a.eq(what + ": con la hora vieja", T0, s.fetchedAt);
                 a.eq(what + " -> hubo backoff", c[2], prefs(r).contains("backoff_next_allowed_at"));
-                a.eq(what + " realmente llego a consultarse", 1, r.fake.usageCalls.size());
-                a.isTrue(what + " no guardo muestra", samplesEmpty(a, r));
+                a.isTrue(what + " realmente llego a consultarse", r.fake.usageCalls.size() > calls);
+                try {
+                    a.eq(what + " no guardo muestra nueva", 1, r.samples.load(r.now[0]).size());
+                } catch (IOException e) { a.fail(what + ": no se pudo leer el almacen"); }
             } finally { r.close(); }
         }
 
@@ -411,7 +438,7 @@ public final class UsageRefresherTest {
         // Seleccion manual: solo se consulta esa, usando las orgs ya conocidas.
         Rig r5 = new Rig(ctx, true, "sessionKey=falsa");
         try {
-            r5.meta.rememberOrgs(two);
+            r5.meta.rememberOrgs(two, T0);
             prefs(r5).edit().putString(SettingsActivity.KEY_ORG, ORG2).commit();
             r5.fake.usage.put(ORG1, model(1, 11));
             r5.fake.usage.put(ORG2, model(2, 22));
@@ -471,6 +498,9 @@ public final class UsageRefresherTest {
                 try { Thread.sleep(80); } catch (InterruptedException ignored) { }
                 inside.decrementAndGet();
             };
+            AtomicInteger tick = new AtomicInteger();
+            r.refresher = new UsageRefresher(r.session, r.samples, r.meta, r.prefs, c -> r.fake,
+                    () -> T0.plusSeconds(tick.incrementAndGet()));
             Thread[] ts = new Thread[3];
             Snapshot[] out = new Snapshot[3];
             for (int i = 0; i < ts.length; i++) {
@@ -484,7 +514,11 @@ public final class UsageRefresherTest {
             boolean allOk = true;
             for (Snapshot s : out) allOk &= s != null && s.problem == null;
             a.isTrue("las tres terminaron bien", allOk);
-            a.eq("las tres muestras se guardaron sin pisarse", 3, r.samples.load(T0).size());
+            // t distintos: si el nucleo las deduplicara por t, aqui seguirian siendo tres. (Que no
+            // se pisen al escribir lo garantiza tambien el candado de SampleStore; lo del
+            // candado del refrescador es la comprobacion de arriba, maxInside.)
+            a.eq("las tres muestras (t distintos) se guardaron", 3,
+                    r.samples.load(T0.plusSeconds(600)).size());
         } catch (Exception e) {
             a.fail("serializacion lanzo " + e.getClass().getSimpleName());
         } finally { r.close(); }
@@ -505,32 +539,176 @@ public final class UsageRefresherTest {
                 SampleStore.of(ctx).dir().getAbsolutePath(), writer);
     }
 
-    /** Ruling 3: el logout borra tambien lo que guarda SnapshotStore. */
+    /**
+     * Ruling 3, version que muerde: el almacen de snapshot vive en OTRO archivo de preferencias
+     * que el que el logout vacia. Si se quita la linea de `snapshot.clear()` en Session.logout,
+     * esta prueba falla (antes el vaciado general de las preferencias lo borraba igual).
+     * Ademas ata la via de produccion como el ruling 5.
+     */
     private static void logoutClearsSnapshot(Assert a, Context ctx) {
-        String name = "cuw-logout-snap-test-" + System.nanoTime();
         long n = System.nanoTime();
+        String snapName = "cuw-logout-snap-A-" + n;
+        String logoutPrefs = "cuw-logout-snap-B-" + n;
         SessionStore ss = new SessionStore(ctx, "logout-snap-" + n + ".bin", "cuw-logout-snap-" + n);
         SampleStore samples = new SampleStore(new File(ctx.getCacheDir(), "logout-snap-samples-" + n));
         try {
-            SnapshotStore meta = new SnapshotStore(ctx, name);
+            SnapshotStore meta = new SnapshotStore(ctx, snapName);
             meta.remember(model(1, 2), T0);
-            meta.rememberOrgs(Arrays.asList(new UsageClient.Org(ORG1, "Uno")));
+            meta.rememberOrgs(Arrays.asList(new UsageClient.Org(ORG1, "Uno")), T0);
+            ctx.getSharedPreferences(snapName, Context.MODE_PRIVATE).edit().commit();
             a.isTrue("antes: hay modelo", meta.lastModel() != null);
             a.isTrue("antes: hay hora", meta.lastFetchInstant() != null);
             a.eq("antes: hay orgs", 1, meta.knownOrgs().size());
-            // Las escrituras son apply(): se espera a que esten en disco para que "antes" sea cierto.
-            ctx.getSharedPreferences(name, Context.MODE_PRIVATE).edit().commit();
+            a.isTrue("antes: hay hora de orgs", meta.orgsFetchedAt() != null);
 
-            a.isTrue("logout devuelve true", Session.logout(ctx, ss, samples, name, false));
+            a.isTrue("logout devuelve true",
+                    Session.logout(ctx, ss, samples, meta, logoutPrefs, false));
 
-            SnapshotStore after = new SnapshotStore(ctx, name);
-            a.isTrue("logout borra el modelo", after.lastModel() == null);
-            a.isTrue("logout borra la hora", after.lastFetchInstant() == null);
-            a.eq("logout borra las orgs", 0, after.knownOrgs().size());
+            a.isTrue("logout borra el modelo", meta.lastModel() == null);
+            a.isTrue("logout borra la hora", meta.lastFetchInstant() == null);
+            a.eq("logout borra las orgs", 0, meta.knownOrgs().size());
+            a.isTrue("logout borra la hora de las orgs", meta.orgsFetchedAt() == null);
         } finally {
             ss.clear();
             samples.clear();
-            ctx.deleteSharedPreferences(name);
+            ctx.deleteSharedPreferences(snapName);
+            ctx.deleteSharedPreferences(logoutPrefs);
         }
+        // La via de produccion: el refrescador guarda por donde el logout borra.
+        UsageRefresher prod = new UsageRefresher(ctx);
+        a.eq("refrescador y logout comparten el archivo de preferencias",
+                Session.snapshotFor(ctx).prefsName(), prod.meta().prefsName());
+        a.eq("y es el de produccion", SettingsActivity.PREFS, prod.meta().prefsName());
+    }
+
+    /** Un logout que llega EN VUELO no deja nada reescrito: ni uuid, ni claves de espera. */
+    private static void logoutInFlightWritesNothing(Assert a, Context ctx) {
+        // (1) Llega mientras se pide /organizations (antes de que el refrescador guarde la lista).
+        Rig r = new Rig(ctx, true, "sessionKey=falsa");
+        try {
+            r.fake.orgs = Arrays.asList(new UsageClient.Org(ORG1, "Uno"));
+            r.fake.usage.put(ORG1, model(1, 2));
+            r.fake.onOrgs = () -> Session.logout(ctx, r.session, r.samples, r.meta, r.prefsName, false);
+            Snapshot s = r.refresher.refresh();
+            a.eq("logout durante /organizations: la consulta ocurrio", 1, r.fake.orgCalls);
+            a.eq("logout durante /organizations -> NO_SESSION", Snapshot.Problem.NO_SESSION, s.problem);
+            a.eq("no resucitaron las orgs", 0, r.meta.knownOrgs().size());
+            a.isTrue("el archivo de preferencias sigue vacio",
+                    ctx.getSharedPreferences(r.prefsName, Context.MODE_PRIVATE).getAll().isEmpty());
+        } finally { r.close(); }
+
+        // (1b) Solo la epoca cambia (p. ej. logout y nuevo login muy seguidos): tampoco se escribe.
+        Rig r1b = new Rig(ctx, true, "sessionKey=falsa");
+        try {
+            r1b.fake.orgs = Arrays.asList(new UsageClient.Org(ORG1, "Uno"));
+            r1b.fake.usage.put(ORG1, model(1, 2));
+            r1b.fake.onOrgs = () -> Session.EPOCH.incrementAndGet();
+            Snapshot s = r1b.refresher.refresh();
+            a.eq("epoca cambiada: la consulta ocurrio", 1, r1b.fake.orgCalls);
+            a.eq("epoca cambiada -> NO_SESSION", Snapshot.Problem.NO_SESSION, s.problem);
+            a.eq("epoca cambiada: no se guardaron orgs", 0, r1b.meta.knownOrgs().size());
+            a.isTrue("epoca cambiada: no se guardo modelo", r1b.meta.lastModel() == null);
+        } finally { r1b.close(); }
+
+        // (2) Llega mientras la consulta de uso falla por red: keepOld no escribe la espera.
+        Rig r2 = new Rig(ctx, true, COOKIES);
+        try {
+            r2.fake.orgs = Arrays.asList(new UsageClient.Org(ORG1, "Uno"));
+            r2.fake.usage.put(ORG1, new IOException("sin red"));
+            r2.fake.onUsage = () -> Session.logout(ctx, r2.session, r2.samples, r2.meta, r2.prefsName, false);
+            r2.refresher.refresh();
+            a.eq("logout durante /usage: la consulta ocurrio", 1, r2.fake.usageCalls.size());
+            // Se mira la instancia VIVA del refrescador (donde escribiria) y no se espera a apply().
+            a.isTrue("no resucitaron las claves de espera", r2.prefs.getAll().isEmpty());
+            a.isTrue("ni la de la espera en concreto", !r2.prefs.contains("backoff_next_allowed_at"));
+        } finally { r2.close(); }
+    }
+
+    /** Un fallo transitorio del Keystore no es "sin sesion": se conserva el dato y la sesion. */
+    private static void transientKeystore(Assert a, Context ctx) {
+        Rig r = new Rig(ctx, true, COOKIES);
+        try {
+            r.fake.orgs = Arrays.asList(new UsageClient.Org(ORG1, "Uno"));
+            r.fake.usage.put(ORG1, model(30, 40));
+            a.isTrue("preparacion: refresco bueno", r.refresher.refresh().problem == null);
+
+            boolean[] fail = {true};
+            UsageRefresher flaky = new UsageRefresher(r.session,
+                    () -> { if (fail[0]) throw new java.security.GeneralSecurityException("hipo"); return COOKIES; },
+                    r.samples, r.meta, r.prefs, c -> r.fake, () -> r.now[0]);
+            r.now[0] = T0.plusSeconds(3600);
+            Snapshot s = flaky.refresh();
+            a.eq("hipo del Keystore -> OFFLINE, no NO_SESSION", Snapshot.Problem.OFFLINE, s.problem);
+            a.isTrue("hipo del Keystore: sigue el dato", s.hasData());
+            a.eq("hipo del Keystore: el dato de antes", 40.0, s.model.weekly.percent);
+            a.isTrue("hipo del Keystore: la sesion NO se borro", r.session.hasSession());
+
+            // load() que devuelve null si es "sin sesion".
+            UsageRefresher none = new UsageRefresher(r.session, () -> null, r.samples, r.meta,
+                    r.prefs, c -> r.fake, () -> r.now[0]);
+            a.eq("load() null -> NO_SESSION", Snapshot.Problem.NO_SESSION, none.refresh().problem);
+        } finally { r.close(); }
+    }
+
+    /** Contrato: `refresh()` y `last()` devuelven un Snapshot pase lo que pase, tambien al recuperarse. */
+    private static void recoveryPathNeverThrows(Assert a, Context ctx) {
+        Rig r = new Rig(ctx, true, COOKIES);
+        try {
+            r.fake.orgs = Arrays.asList(new UsageClient.Org(ORG1, "Uno"));
+            r.fake.usage.put(ORG1, model(30, 40));
+            boolean[] armed = {false};
+            UsageRefresher bad = new UsageRefresher(r.session, r.samples, r.meta, r.prefs,
+                    c -> r.fake, () -> {
+                        if (armed[0]) throw new IllegalStateException("reloj roto");
+                        return T0;
+                    });
+            a.isTrue("preparacion: refresco bueno", bad.refresh().problem == null);
+            armed[0] = true;   // ahora TODO lo que lea el reloj lanza: tambien keepOld y last()
+            Snapshot s = null;
+            boolean threw = false;
+            try { s = bad.refresh(); } catch (RuntimeException e) { threw = true; }
+            a.isTrue("refresh() no lanza aunque el camino de recuperacion falle", !threw);
+            a.isTrue("devuelve un Snapshot con problema", s != null && s.problem != null);
+            threw = false;
+            try { bad.last(); } catch (RuntimeException e) { threw = true; }
+            a.isTrue("last() no lanza aunque el reloj falle", !threw);
+            // Y no queda pegajoso: con el reloj sano vuelve a funcionar.
+            armed[0] = false;
+            r.now[0] = T0;
+            a.isTrue("sin el fallo, el siguiente refresco va bien", bad.refresh().problem == null);
+        } finally { r.close(); }
+    }
+
+    /** La lista de organizaciones recordada se revalida: caduca y no atrapa en BAD_FORMAT. */
+    private static void orgCacheRevalidates(Assert a, Context ctx) {
+        String OLD = "99999999-9999-4999-8999-999999999999";
+        // (a) cache vieja: la pista apunta a una org que ya no sirve; se re-pide y se recupera.
+        Rig r = new Rig(ctx, true, "sessionKey=falsa; lastActiveOrg=" + OLD);
+        try {
+            r.meta.rememberOrgs(Arrays.asList(new UsageClient.Org(OLD, "Vieja")), T0);
+            r.fake.orgs = Arrays.asList(new UsageClient.Org(ORG1, "Nueva"));
+            r.fake.usage.put(OLD, new UnrecognizedFormatException("x"));
+            r.fake.usage.put(ORG1, model(1, 77));
+            Snapshot s = r.refresher.refresh();
+            a.eq("cache con org vieja: se re-pidio /organizations", 1, r.fake.orgCalls);
+            a.isTrue("cache con org vieja: se recupera", s.problem == null);
+            a.eq("cache con org vieja: muestra la nueva", 77.0, s.model.weekly.percent);
+            a.eq("la cache se actualizo", ORG1, r.meta.knownOrgs().get(0).uuid);
+        } finally { r.close(); }
+
+        // (b) caducidad por tiempo: con eleccion posible igualmente se re-pide pasadas 6 h.
+        Rig r2 = new Rig(ctx, true, COOKIES);
+        try {
+            r2.fake.orgs = Arrays.asList(new UsageClient.Org(ORG1, "Uno"));
+            r2.fake.usage.put(ORG1, model(1, 2));
+            r2.refresher.refresh();
+            a.eq("1er refresco pide /organizations", 1, r2.fake.orgCalls);
+            r2.now[0] = T0.plusSeconds(5 * 3600);
+            r2.refresher.refresh();
+            a.eq("a las 5 h se usa la cache", 1, r2.fake.orgCalls);
+            r2.now[0] = T0.plusSeconds(7 * 3600);
+            r2.refresher.refresh();
+            a.eq("a las 7 h se re-pide", 2, r2.fake.orgCalls);
+        } finally { r2.close(); }
     }
 }

@@ -23,12 +23,14 @@ public final class SnapshotStore {
 
     private static final String KEY_FETCHED_AT = "fetched_at";
     private static final String KEY_ORGS = "known_orgs";
+    private static final String KEY_ORGS_AT = "known_orgs_at";
     private static final String KEY_SP = "last_session_percent";
     private static final String KEY_SR = "last_session_resets";
     private static final String KEY_WP = "last_weekly_percent";
     private static final String KEY_WR = "last_weekly_resets";
 
     private final SharedPreferences prefs;
+    private final String prefsName;
 
     public SnapshotStore(Context ctx) {
         this(ctx, SettingsActivity.PREFS);
@@ -36,19 +38,37 @@ public final class SnapshotStore {
 
     /** Para las pruebas y para el logout con preferencias inyectadas. */
     SnapshotStore(Context ctx, String prefsName) {
+        this.prefsName = prefsName;
         this.prefs = ctx.getApplicationContext() != null
                 ? ctx.getApplicationContext().getSharedPreferences(prefsName, Context.MODE_PRIVATE)
                 : ctx.getSharedPreferences(prefsName, Context.MODE_PRIVATE);
     }
 
-    /** Se serializa `uuid|nombre`; el `|` no aparece en un uuid y se parte por el primero. */
-    public void rememberOrgs(List<UsageClient.Org> orgs) {
+    /** Nombre del archivo de preferencias. Lo usan las pruebas para atar la via de produccion. */
+    String prefsName() { return prefsName; }
+
+    /** Cuando se pidio por ultima vez la lista a la red; null si nunca. Caduca la cache. */
+    public Instant orgsFetchedAt() {
+        try {
+            long v = prefs.getLong(KEY_ORGS_AT, 0L);
+            return v == 0L ? null : Instant.ofEpochSecond(v);
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    /**
+     * Se serializa `uuid|nombre`; el `|` no aparece en un uuid y se parte por el primero.
+     * `at` es el instante en que la red devolvio esta lista.
+     */
+    public void rememberOrgs(List<UsageClient.Org> orgs, Instant at) {
         StringBuilder sb = new StringBuilder();
         for (UsageClient.Org o : orgs) {
             if (sb.length() > 0) sb.append(',');
             sb.append(o.uuid).append('|').append(o.name == null ? "" : o.name.replace(',', ' '));
         }
-        prefs.edit().putString(KEY_ORGS, sb.toString()).apply();
+        prefs.edit().putString(KEY_ORGS, sb.toString())
+                .putLong(KEY_ORGS_AT, at.getEpochSecond()).apply();
     }
 
     /**
@@ -117,7 +137,7 @@ public final class SnapshotStore {
 
     /** Borra todo lo que guarda este almacen. commit(): tiene que estar en disco al volver. */
     public boolean clear() {
-        return prefs.edit().remove(KEY_FETCHED_AT).remove(KEY_ORGS)
+        return prefs.edit().remove(KEY_FETCHED_AT).remove(KEY_ORGS).remove(KEY_ORGS_AT)
                 .remove(KEY_SP).remove(KEY_SR).remove(KEY_WP).remove(KEY_WR).commit();
     }
 }

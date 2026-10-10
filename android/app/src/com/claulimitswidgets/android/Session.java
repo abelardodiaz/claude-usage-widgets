@@ -32,7 +32,24 @@ public final class Session {
         } catch (RuntimeException e) {
             samples = null;   // no se pudo abrir el directorio: no se sabe si hay muestras -> false
         }
-        return logout(ctx, new SessionStore(ctx), samples, SettingsActivity.PREFS, true);
+        return logout(ctx, new SessionStore(ctx), samples, snapshotFor(ctx),
+                SettingsActivity.PREFS, true);
+    }
+
+    /**
+     * Epoca de sesion. Cada logout la incrementa al empezar y al terminar. Un refresco guarda la
+     * epoca al empezar y no escribe nada si cambio: asi un cierre de sesion que llega mientras
+     * consulta no puede resucitar lo que acaba de borrarse, y sin bloquear nunca el hilo de la UI.
+     */
+    static final java.util.concurrent.atomic.AtomicLong EPOCH =
+            new java.util.concurrent.atomic.AtomicLong();
+
+    /**
+     * El almacen de ultimo modelo/orgs/hora de produccion. Misma idea que `samplesFor`: el logout
+     * borra por aqui y UsageRefresher guarda por aqui.
+     */
+    static SnapshotStore snapshotFor(Context ctx) {
+        return new SnapshotStore(ctx);
     }
 
     /**
@@ -48,9 +65,13 @@ public final class Session {
      * job ni widgets, para no afectar la sesion ni el aparato reales del dueno.
      */
     static boolean logout(Context ctx, SessionStore store, SampleStore samples,
-                          String prefsName, boolean realDevice) {
-        // F4: envolver esto en synchronized (UsageRefresher.LOCK) para no borrar mientras un
-        // refresco escribe. (SampleStore ya serializa su propio append/clear con su candado.)
+                          SnapshotStore snapshot, String prefsName, boolean realDevice) {
+        // NO envolver esto en synchronized (UsageRefresher.LOCK): un refresco mantiene ese candado
+        // durante toda la red (hasta ~20 s por peticion y hay varias sondas), y logout se llama
+        // desde el hilo de la UI = ANR. La coordinacion es la epoca: se incrementa aqui y el
+        // refresco no escribe si cambio (ver EPOCH). Si hiciera falta mas, un tryLock con espera
+        // corta, nunca un lock bloqueante. (SampleStore ya serializa su append/clear.)
+        EPOCH.incrementAndGet();
         Context app = ctx.getApplicationContext() != null ? ctx.getApplicationContext() : ctx;
         boolean ok = true;
 
@@ -59,9 +80,9 @@ public final class Session {
         // no depende de realDevice. null = no se pudo abrir el directorio: cuenta como fallo.
         ok &= samples != null && samples.clear();
         // Ultimo modelo, organizaciones conocidas y hora de la consulta: datos de la cuenta.
-        // Hoy viven en el mismo archivo de preferencias que vacia el paso siguiente, pero no se
-        // depende de eso: si manana se mueven a otro archivo, esta linea sigue borrandolos.
-        ok &= new SnapshotStore(app, prefsName).clear();
+        // El almacen viene inyectado (por `snapshotFor` en produccion) y la prueba usa uno en OTRO
+        // archivo de preferencias que el que vacia el paso siguiente: quitar esta linea la rompe.
+        ok &= snapshot != null && snapshot.clear();
 
         // Preferencias: manual_org (uuid de cuenta) y lo que se anada. commit() y no apply():
         // tiene que estar en disco cuando el metodo vuelve.
@@ -83,6 +104,7 @@ public final class Session {
         if (realDevice) {
             ok &= attempt(() -> WidgetUpdateJob.pushToWidgets(app));
         }
+        EPOCH.incrementAndGet();   // por si un refresco empezo entre el primer incremento y los borrados
         return ok;
     }
 
