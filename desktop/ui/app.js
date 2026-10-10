@@ -123,8 +123,11 @@ function renderHist() {
   const max = Math.max(q || 0, ...h.map((d) => d.used), 1) * 1.15;
   const todayIso = h[h.length - 1].date;
   const since = data.today.tracking_since;
-  const limit = q == null ? "" : `<div class="limit" style="bottom:${(q / max) * 78}px"><em>${T.hist.quota}${q.toFixed(1)}%</em></div>`;
-  return `<h4>${T.hist.title} ${closeButton()}</h4>
+  // La etiqueta del cupo va en el encabezado como leyenda, no sobre la linea: la barra de hoy
+  // siempre es la de la derecha y su valor chocaba con la etiqueta cuando rondaba el cupo.
+  const limit = q == null ? "" : `<div class="limit" style="bottom:${(q / max) * 78}px"></div>`;
+  const key = q == null ? "" : `<span class="qkey"><i></i>${T.hist.quota}${q.toFixed(1)}%</span>`;
+  return `<h4><span>${T.hist.title}</span>${key}${closeButton()}</h4>
     <div class="chart">${limit}
       ${h.map((d) => {
         // Hoy lleva el color que decide el nucleo (R7); los dias pasados, gris neutro.
