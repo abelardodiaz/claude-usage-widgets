@@ -10,10 +10,20 @@ updates:
     schedule:
       interval: weekly
   # Incluye jiff-tzdb, la copia embebida de tzdata del widget (D11).
+  # desktop/lite fija las mismas versiones exactas que src-tauri para el nucleo compartido:
+  # group-by dependency-name hace un solo PR por dependencia que actualiza los dos Cargo.lock
+  # a la vez (el job lite del CI falla si se separan).
   - package-ecosystem: cargo
-    directory: /desktop/src-tauri
+    directories:
+      - /desktop/src-tauri
+      - /desktop/lite
     schedule:
       interval: weekly
+    groups:
+      cargo-por-dependencia:
+        group-by: dependency-name
+        patterns:
+          - "*"
   - package-ecosystem: npm
     directory: /desktop
     schedule:
