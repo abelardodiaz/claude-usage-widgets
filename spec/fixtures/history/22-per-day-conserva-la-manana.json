@@ -1,0 +1,36 @@
+{
+  "description": "R4: per_day no mira ventanas y conserva el consumo de la manana; today_used solo cuenta la ventana nueva (0). La muestra de las 09:00 es anterior al reinicio: partial false aunque no haya ninguna antes de medianoche",
+  "input": {
+    "tz": "-06:00",
+    "now": "2026-10-09T16:00:00-06:00",
+    "weekly": {
+      "percent": 0,
+      "resets_at": "2026-10-16T14:00:00-06:00"
+    },
+    "samples": [
+      {
+        "t": "2026-10-09T09:00:00-06:00",
+        "percent": 85,
+        "resets_at": "2026-10-09T14:00:00-06:00"
+      },
+      {
+        "t": "2026-10-09T13:00:00-06:00",
+        "percent": 91,
+        "resets_at": "2026-10-09T14:00:00-06:00"
+      },
+      {
+        "t": "2026-10-09T16:00:00-06:00",
+        "percent": 0,
+        "resets_at": "2026-10-16T14:00:00-06:00"
+      }
+    ]
+  },
+  "expected": {
+    "per_day": {
+      "2026-10-09": 6
+    },
+    "today_used": 0,
+    "quota_today": 14.285714,
+    "partial": false
+  }
+}

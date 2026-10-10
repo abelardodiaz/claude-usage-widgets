@@ -1,0 +1,36 @@
+{
+  "description": "R0/R4: las comparaciones de day_start y partial son a milisegundos con piso. inicio_ventana = 14:00:00.0009 y now = 14:00:00.0001 caen en el mismo milisegundo: inicio_ventana <= now. En nanosegundos no",
+  "input": {
+    "tz": "-06:00",
+    "now": "2026-10-09T14:00:00.0001-06:00",
+    "weekly": {
+      "percent": 1,
+      "resets_at": "2026-10-16T14:00:00.0009-06:00"
+    },
+    "samples": [
+      {
+        "t": "2026-10-09T08:00:00-06:00",
+        "percent": 80,
+        "resets_at": "2026-10-09T14:00:00-06:00"
+      },
+      {
+        "t": "2026-10-09T12:00:00-06:00",
+        "percent": 86,
+        "resets_at": "2026-10-09T14:00:00-06:00"
+      },
+      {
+        "t": "2026-10-09T14:00:00.0001-06:00",
+        "percent": 1,
+        "resets_at": "2026-10-16T14:00:00.0009-06:00"
+      }
+    ]
+  },
+  "expected": {
+    "per_day": {
+      "2026-10-09": 7
+    },
+    "today_used": 1,
+    "quota_today": 14.285714,
+    "partial": false
+  }
+}

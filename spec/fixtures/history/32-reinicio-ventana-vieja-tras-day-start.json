@@ -1,0 +1,41 @@
+{
+  "description": "R4 con R2: la ventana vieja (resets_at 14:40) sigue sumando tras el reinicio de las 14:00 de weekly; esos puntos van a per_day pero no a today_used",
+  "input": {
+    "tz": "-06:00",
+    "now": "2026-10-09T15:00:00-06:00",
+    "weekly": {
+      "percent": 3,
+      "resets_at": "2026-10-16T14:00:00-06:00"
+    },
+    "samples": [
+      {
+        "t": "2026-10-09T08:00:00-06:00",
+        "percent": 50,
+        "resets_at": "2026-10-09T14:40:00-06:00"
+      },
+      {
+        "t": "2026-10-09T14:20:00-06:00",
+        "percent": 60,
+        "resets_at": "2026-10-09T14:40:00-06:00"
+      },
+      {
+        "t": "2026-10-09T14:30:00-06:00",
+        "percent": 62,
+        "resets_at": "2026-10-09T14:40:00-06:00"
+      },
+      {
+        "t": "2026-10-09T15:00:00-06:00",
+        "percent": 3,
+        "resets_at": "2026-10-16T13:20:00-06:00"
+      }
+    ]
+  },
+  "expected": {
+    "per_day": {
+      "2026-10-09": 15
+    },
+    "today_used": 3,
+    "quota_today": 14.285714,
+    "partial": false
+  }
+}
