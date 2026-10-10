@@ -51,6 +51,7 @@ public final class WidgetUpdateJobTest {
         gate(a);
         cycles(a);
         pushLock(a);
+        logoutPushLock(a);
         runNowDoesNotBlock(a);
         orgs(a, ctx);
         manifest(a, ctx);
@@ -283,6 +284,39 @@ public final class WidgetUpdateJobTest {
             a.isTrue("al soltar, el segundo pinta", secondRan[0]);
         } catch (InterruptedException e) {
             a.fail("pushLock interrumpida");
+        } finally {
+            release.countDown();
+        }
+    }
+
+    /**
+     * El pintado incondicional (el del logout) toma el MISMO candado que el del refresco. Se
+     * prueba `pushLocked`, que es por donde pasa `pushToWidgets`: llamar a este ultimo pintaria
+     * en los widgets del dueno.
+     */
+    private static void logoutPushLock(Assert a) {
+        Snapshot s = Snapshot.of(Snapshot.Problem.NO_SESSION);
+        CountDownLatch inside = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        CountDownLatch pushed = new CountDownLatch(1);
+        Thread refresh = new Thread(() -> WidgetUpdateJob.pushIfCurrent(s, 1, () -> 1, x -> {
+            inside.countDown();
+            try { release.await(5, TimeUnit.SECONDS); } catch (InterruptedException ignored) { }
+        }));
+        refresh.start();
+        try {
+            a.isTrue("un refresco esta pintando", inside.await(5, TimeUnit.SECONDS));
+            new Thread(() -> {
+                WidgetUpdateJob.pushLocked(s, x -> { });
+                pushed.countDown();
+            }).start();
+            a.isTrue("el pintado del logout ESPERA al refresco que pinta",
+                    !pushed.await(300, TimeUnit.MILLISECONDS));
+            release.countDown();
+            a.isTrue("y pinta en cuanto este suelta", pushed.await(5, TimeUnit.SECONDS));
+            refresh.join(5000);
+        } catch (InterruptedException e) {
+            a.fail("logoutPushLock interrumpida");
         } finally {
             release.countDown();
         }

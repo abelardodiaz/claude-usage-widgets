@@ -224,16 +224,28 @@ public class WidgetUpdateJob extends JobService {
         }
     }
 
-    /** Pinta ya, sin condiciones: lo usa Session.logout (con "sin sesion") bajo el mismo candado. */
+    /**
+     * Pinta ya, sin condiciones: lo usa Session.logout (con "sin sesion"). Pasa por el mismo
+     * candado que `pushIfCurrent` ({@link #pushLocked}).
+     */
     static void pushToWidgets(Context ctx, Snapshot s) {
+        pushLocked(s, x -> paintAll(ctx, x));
+    }
+
+    /** El unico sitio donde el pintado incondicional toma el candado. */
+    static void pushLocked(Snapshot s, Consumer<Snapshot> sink) {
         synchronized (PUSH_LOCK) {
-            AppWidgetManager awm = AppWidgetManager.getInstance(ctx);
-            for (int id : awm.getAppWidgetIds(new ComponentName(ctx, Widget4x1Provider.class))) {
-                paint(awm, id, ctx, s, true);
-            }
-            for (int id : awm.getAppWidgetIds(new ComponentName(ctx, Widget4x2Provider.class))) {
-                paint(awm, id, ctx, s, false);
-            }
+            sink.accept(s);
+        }
+    }
+
+    private static void paintAll(Context ctx, Snapshot s) {
+        AppWidgetManager awm = AppWidgetManager.getInstance(ctx);
+        for (int id : awm.getAppWidgetIds(new ComponentName(ctx, Widget4x1Provider.class))) {
+            paint(awm, id, ctx, s, true);
+        }
+        for (int id : awm.getAppWidgetIds(new ComponentName(ctx, Widget4x2Provider.class))) {
+            paint(awm, id, ctx, s, false);
         }
     }
 
