@@ -32,8 +32,11 @@ public final class Session {
         } catch (RuntimeException e) {
             samples = null;   // no se pudo abrir el directorio: no se sabe si hay muestras -> false
         }
+        Context a = ctx.getApplicationContext() != null ? ctx.getApplicationContext() : ctx;
         return logout(ctx, new SessionStore(ctx), samples, snapshotFor(ctx),
-                SettingsActivity.PREFS, true);
+                SettingsActivity.PREFS, true,
+                () -> WidgetUpdateJob.cancel(a),
+                s -> WidgetUpdateJob.pushLocked(s, x -> WidgetUpdateJob.paintAll(a, x)), EPOCH);
     }
 
     /**
@@ -61,31 +64,25 @@ public final class Session {
     }
 
     /**
-     * Para las pruebas: almacen y preferencias inyectados; con realDevice=false no toca WebView, cache,
-     * job ni widgets, para no afectar la sesion ni el aparato reales del dueno.
-     */
-    static boolean logout(Context ctx, SessionStore store, SampleStore samples,
-                          SnapshotStore snapshot, String prefsName, boolean realDevice) {
-        Context a = ctx.getApplicationContext() != null ? ctx.getApplicationContext() : ctx;
-        return logout(ctx, store, samples, snapshot, prefsName, realDevice,
-                realDevice ? () -> WidgetUpdateJob.cancel(a) : null,
-                realDevice ? s -> WidgetUpdateJob.pushLocked(s, x -> WidgetUpdateJob.paintAll(a, x)) : null);
-    }
-
-    /**
      * Con los dos pasos del aparato inyectados: `cancelJob` (cancela los trabajos) y
      * `pushWidgets` (pinta "sin sesion"). null = no hacerlo. Asi se prueba que el logout los
      * llama, y en orden, sin cancelar el job ni repintar los widgets reales del dueno.
+     *
+     * `epoch` tambien se inyecta: la suite corre en el proceso de la app, donde puede haber un
+     * refresco REAL en vuelo; si las pruebas incrementaran el global `EPOCH`, ese refresco
+     * creeria que hubo un cierre de sesion y ejecutaria su deshacer sobre los almacenes de
+     * produccion. Las pruebas pasan un contador propio. Con realDevice=false no toca WebView ni cache.
      */
     static boolean logout(Context ctx, SessionStore store, SampleStore samples,
                           SnapshotStore snapshot, String prefsName, boolean realDevice,
-                          Runnable cancelJob, java.util.function.Consumer<Snapshot> pushWidgets) {
+                          Runnable cancelJob, java.util.function.Consumer<Snapshot> pushWidgets,
+                          java.util.concurrent.atomic.AtomicLong epoch) {
         // NO envolver esto en synchronized (UsageRefresher.LOCK): un refresco mantiene ese candado
         // durante toda la red (hasta ~20 s por peticion y hay varias sondas), y logout se llama
         // desde el hilo de la UI = ANR. La coordinacion es la epoca: se incrementa aqui y el
         // refresco no escribe si cambio (ver EPOCH). Si hiciera falta mas, un tryLock con espera
         // corta, nunca un lock bloqueante. (SampleStore ya serializa su append/clear.)
-        EPOCH.incrementAndGet();
+        epoch.incrementAndGet();
         Context app = ctx.getApplicationContext() != null ? ctx.getApplicationContext() : ctx;
         boolean ok = true;
 
@@ -118,7 +115,7 @@ public final class Session {
         if (pushWidgets != null) {
             ok &= attempt(() -> pushWidgets.accept(Snapshot.of(Snapshot.Problem.NO_SESSION)));
         }
-        EPOCH.incrementAndGet();   // por si un refresco empezo entre el primer incremento y los borrados
+        epoch.incrementAndGet();   // por si un refresco empezo entre el primer incremento y los borrados
         return ok;
     }
 

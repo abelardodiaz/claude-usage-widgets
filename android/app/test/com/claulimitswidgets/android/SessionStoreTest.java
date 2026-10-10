@@ -144,6 +144,24 @@ public final class SessionStoreTest {
     @SuppressWarnings("unchecked")
     private static <T extends Throwable> T sneaky(Throwable t) throws T { throw (T) t; }
 
+    /** M1: cerrar sesion borra tambien el temporal cifrado de save(). */
+    public static void runTmp(Assert a, android.content.Context ctx) {
+        SessionStore s = new SessionStore(ctx, "session-tmp-test.bin", "cuw-session-tmp-test");
+        s.clear();
+        File tmp = new File(ctx.getFilesDir(), "session-tmp-test.bin.tmp");
+        try {
+            Files.write(tmp.toPath(), new byte[] {12, 1, 2, 3, 4, 5});
+            a.isTrue("antes: existe el temporal", tmp.isFile());
+            a.isTrue("clear devuelve true", s.clear());
+            a.isTrue("clear borra el temporal de save()", !tmp.exists());
+        } catch (Exception e) {
+            a.fail("runTmp: " + e.getClass().getSimpleName());
+        } finally {
+            tmp.delete();
+            s.clear();
+        }
+    }
+
     /** Cierre de F3: hasSession() mira la forma del archivo, sin descifrar. */
     public static void runCierre(Assert a, android.content.Context ctx) {
         SessionStore s = new SessionStore(ctx, TEST_FILE, TEST_ALIAS);

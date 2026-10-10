@@ -34,6 +34,7 @@
         <activity
             android:name=".SettingsActivity"
             android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden"
             android:label="@string/settings_title" />
 
         <receiver android:name=".Widget4x1Provider" android:exported="false">

@@ -169,6 +169,100 @@ public final class WidgetRendererTest {
         noUuid(a, ctx, en);
         fillColors(a, en);
         translations(a, en, es);
+        fitsMinHeight(a, en);
+        forecastReappears(a, en);
+    }
+
+    /**
+     * I1: `problemWithOldData` pinta sobre un FrameLayout SIN acotar, asi que no ve el recorte.
+     * Aqui se pinta en un contenedor con la altura REAL minima del 4x2 (170dp) y se afirma que el
+     * ultimo hijo de cada bloque cabe. El estado degradado mas comun (OFFLINE con dato viejo) suma
+     * el aviso al contenido y es el que se recortaba.
+     */
+    private static void fitsMinHeight(Assert a, Context en) {
+        Forecast fc = new Forecast(NOW.plus(Duration.ofDays(1)), true, Basis.WINDOW);
+        Snapshot[] cases = {
+            snap(42, 68, 3, 10.0, 0.4, fc, NOW.minus(Duration.ofHours(3)), Snapshot.Problem.OFFLINE),
+            snap(42, 68, 3, 10.0, 0.4, fc, NOW.minus(Duration.ofHours(3)), Snapshot.Problem.BLOCKED),
+            snap(42, 68, 3, 10.0, 0.4, fc, NOW.minus(Duration.ofHours(3)), Snapshot.Problem.BAD_FORMAT),
+            snap(42, 68, 3, 10.0, 0.4, fc, NOW.minus(Duration.ofHours(3)), null),
+        };
+        String[] names = {"OFFLINE", "BLOCKED", "BAD_FORMAT", "sin aviso"};
+        float d = en.getResources().getDisplayMetrics().density;
+        int w = Math.round(250 * d), h = Math.round(170 * d);
+        for (int i = 0; i < cases.length; i++) {
+            Snapshot s = cases[i];
+            String tag = "4x2 en 170dp, " + names[i];
+            int[] bottoms = new int[2];
+            int[] hostH = new int[1];
+            boolean[] whole = new boolean[3];
+            onMain(() -> {
+                FrameLayout host = new FrameLayout(en);
+                View root = WidgetRenderer.render(en, s, false, NOW).apply(en, host);
+                // `apply` infla SIN colgar la vista del padre: sin esto no se mide ni se coloca nada
+                // y todo "cabe" con altura 0 (la prueba pasaba en vacio).
+                host.addView(root, new FrameLayout.LayoutParams(-1, -1));
+                host.measure(View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY),
+                        View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.EXACTLY));
+                host.layout(0, 0, w, h);
+                bottoms[0] = bottomIn(root.findViewById(R.id.forecast), host);
+                bottoms[1] = bottomIn(root.findViewById(R.id.age), host);
+                hostH[0] = host.getHeight();
+                // LinearLayout NO deja un hijo fuera del padre: lo mide con lo que queda y lo
+                // encoge hasta 0. Por eso no basta mirar el borde inferior: hay que ver que el
+                // hijo conserva su altura natural (una linea de texto con su relleno).
+                // Con aviso el pronostico viejo se oculta (ver WidgetRenderer); sin aviso se ve entero.
+                View fcv = root.findViewById(R.id.forecast);
+                whole[0] = s.problem != null ? fcv.getVisibility() == View.GONE : fullText(fcv);
+                whole[1] = fullText(root.findViewById(R.id.age));
+                View todayBar = null;
+                for (int id : TODAY) {
+                    View b = root.findViewById(id);
+                    if (b.getVisibility() == View.VISIBLE) todayBar = b;
+                }
+                whole[2] = todayBar != null && todayBar.getHeight() >= Math.round(8 * d);
+            });
+            a.eq(tag + ": el contenedor mide lo pedido", h, hostH[0]);
+            a.isTrue(tag + ": el contenido se coloco (la edad tiene altura)", bottoms[1] > 0);
+            a.isTrue(tag + ": el pronostico cabe (" + bottoms[0] + " <= " + h + ")", bottoms[0] <= h);
+            a.isTrue(tag + ": la edad cabe (" + bottoms[1] + " <= " + h + ")", bottoms[1] <= h);
+            a.isTrue(tag + ": pronostico oculto con aviso / entero sin el", whole[0]);
+            a.isTrue(tag + ": la edad conserva su altura", whole[1]);
+            a.isTrue(tag + ": la barra de hoy conserva sus 8dp", whole[2]);
+        }
+    }
+
+    /** El lanzador actualiza con `reapply`: al volver el dato bueno, el pronostico oculto reaparece. */
+    private static void forecastReappears(Assert a, Context en) {
+        Forecast fc = new Forecast(NOW.plus(Duration.ofDays(1)), true, Basis.WINDOW);
+        int[] vis = new int[2];
+        onMain(() -> {
+            FrameLayout host = new FrameLayout(en);
+            Snapshot bad = snap(42, 68, 3, 10.0, 0.4, fc, NOW, Snapshot.Problem.OFFLINE);
+            View root = WidgetRenderer.render(en, bad, false, NOW).apply(en, host);
+            vis[0] = root.findViewById(R.id.forecast).getVisibility();
+            WidgetRenderer.render(en, snap(42, 68, 3, 10.0, 0.4, fc, NOW, null), false, NOW)
+                    .reapply(en, root);
+            vis[1] = root.findViewById(R.id.forecast).getVisibility();
+        });
+        a.eq("con aviso el pronostico se oculta", View.GONE, vis[0]);
+        a.eq("reapply sin aviso: el pronostico vuelve", View.VISIBLE, vis[1]);
+    }
+
+    private static boolean fullText(View v) {
+        TextView t = (TextView) v;
+        return t.getHeight() >= t.getLineHeight() + t.getPaddingTop() + t.getPaddingBottom();
+    }
+
+    /** Parte baja de `v` en coordenadas del contenedor `host`. */
+    private static int bottomIn(View v, View host) {
+        int top = 0;
+        View x = v;
+        while (x != host && x != null) {
+            top += x.getTop();
+            x = x.getParent() instanceof View ? (View) x.getParent() : null;
+        }
+        return top + v.getHeight();
     }
 
     /** Cada Problem, sin datos: el aviso correcto y NINGUN numero, en los dos tamanios y idiomas. */

@@ -56,6 +56,7 @@ public final class WidgetUpdateJobTest {
         logoutHooks(a, ctx);
         runNowDoesNotBlock(a);
         orgs(a, ctx);
+        paintEach(a);
         manifest(a, ctx);
         sizes(a, ctx);
         enums(a);
@@ -393,7 +394,7 @@ public final class WidgetUpdateJobTest {
         List<Snapshot> pushed = new ArrayList<>();
         boolean ok = Session.logout(ctx, st, samples, new SnapshotStore(ctx, prefs), prefs, false,
                 () -> log.add("cancel:sesion=" + st.hasSession()),
-                x -> { log.add("push"); pushed.add(x); });
+                x -> { log.add("push"); pushed.add(x); }, new java.util.concurrent.atomic.AtomicLong());
         a.isTrue("logout con ganchos: true", ok);
         a.eq("cancela el job y luego pinta, ya con la sesion borrada",
                 Arrays.asList("cancel:sesion=false", "push"), log);
@@ -406,12 +407,13 @@ public final class WidgetUpdateJobTest {
         st.clear();
         log.clear();
         ok = Session.logout(ctx, st, samples, new SnapshotStore(ctx, prefs), prefs, false,
-                () -> { throw new IllegalStateException("x"); }, x -> log.add("push"));
+                () -> { throw new IllegalStateException("x"); }, x -> log.add("push"), new java.util.concurrent.atomic.AtomicLong());
         a.isTrue("cancel que lanza: logout false", !ok);
         a.eq("cancel que lanza: aun asi pinta", Arrays.asList("push"), log);
         // Sin ganchos (realDevice=false de siempre): ni cancela ni pinta.
         log.clear();
-        a.isTrue("sin ganchos: true", Session.logout(ctx, st, samples, new SnapshotStore(ctx, prefs), prefs, false, null, null));
+        a.isTrue("sin ganchos: true", Session.logout(ctx, st, samples, new SnapshotStore(ctx, prefs), prefs, false, null, null,
+                new java.util.concurrent.atomic.AtomicLong()));
         st.clear();
     }
 
@@ -492,6 +494,16 @@ public final class WidgetUpdateJobTest {
                 Session.snapshotFor(ctx).prefsName());
     }
 
+    /** I4: un widget que falla no deja sin pintar a los demas, y el fallo SUBE. */
+    private static void paintEach(Assert a) {
+        List<Integer> seen = new ArrayList<>();
+        boolean all = WidgetUpdateJob.paintEach(new int[] {1, 2, 3}, id -> { seen.add(id); return id != 2; });
+        a.isTrue("paintEach: devuelve false si alguno falla", !all);
+        a.eq("paintEach: intento los tres", Arrays.asList(1, 2, 3), seen);
+        a.isTrue("paintEach: todos bien -> true", WidgetUpdateJob.paintEach(new int[] {1, 2}, id -> true));
+        a.isTrue("paintEach: sin widgets -> true", WidgetUpdateJob.paintEach(new int[0], id -> false));
+    }
+
     // ---- el manifiesto ------------------------------------------------------------------
 
     private static void manifest(Assert a, Context ctx) {
@@ -515,6 +527,18 @@ public final class WidgetUpdateJobTest {
             a.isTrue("el servicio esta habilitado", si.enabled);
         } catch (PackageManager.NameNotFoundException e) {
             a.fail("manifiesto: no se encontro el paquete o el servicio: " + e.getMessage());
+        }
+        try {
+            android.content.pm.ActivityInfo ai = pm.getActivityInfo(
+                    new ComponentName(pkg, SettingsActivity.class.getName()),
+                    PackageManager.ComponentInfoFlags.of(0));
+            int need = android.content.pm.ActivityInfo.CONFIG_ORIENTATION
+                    | android.content.pm.ActivityInfo.CONFIG_SCREEN_SIZE
+                    | android.content.pm.ActivityInfo.CONFIG_KEYBOARD_HIDDEN;
+            a.eq("Ajustes maneja la rotacion (no relanza onCreate ni repite /organizations)",
+                    need, ai.configChanges & need);
+        } catch (PackageManager.NameNotFoundException e) {
+            a.fail("manifiesto: no se encontro SettingsActivity");
         }
         for (String action : new String[] {Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_MY_PACKAGE_REPLACED}) {
             List<ResolveInfo> rs = pm.queryBroadcastReceivers(new Intent(action).setPackage(pkg),

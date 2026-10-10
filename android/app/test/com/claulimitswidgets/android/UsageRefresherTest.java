@@ -86,6 +86,7 @@ public final class UsageRefresherTest {
         final SharedPreferences prefs;
         final Fake fake = new Fake();
         final Instant[] now = {T0};
+        final java.util.concurrent.atomic.AtomicLong epoch = new java.util.concurrent.atomic.AtomicLong();
         UsageRefresher refresher;
 
         Rig(Context ctx, boolean withSession, String cookies) {
@@ -100,7 +101,7 @@ public final class UsageRefresherTest {
                     throw new IllegalStateException("no se pudo preparar la sesion de prueba");
                 }
             }
-            refresher = new UsageRefresher(session, samples, meta, prefs, c -> fake, () -> now[0]);
+            refresher = new UsageRefresher(session, samples, meta, prefs, c -> fake, () -> now[0], epoch);
         }
 
         void close() {
@@ -265,7 +266,7 @@ public final class UsageRefresherTest {
             try {
                 int[] ticks = {0};
                 t.refresher = new UsageRefresher(t.session, t.samples, t.meta, t.prefs, c -> t.fake,
-                        () -> T0.plusSeconds(ticks[0]++));
+                        () -> T0.plusSeconds(ticks[0]++), t.epoch);
                 t.fake.orgs = r.fake.orgs;
                 t.fake.usage.put(ORG1, model(1, 2));
                 Snapshot ts = t.refresher.refresh();
@@ -507,7 +508,7 @@ public final class UsageRefresherTest {
             };
             AtomicInteger tick = new AtomicInteger();
             r.refresher = new UsageRefresher(r.session, r.samples, r.meta, r.prefs, c -> r.fake,
-                    () -> T0.plusSeconds(tick.incrementAndGet()));
+                    () -> T0.plusSeconds(tick.incrementAndGet()), r.epoch);
             Thread[] ts = new Thread[3];
             Snapshot[] out = new Snapshot[3];
             for (int i = 0; i < ts.length; i++) {
@@ -569,7 +570,8 @@ public final class UsageRefresherTest {
             a.isTrue("antes: hay hora de orgs", meta.orgsFetchedAt() != null);
 
             a.isTrue("logout devuelve true",
-                    Session.logout(ctx, ss, samples, meta, logoutPrefs, false));
+                    Session.logout(ctx, ss, samples, meta, logoutPrefs, false, null, null,
+                            new java.util.concurrent.atomic.AtomicLong()));
 
             a.isTrue("logout borra el modelo", meta.lastModel() == null);
             a.isTrue("logout borra la hora", meta.lastFetchInstant() == null);
@@ -595,7 +597,7 @@ public final class UsageRefresherTest {
         try {
             r.fake.orgs = Arrays.asList(new UsageClient.Org(ORG1, "Uno"));
             r.fake.usage.put(ORG1, model(1, 2));
-            r.fake.onOrgs = () -> Session.logout(ctx, r.session, r.samples, r.meta, r.prefsName, false);
+            r.fake.onOrgs = () -> Session.logout(ctx, r.session, r.samples, r.meta, r.prefsName, false, null, null, r.epoch);
             Snapshot s = r.refresher.refresh();
             a.eq("logout durante /organizations: la consulta ocurrio", 1, r.fake.orgCalls);
             a.eq("logout durante /organizations -> NO_SESSION", Snapshot.Problem.NO_SESSION, s.problem);
@@ -610,7 +612,7 @@ public final class UsageRefresherTest {
         try {
             r1b.fake.orgs = Arrays.asList(new UsageClient.Org(ORG1, "Uno"));
             r1b.fake.usage.put(ORG1, model(1, 2));
-            r1b.fake.onOrgs = () -> Session.EPOCH.incrementAndGet();
+            r1b.fake.onOrgs = () -> r1b.epoch.incrementAndGet();
             Snapshot s = r1b.refresher.refresh();
             a.eq("epoca cambiada: la consulta ocurrio", 1, r1b.fake.orgCalls);
             a.eq("epoca cambiada -> NO_SESSION", Snapshot.Problem.NO_SESSION, s.problem);
@@ -628,10 +630,10 @@ public final class UsageRefresherTest {
             r1c.refresher = new UsageRefresher(r1c.session, r1c.samples, r1c.meta, r1c.prefs,
                     c -> r1c.fake, () -> {
                         if (++reads[0] == 3) {
-                            Session.logout(ctx, r1c.session, r1c.samples, r1c.meta, r1c.prefsName, false);
+                            Session.logout(ctx, r1c.session, r1c.samples, r1c.meta, r1c.prefsName, false, null, null, r1c.epoch);
                         }
                         return T0;
-                    });
+                    }, r1c.epoch);
             Snapshot s = r1c.refresher.refresh();
             a.eq("el logout se disparo en la ventana (no pasa en vacio)", true, reads[0] >= 3);
             a.eq("logout tras la comprobacion -> NO_SESSION", Snapshot.Problem.NO_SESSION, s.problem);
@@ -651,10 +653,10 @@ public final class UsageRefresherTest {
             r1d.refresher = new UsageRefresher(r1d.session, r1d.samples, r1d.meta, r1d.prefs,
                     c -> r1d.fake, () -> {
                         if (++reads[0] == 3) {
-                            Session.logout(ctx, r1d.session, r1d.samples, r1d.meta, r1d.prefsName, false);
+                            Session.logout(ctx, r1d.session, r1d.samples, r1d.meta, r1d.prefsName, false, null, null, r1d.epoch);
                         }
                         return T0;
-                    });
+                    }, r1d.epoch);
             r1d.refresher.refresh();
             a.eq("keepOld: la consulta fallo de verdad", 1, r1d.fake.usageCalls.size());
             a.isTrue("keepOld: el logout se disparo en la ventana", reads[0] >= 3);
@@ -674,7 +676,7 @@ public final class UsageRefresherTest {
                     c -> r1e.fake, () -> {
                         if (++reads[0] == 3) r1e.session.clear();
                         return T0;
-                    });
+                    }, r1e.epoch);
             Snapshot s = r1e.refresher.refresh();
             a.isTrue("1e: la sesion se vacio en la ventana", !r1e.session.hasSession());
             a.isTrue("1e: sin logout no se destruye el modelo", r1e.meta.lastModel() != null);
@@ -689,7 +691,7 @@ public final class UsageRefresherTest {
         try {
             r2.fake.orgs = Arrays.asList(new UsageClient.Org(ORG1, "Uno"));
             r2.fake.usage.put(ORG1, new IOException("sin red"));
-            r2.fake.onUsage = () -> Session.logout(ctx, r2.session, r2.samples, r2.meta, r2.prefsName, false);
+            r2.fake.onUsage = () -> Session.logout(ctx, r2.session, r2.samples, r2.meta, r2.prefsName, false, null, null, r2.epoch);
             r2.refresher.refresh();
             a.eq("logout durante /usage: la consulta ocurrio", 1, r2.fake.usageCalls.size());
             // Se mira la instancia VIVA del refrescador (donde escribiria) y no se espera a apply().
@@ -709,7 +711,7 @@ public final class UsageRefresherTest {
             boolean[] fail = {true};
             UsageRefresher flaky = new UsageRefresher(r.session,
                     () -> { if (fail[0]) throw new java.security.GeneralSecurityException("hipo"); return COOKIES; },
-                    r.samples, r.meta, r.prefs, c -> r.fake, () -> r.now[0]);
+                    r.samples, r.meta, r.prefs, c -> r.fake, () -> r.now[0], r.epoch);
             r.now[0] = T0.plusSeconds(3600);
             Snapshot s = flaky.refresh();
             a.eq("hipo del Keystore -> OFFLINE, no NO_SESSION", Snapshot.Problem.OFFLINE, s.problem);
@@ -730,7 +732,7 @@ public final class UsageRefresherTest {
 
             // load() que devuelve null si es "sin sesion".
             UsageRefresher none = new UsageRefresher(r.session, () -> null, r.samples, r.meta,
-                    r.prefs, c -> r.fake, () -> r.now[0]);
+                    r.prefs, c -> r.fake, () -> r.now[0], r.epoch);
             a.eq("load() null -> NO_SESSION", Snapshot.Problem.NO_SESSION, none.refresh().problem);
 
             // Llave perdida PARA SIEMPRE: no es "sin red". Con OFFLINE el widget diria "Sin
@@ -738,7 +740,7 @@ public final class UsageRefresherTest {
             int before = r.fake.usageCalls.size();
             UsageRefresher lost = new UsageRefresher(r.session,
                     () -> { throw new SessionStore.KeyLostException(); },
-                    r.samples, r.meta, r.prefs, c -> r.fake, () -> r.now[0]);
+                    r.samples, r.meta, r.prefs, c -> r.fake, () -> r.now[0], r.epoch);
             Snapshot ls = lost.refresh();
             a.eq("llave perdida -> AUTH_EXPIRED, no OFFLINE", Snapshot.Problem.AUTH_EXPIRED, ls.problem);
             // Ojo: en produccion SessionStore.load() borra la sesion ANTES de lanzar, asi que
@@ -763,7 +765,7 @@ public final class UsageRefresherTest {
                     c -> r.fake, () -> {
                         if (armed[0]) throw new IllegalStateException("reloj roto");
                         return T0;
-                    });
+                    }, r.epoch);
             a.isTrue("preparacion: refresco bueno", bad.refresh().problem == null);
             armed[0] = true;   // ahora TODO lo que lea el reloj lanza: tambien keepOld y last()
             Snapshot s = null;

@@ -76,6 +76,12 @@ public final class WidgetRenderer {
                     v.setProgressBar(R.id.pace, 100, (int) Math.round(s.paceMark * 100), false);
                 }
                 v.setTextViewText(R.id.forecast, forecast(ctx, s));
+                // Con un aviso (sin red, bloqueado...) el pronostico de un dato viejo se oculta: el
+                // aviso ocupa su sitio y, en la altura minima del 4x2 (170dp), sumarlo al contenido
+                // recortaba las ultimas filas. Se fija en AMBOS sentidos: el lanzador actualiza
+                // con `reapply` y lo que no se reenvia no se borra.
+                v.setViewVisibility(R.id.forecast, s.problem == null
+                        ? android.view.View.VISIBLE : android.view.View.GONE);
             }
         }
 

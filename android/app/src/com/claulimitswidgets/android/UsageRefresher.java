@@ -57,6 +57,13 @@ public final class UsageRefresher {
     private final SharedPreferences prefs;
     private final RemoteFactory remoteFactory;
     private final Clock clock;
+    /**
+     * El contador de epoca de cierres de sesion. En produccion es el global `Session.EPOCH`; las
+     * pruebas inyectan uno PROPIO: la suite corre en el mismo proceso que el job real, y si
+     * incrementara el global un refresco real en vuelo vería un "logout" que no existe y
+     * ejecutaria su deshacer sobre los almacenes de PRODUCCION (borrando el historico del dueno).
+     */
+    private final java.util.concurrent.atomic.AtomicLong epochSource;
 
     /** Epoca de sesion al empezar el refresco en curso (ver Session.EPOCH). Bajo LOCK. */
     private long epoch;
@@ -65,7 +72,7 @@ public final class UsageRefresher {
         this(new SessionStore(app(ctx)), openSamples(app(ctx)), Session.snapshotFor(app(ctx)),
                 app(ctx).getSharedPreferences(SettingsActivity.PREFS, Context.MODE_PRIVATE),
                 cookies -> productionRemote(app(ctx), cookies),
-                Instant::now);
+                Instant::now, Session.EPOCH);
     }
 
     private static Context app(Context ctx) {
@@ -90,13 +97,15 @@ public final class UsageRefresher {
 
     /** Para las pruebas: todo inyectado. */
     UsageRefresher(SessionStore session, SampleStore samples, SnapshotStore meta,
-                   SharedPreferences prefs, RemoteFactory remoteFactory, Clock clock) {
-        this(session, session::load, samples, meta, prefs, remoteFactory, clock);
+                   SharedPreferences prefs, RemoteFactory remoteFactory, Clock clock,
+                   java.util.concurrent.atomic.AtomicLong epochSource) {
+        this(session, session::load, samples, meta, prefs, remoteFactory, clock, epochSource);
     }
 
     UsageRefresher(SessionStore session, Cookies cookieSource, SampleStore samples,
                    SnapshotStore meta, SharedPreferences prefs, RemoteFactory remoteFactory,
-                   Clock clock) {
+                   Clock clock, java.util.concurrent.atomic.AtomicLong epochSource) {
+        this.epochSource = epochSource;
         this.session = session;
         this.cookieSource = cookieSource;
         this.samples = samples;
@@ -129,7 +138,7 @@ public final class UsageRefresher {
 
     public Snapshot refresh() {
         synchronized (LOCK) {
-            epoch = Session.EPOCH.get();
+            epoch = epochSource.get();
             try {
                 return refreshLocked();
             } catch (RuntimeException e) {
@@ -150,7 +159,7 @@ public final class UsageRefresher {
      * de cuenta (uuid, muestras, claves de espera) que el logout acaba de borrar.
      */
     private boolean alive() {
-        return Session.EPOCH.get() == epoch && session.hasSession();
+        return epochSource.get() == epoch && session.hasSession();
     }
 
     /**
@@ -162,7 +171,7 @@ public final class UsageRefresher {
      * Un unico sitio para el patron: compute, fetchOrgs y keepOld.
      */
     private boolean committed(Runnable undo) {
-        if (Session.EPOCH.get() == epoch) return true;
+        if (epochSource.get() == epoch) return true;
         undo.run();
         return false;
     }

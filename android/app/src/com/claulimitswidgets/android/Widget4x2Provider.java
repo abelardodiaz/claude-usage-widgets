@@ -22,8 +22,14 @@ public class Widget4x2Provider extends AppWidgetProvider {
         final Context app = ctx.getApplicationContext();
         Runnable work = () -> {
             try {
+                // La epoca se captura ANTES de leer: si el dueno cierra sesion mientras tanto, el
+                // logout ya pinto "sin sesion" y esto NO puede pintar encima los porcentajes de
+                // la cuenta cerrada (nadie los repintaria: el logout cancelo el job).
+                long start = Session.EPOCH.get();
                 Snapshot s = new UsageRefresher(app).last();
-                for (int id : ids) awm.updateAppWidget(id, WidgetRenderer.render(app, s, compact()));
+                WidgetUpdateJob.pushIfCurrent(s, start, Session.EPOCH::get, x -> {
+                    for (int id : ids) awm.updateAppWidget(id, WidgetRenderer.render(app, x, compact()));
+                });
                 WidgetUpdateJob.schedule(app);
                 // Primera vez: hay sesion pero ningun dato todavia. Sin esto el widget se queda en
                 // "Actualizando..." hasta el primer ciclo del job, que puede tardar 15 minutos.

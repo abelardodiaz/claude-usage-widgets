@@ -167,7 +167,7 @@ public class WidgetUpdateJob extends JobService {
                     do {
                         cycle(refresh, epoch, sink, () -> { });
                     } while (gate.next());
-                } catch (RuntimeException e) {
+                } catch (RuntimeException | Error e) {
                     gate.abort();   // no debe quedar la puerta cerrada ni llevarse el proceso
                 }
             }, "cuw-refresh").start();
@@ -235,22 +235,34 @@ public class WidgetUpdateJob extends JobService {
         }
     }
 
+    /**
+     * Pinta todos los widgets de los dos tamanios. Si alguno no se deja pintar, los demas se
+     * pintan igual y AL FINAL lanza: `Session.logout` no puede prometer "todo hecho" (true) si un
+     * widget se quedo con los numeros de la cuenta cerrada.
+     */
     static void paintAll(Context ctx, Snapshot s) {
         AppWidgetManager awm = AppWidgetManager.getInstance(ctx);
-        for (int id : awm.getAppWidgetIds(new ComponentName(ctx, Widget4x1Provider.class))) {
-            paint(awm, id, ctx, s, true);
-        }
-        for (int id : awm.getAppWidgetIds(new ComponentName(ctx, Widget4x2Provider.class))) {
-            paint(awm, id, ctx, s, false);
-        }
+        boolean ok = paintEach(awm.getAppWidgetIds(new ComponentName(ctx, Widget4x1Provider.class)),
+                id -> paint(awm, id, ctx, s, true));
+        ok &= paintEach(awm.getAppWidgetIds(new ComponentName(ctx, Widget4x2Provider.class)),
+                id -> paint(awm, id, ctx, s, false));
+        if (!ok) throw new IllegalStateException("algun widget no se pudo pintar");
     }
 
-    private static void paint(AppWidgetManager awm, int id, Context ctx, Snapshot s,
-                              boolean compact) {
+    /** Intenta todos; false si alguno fallo. Un widget que falla no deja sin pintar a los demas. */
+    static boolean paintEach(int[] ids, java.util.function.IntPredicate paintOne) {
+        boolean ok = true;
+        for (int id : ids) ok &= paintOne.test(id);
+        return ok;
+    }
+
+    private static boolean paint(AppWidgetManager awm, int id, Context ctx, Snapshot s,
+                                 boolean compact) {
         try {
             awm.updateAppWidget(id, WidgetRenderer.render(ctx, s, compact));
+            return true;
         } catch (RuntimeException ignored) {
-            // Un widget que no se deja pintar no puede dejar sin pintar a los demas.
+            return false;
         }
     }
 
@@ -278,7 +290,7 @@ public class WidgetUpdateJob extends JobService {
             new Thread(() -> {
                 try {
                     if (fetchAndRememberOrgs(app)) onDone.run();
-                } catch (RuntimeException ignored) {
+                } catch (RuntimeException | Error ignored) {
                     // Ajustes sigue usable con la lista vieja.
                 }
             }, "cuw-orgs").start();
@@ -373,7 +385,7 @@ public class WidgetUpdateJob extends JobService {
                         return;
                     }
                     cycle(refresh, epoch, sink, done);
-                } catch (RuntimeException e) {
+                } catch (RuntimeException | Error e) {
                     done.run();
                 }
             });

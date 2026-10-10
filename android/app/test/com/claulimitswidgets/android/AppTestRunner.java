@@ -19,6 +19,10 @@ public final class AppTestRunner {
     /** Devuelve el texto del resultado; quien llama decide el codigo de salida. */
     public static String run(Assert a, android.content.Context ctx) {
         // Cada tarea que crea su prueba anade aqui su linea.
+        // La suite corre en el proceso de la app, donde puede haber un refresco REAL en vuelo: si
+        // tocara el contador global de epoca, ese refresco ejecutaria su deshacer sobre los almacenes
+        // de produccion. Todo lo que la suite cierra usa un contador propio; esto lo vigila.
+        long epochBefore = Session.EPOCH.get();
         SessionStoreTest.run(a, ctx);
         BackoffTest.run(a);
         UsageClientTest.run(a);
@@ -30,11 +34,13 @@ public final class AppTestRunner {
         WidgetRendererTest.run(a, ctx);
         // Tarea 4.4.
         SessionStoreTest.runKeyLoss(a, ctx);
+        SessionStoreTest.runTmp(a, ctx);
         WidgetUpdateJobTest.run(a, ctx);
         // Cierre de F3.
         UsageClientTest.runCierre(a);
         OrgSelectorTest.runCierre(a);
         SessionStoreTest.runCierre(a, ctx);
+        a.eq("la suite no toco Session.EPOCH (C1)", epochBefore, Session.EPOCH.get());
         List<String> failures = a.failures();
         if (failures.isEmpty()) return "OK: " + a.checks() + " comprobaciones, 0 fallos";
         StringBuilder sb = new StringBuilder("FALLOS (" + failures.size()

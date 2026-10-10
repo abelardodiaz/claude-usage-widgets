@@ -196,11 +196,19 @@ public final class SessionStore {
                 overwrite(f);
                 if (!f.delete()) f.deleteOnExit();
             }
+            // El temporal de save() (cookie CIFRADA a medio escribir si el proceso murio entre
+            // la escritura y el renombrado) tambien es parte de la sesion: SampleStore.clear
+            // borra el suyo, y cerrar sesion no puede dejar texto cifrado de la cookie atras.
+            File tmp = new File(f.getParentFile(), fileName + ".tmp");
+            if (tmp.isFile()) {
+                overwrite(tmp);
+                if (!tmp.delete()) tmp.deleteOnExit();
+            }
             try {
                 KeyStore ks = KeyStore.getInstance(KEYSTORE);
                 ks.load(null);
                 if (ks.containsAlias(keyAlias)) ks.deleteEntry(keyAlias);
-                return !f.exists();
+                return !f.exists() && !tmp.exists();
             } catch (GeneralSecurityException | IOException e) {
                 return false;
             }
