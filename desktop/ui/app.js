@@ -11,6 +11,9 @@ const COLORS = { claude_code: "var(--cc)", cowork: "var(--cowork)", chat: "var(-
 // Los umbrales de color viven en Rust (R7, modulo colors); aqui solo se mapea el nombre a la paleta.
 const PALETTE = { green: "var(--green)", amber: "var(--amber)", red: "var(--red)", gray: "var(--dim)" };
 const paint = (name) => PALETTE[name] || PALETTE.gray;
+// Las keys vienen de la API: solo propiedades propias, nunca heredadas ("constructor", "__proto__").
+const own = (map, key) => (Object.prototype.hasOwnProperty.call(map, key) ? map[key] : undefined);
+const keyColor = (key) => own(COLORS, key) || "var(--other)";
 
 let data = null;
 let open = null;
@@ -123,8 +126,12 @@ function renderHist() {
   const max = Math.max(q || 0, ...h.map((d) => d.used), 1) * 1.15;
   const todayIso = h[h.length - 1].date;
   const since = data.today.tracking_since;
-  const prevToday = Math.max(h[h.length - 1].used - data.today.used, 0);
-  const prevNote = prevToday >= 0.05 ? T.hist.prevWeek + prevToday.toFixed(1) + T.hist.prevWeekEnd : "";
+  // El dia de un reinicio semanal, la barra de hoy (per_day) suma lo de la semana anterior,
+  // que ya no cuenta contra el cupo (R4). Esa parte va abajo en gris. Umbral unico para la barra
+  // y la nota, que tambien descarta el ruido de redondeo de la resta.
+  const prevRaw = Math.max(h[h.length - 1].used - data.today.used, 0);
+  const prevToday = prevRaw >= 0.05 ? prevRaw : 0;
+  const prevNote = prevToday > 0 ? T.hist.prevWeek + prevToday.toFixed(1) + T.hist.prevWeekEnd : "";
   // La etiqueta del cupo va en el encabezado como leyenda, no sobre la linea: la barra de hoy
   // siempre es la de la derecha y su valor chocaba con la etiqueta cuando rondaba el cupo.
   const limit = q == null ? "" : `<div class="limit" style="bottom:${(q / max) * 78}px"></div>`;
@@ -135,9 +142,7 @@ function renderHist() {
         // Hoy lleva el color que decide el nucleo (R7); los dias pasados, gris neutro.
         const isToday = d.date === todayIso;
         const bg = isToday ? `;background:${paint(data.today.color)}` : "";
-        // El dia de un reinicio semanal, la barra de hoy (per_day) suma lo de la semana anterior,
-        // que ya no cuenta contra el cupo (R4). Esa parte va abajo en gris.
-        const prev = isToday ? Math.max(d.used - data.today.used, 0) : 0;
+        const prev = isToday ? prevToday : 0;
         const prevPart = prev > 0 ? `<i style="height:${(prev / d.used) * 100}%"></i>` : "";
         return `<div class="col ${isToday ? "today" : ""}">
         <span class="v">${d.used > 0 ? d.used.toFixed(1) + "%" : ""}</span>
@@ -155,9 +160,9 @@ function renderMix() {
   const rows = data.usage.breakdown;
   return `<h4>${T.mix.title} ${closeButton()}</h4>
     <div class="stack">${rows.filter((r) => r.percent > 0).map((r) =>
-      `<span style="flex:${Math.max(r.percent, 0)};background:${COLORS[r.key] || "var(--other)"}"></span>`).join("")}</div>
+      `<span style="flex:${Math.max(r.percent, 0)};background:${keyColor(r.key)}"></span>`).join("")}</div>
     <div class="legend">${rows.map((r) =>
-      `<div><i style="background:${COLORS[r.key] || "var(--other)"}"></i>${esc(T.mix.keys[r.key] || r.label)}<b>${Math.round(r.percent)}%</b></div>`).join("")}</div>
+      `<div><i style="background:${keyColor(r.key)}"></i>${esc(own(T.mix.keys, r.key) || r.label)}<b>${Math.round(r.percent)}%</b></div>`).join("")}</div>
     <div class="note">${T.mix.note}${Math.round(data.usage.weekly.percent)}${T.mix.noteEnd}</div>`;
 }
 

@@ -18,7 +18,7 @@ const I18N = {
     partial: "parcial",
     pace: "Ritmo parejo: ",
     titles: { hist: "Últimos 7 días", mix: "Desglose de la semana", proj: "Proyección", refresh: "Actualizar", close: "Cerrar" },
-    hist: { title: "ÚLTIMOS 7 DÍAS", quota: "cupo hoy ", note: "% de la cuota semanal gastado cada día.", prevWeek: " Hoy incluye ", prevWeekEnd: "% de la semana anterior (en gris).", since: " Registrando desde " },
+    hist: { title: "ÚLTIMOS 7 DÍAS", quota: "cupo hoy ", note: "% de la cuota semanal gastado cada día.", prevWeek: " Hoy incluye ", prevWeekEnd: "% de la semana anterior (en gris); contra el cupo cuenta solo la parte de color.", since: " Registrando desde " },
     mix: { title: "DESGLOSE DE LA SEMANA", note: "Reparto de lo que usaste esta semana (", noteEnd: "% de tu cuota).", keys: { other: "Otros" } },
     proj: {
       title: "PROYECCIÓN",
@@ -64,7 +64,7 @@ const I18N = {
     partial: "partial",
     pace: "Even pace: ",
     titles: { hist: "Last 7 days", mix: "Weekly breakdown", proj: "Projection", refresh: "Refresh", close: "Close" },
-    hist: { title: "LAST 7 DAYS", quota: "today's budget ", note: "% of the weekly quota spent each day.", prevWeek: " Today includes ", prevWeekEnd: "% from last week (in gray).", since: " Tracking since " },
+    hist: { title: "LAST 7 DAYS", quota: "today's budget ", note: "% of the weekly quota spent each day.", prevWeek: " Today includes ", prevWeekEnd: "% from last week (in gray); only the colored part counts against the budget.", since: " Tracking since " },
     mix: { title: "WEEKLY BREAKDOWN", note: "Share of what you used this week (", noteEnd: "% of your quota).", keys: { other: "Other" } },
     proj: {
       title: "PROJECTION",
