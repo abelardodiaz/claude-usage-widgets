@@ -22,7 +22,7 @@ fn color_from(v: &Value) -> Color {
 fn fixtures_de_colores() {
     let fixtures = common::load_fixtures("colors");
     assert!(
-        fixtures.len() >= 25,
+        fixtures.len() >= 26,
         "faltan fixtures de colores: {}",
         fixtures.len()
     );

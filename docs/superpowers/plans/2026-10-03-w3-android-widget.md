@@ -3326,6 +3326,7 @@ import android.widget.RemoteViews;
 
 import com.claudewidgets.core.Color;
 import com.claudewidgets.core.Colors;
+import com.claudewidgets.core.TodayFill;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -3366,10 +3367,11 @@ public final class WidgetRenderer {
                         Colors.bar(s.model.session.percent));
                 bar(v, WEEKLY_BARS, s.model.weekly.percent,
                         Colors.bar(s.model.weekly.percent));
-                // Esto es DIBUJO, no regla: cuanto se llena la barra. El COLOR lo decide
-                // `Colors.today`, que es R7. No se toca uno pensando en el otro.
-                double todayPct = s.day.quotaToday == null || s.day.quotaToday <= 0
-                        ? 0 : 100 * s.day.todayUsed / s.day.quotaToday;
+                // Relleno y color vienen de R7 (`Colors.todayFill` y `Colors.today`): aqui no
+                // se recalcula nada. Sin cuota (UNKNOWN) la fraccion es nula y la barra va
+                // vacia; agotada (EXHAUSTED) llega 1, llena. `bar` acota a [0, 100] al dibujar.
+                TodayFill fill = Colors.todayFill(s.day.todayUsed, s.day.quotaToday);
+                double todayPct = fill.fraction == null ? 0 : 100 * fill.fraction;
                 bar(v, TODAY_BARS, todayPct,
                         Colors.today(s.day.todayUsed, s.day.quotaToday));
                 v.setTextViewText(R.id.today, ctx.getString(R.string.w_today,

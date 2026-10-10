@@ -198,6 +198,16 @@ for p in sorted((ROOT / "fixtures" / "colors").glob("*.json")):
             errors.append(f"{p}: 'fraction' es null si y solo si 'state' es unknown")
         if state == "exhausted" and fraction != 1:
             errors.append(f"{p}: con 'state' exhausted la fraccion es 1")
+        # Coherencia barata con la entrada (R7): no recalcula nada que no sea obvio.
+        used, quota = inp.get("today_used"), inp.get("quota_today")
+        if is_num(used) and (quota is None or is_num(quota)):
+            want = (
+                "unknown" if quota is None else "exhausted" if quota <= 0 else "ok"
+            )
+            if state != want:
+                errors.append(f"{p}: con quota_today={quota!r} el estado es {want}")
+            elif want == "ok" and is_num(fraction) and abs(fraction - used / quota) > 0.001:
+                errors.append(f"{p}: 'fraction' no es today_used / quota_today")
     elif bar == "pace_mark":
         need(p, inp, ["bar", "now", "resets_at"])
         check_instant(p, "now", inp.get("now"))

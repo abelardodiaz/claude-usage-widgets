@@ -136,6 +136,9 @@ o si `|a.resets_at − b.resets_at| < 3600 s`.
   semanal actual), **no** `per_day[hoy]`; los días pasados muestran `per_day[d]`. Fuera del día
   de un reinicio semanal las dos cifras coinciden; ese día `per_day[hoy]` también suma lo de la
   ventana anterior, que ya no descuenta de nada, y la gráfica no lo enseña. `per_day` no cambia.
+  Es una regla **de presentación**: no tiene fixture (los fixtures de `history/` no ven la
+  gráfica); la fija la prueba unitaria de Rust `view.rs::grafica_el_dia_del_reinicio_usa_today_used`,
+  y toda interfaz que dibuje la gráfica de 7 días tiene que seguirla.
 - **`day_start`**, el instante en que empieza "hoy" para la cuota. Sea `medianoche` la medianoche
   local de hoy (R0). En este orden:
   1. `weekly.resets_at` nulo, o `now ≥ weekly.resets_at` (dato rancio) → `day_start = medianoche`.
@@ -246,8 +249,11 @@ Cada fixture trae `input.bar`, que dice qué se está pintando y qué más lleva
   `Double` y compararlo antes de descartar el nulo lanzaría `NullPointerException` al desenvolver):
   1. `quota_today` nulo → gris. Es el **único** gris: "no se puede calcular".
   2. `quota_today ≤ 0` → **rojo**. La cuota semanal ya llegó al 100 % (0) o lo pasó (negativa),
-     así que hoy no queda nada. El 0 es el caso frecuente, la semana justo gastada, y no puede
-     verse como "no se puede calcular": por eso ya no es gris (antes lo era). Sin este paso, con
+     así que hoy no queda nada. Matiz: `quota_today` vale 0 solo si la semana **ya estaba** en el
+     100 % al empezar el día (`base = 100`, R4); el día en que la semana llega al 100 % la cuota
+     sigue siendo positiva y se ve como `ok` con fracción > 1 (rojo, barra llena). Aun así el 0
+     es un caso normal, no un error, y no puede verse como "no se puede calcular": por eso ya no
+     es gris (antes lo era). Sin este paso, con
      cuota negativa el cociente saldría negativo y caería en "verde", diciendo que todo va bien
      justo cuando no es así; con cuota 0 sería una división entre cero.
   3. Si no, por `today_used / quota_today`: verde `< 0.7`, ámbar `< 1`, rojo `≥ 1`.
@@ -258,7 +264,8 @@ Cada fixture trae `input.bar`, que dice qué se está pintando y qué más lleva
   1. `quota_today` nulo → `state = "unknown"`, `fraction = null`.
   2. `quota_today ≤ 0` → `state = "exhausted"`, `fraction = 1` (barra llena, sin dividir).
   3. Si no → `state = "ok"`, `fraction = today_used / quota_today` en doble precisión, **cruda**:
-     sin acotar, puede pasar de 1 (hoy se gastó más que el cupo) o ser negativa. La UI la acota a
+     sin acotar, puede pasar de 1 (hoy se gastó más que el cupo, `colors/24`) o ser negativa con
+     `today_used` negativo (R0 conserva los valores crudos, `colors/26`). La UI la acota a
      [0, 1] **solo para dibujar**. Es el mismo cociente que decide el color del paso 3 de arriba.
 
   Así las interfaces no recalculan R7 por su cuenta: el ancho de la barra sale de `fraction` y

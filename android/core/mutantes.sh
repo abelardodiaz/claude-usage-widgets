@@ -66,6 +66,12 @@ probar "R7: cuota nula tratada como agotada" $SRC/Colors.java \
 probar "R7: fraccion acotada a 1 en el nucleo" $SRC/Colors.java \
   "return new TodayFill(TodayState.OK, todayUsed / q);" \
   "return new TodayFill(TodayState.OK, Math.min(todayUsed / q, 1.0));"
+probar "R7: fraccion acotada a 0 por abajo en el nucleo" $SRC/Colors.java \
+  "return new TodayFill(TodayState.OK, todayUsed / q);" \
+  "return new TodayFill(TodayState.OK, Math.max(todayUsed / q, 0.0));"
+probar "R7: agotada sin consumo divide 0 / 0 (NaN) en vez de llenar" $SRC/Colors.java \
+  "if (q <= 0) return new TodayFill(TodayState.EXHAUSTED, 1.0);" \
+  "if (q <= 0) return new TodayFill(TodayState.EXHAUSTED, todayUsed == 0 ? todayUsed / q : 1.0);"
 probar "R5: el dato rancio deja de ganar" $SRC/Projection.java \
   "if (resetsAt == null || !now.isBefore(resetsAt)) return Forecast.NONE;
         // 2. Ya esta lleno." "if (resetsAt == null) return Forecast.NONE;

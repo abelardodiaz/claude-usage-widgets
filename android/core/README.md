@@ -44,10 +44,10 @@ fixtures con las tolerancias de R0 (1 s en instantes, 0.001 en números).
 bash android/core/mutantes.sh
 ```
 
-Rompe la implementación a propósito —veintisiete mutaciones, una por llamada a `probar`:
-dieciséis sobre el "hoy" de R4 (tres de ellas, las de resolución en milisegundos de R0), seis sobre
-los colores y el relleno de hoy de R7, y el resto sobre R0, R1, R5 y R6— y comprueba que el corredor
-las caza. Un corredor que nunca falla no prueba nada. No forma parte del build.
+Rompe la implementación a propósito —veintinueve mutaciones, una por llamada a `probar`:
+quince sobre el "hoy" de R4 (tres de ellas, las de resolución en milisegundos de R0), ocho sobre
+los colores y el relleno de hoy de R7, y seis sobre el resto (dos de R0, una del reparto por día de
+R3, y una de R1, R5 y R6)— y comprueba que el corredor las caza. Un corredor que nunca falla no prueba nada. No forma parte del build.
 
 ## Notas de portabilidad
 

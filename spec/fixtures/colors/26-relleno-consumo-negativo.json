@@ -1,0 +1,1 @@
+{"description": "Relleno de hoy: today_used negativo (R0 conserva los valores crudos) da fraccion negativa sin acotar (-0.1); la UI la acota a 0 solo para dibujar", "input": {"bar": "today_fill", "today_used": -1, "quota_today": 10}, "expected": {"state": "ok", "fraction": -0.1}}
