@@ -41,7 +41,9 @@ public final class SessionStore {
 
     /**
      * La llave del Keystore se perdio PARA SIEMPRE (`KeyPermanentlyInvalidatedException` o
-     * `UnrecoverableKeyException`: p. ej. el dueno cambio o quito el bloqueo de pantalla). La
+     * `UnrecoverableKeyException`: corrupcion del Keystore o copia/restauracion en otro aparato. OJO:
+     * cambiar o quitar el bloqueo de pantalla NO la invalida, porque la llave se crea con
+     * `setUserAuthenticationRequired(false)` a proposito, para refrescar con la pantalla apagada). La
      * cookie cifrada con ella ya no se puede leer jamas, asi que NO es "sin red" ni un hipo
      * transitorio: el widget debe mandar al login, como con una sesion vencida. Subclase de
      * GeneralSecurityException para que quien ya atrapaba esa no se rompa; sin causa ni mensaje

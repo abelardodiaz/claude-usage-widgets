@@ -172,7 +172,7 @@ public final class UsageRefresher {
         try {
             cookies = cookieSource.load();
         } catch (SessionStore.KeyLostException e) {
-            // Llave perdida para siempre (cambio o quitaron el bloqueo de pantalla): no es "sin
+            // Llave perdida para siempre (Keystore corrupto o restaurado en otro aparato): no es "sin
             // red". Se trata como sesion vencida para que el toque lleve al login. Sin backoff:
             // no se hizo ninguna peticion y lo arregla el usuario, no el tiempo.
             return oldWith(Snapshot.Problem.AUTH_EXPIRED);

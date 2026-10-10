@@ -51,7 +51,9 @@ public final class WidgetUpdateJobTest {
         gate(a);
         cycles(a);
         pushLock(a);
-        logoutPushLock(a);
+        logoutPushLock(a, ctx);
+        jobLifecycle(a);
+        logoutHooks(a, ctx);
         runNowDoesNotBlock(a);
         orgs(a, ctx);
         manifest(a, ctx);
@@ -153,6 +155,11 @@ public final class WidgetUpdateJobTest {
      */
     @SuppressWarnings("deprecation")
     private static void realSchedule(Assert a, Context ctx) {
+        // Primero se cancela: tras `install -r` el widget ya registro el 4201 en su onUpdate, y
+        // `ensure` cortocircuita con un pendiente igual SIN llamar a schedule (pasaria en vacio).
+        ctx.getSystemService(JobScheduler.class).cancel(4201);
+        a.isTrue("antes de programar no hay pendiente",
+                ctx.getSystemService(JobScheduler.class).getPendingJob(4201) == null);
         a.isTrue("JobScheduler real: schedule devuelve true", WidgetUpdateJob.schedule(ctx));
         JobScheduler js = ctx.getSystemService(JobScheduler.class);
         JobInfo got = js.getPendingJob(4201);
@@ -171,8 +178,9 @@ public final class WidgetUpdateJobTest {
         a.isTrue("cancela el periodico", js.cancelled.contains(4201));
         a.isTrue("cancela tambien el de arranque", js.cancelled.contains(4202));
         a.eq("y nada mas", 2, js.cancelled.size());
-        WidgetUpdateJob.cancelAll(null);   // sin planificador: no lanza
-        a.isTrue("cancelAll(null) no lanza", true);
+        boolean threw = false;
+        try { WidgetUpdateJob.cancelAll(null); } catch (RuntimeException e) { threw = true; }
+        a.isTrue("cancelAll(null) no lanza", !threw);
     }
 
     private static void boot(Assert a) {
@@ -260,66 +268,158 @@ public final class WidgetUpdateJobTest {
         a.isTrue("pushIfCurrent: epoca distinta calla", !WidgetUpdateJob.pushIfCurrent(good, 5, () -> 6, s -> { }));
     }
 
-    /** El pintado del logout y el de un refresco no se solapan: es lo que cierra la carrera. */
-    private static void pushLock(Assert a) {
+    /**
+     * Sin relojes: mientras un refresco pinta (su sumidero espera un cerrojo), arranca `contender`
+     * en otro hilo y se espera a que el hilo quede BLOQUEADO en el monitor. Si el candado no
+     * existe, el hilo termina sin bloquearse y se detecta. Luego se suelta el primero y se afirma
+     * el ORDEN: el sumidero del primero anoto "A fin" antes que el segundo pintara.
+     */
+    private static void exclusion(Assert a, String what, java.util.function.Consumer<List<String>> contender) {
         Snapshot s = Snapshot.of(Snapshot.Problem.OFFLINE);
+        List<String> log = Collections.synchronizedList(new ArrayList<>());
         CountDownLatch inside = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
-        boolean[] secondRan = {false};
         Thread first = new Thread(() -> WidgetUpdateJob.pushIfCurrent(s, 1, () -> 1, x -> {
             inside.countDown();
-            try { release.await(5, TimeUnit.SECONDS); } catch (InterruptedException ignored) { }
+            try { release.await(10, TimeUnit.SECONDS); } catch (InterruptedException ignored) { }
+            log.add("A fin");
         }));
         first.start();
         try {
-            a.isTrue("el primer pintado llego a su sink", inside.await(5, TimeUnit.SECONDS));
-            Thread second = new Thread(() ->
-                    WidgetUpdateJob.pushIfCurrent(s, 1, () -> 1, x -> secondRan[0] = true));
+            a.isTrue(what + ": el primero esta pintando", inside.await(5, TimeUnit.SECONDS));
+            Thread second = new Thread(() -> contender.accept(log));
             second.start();
-            Thread.sleep(300);
-            a.isTrue("mientras el primero pinta, el segundo ESPERA", !secondRan[0]);
+            long end = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+            while (second.getState() != Thread.State.BLOCKED && second.isAlive()
+                    && System.nanoTime() < end) Thread.sleep(5);
+            a.isTrue(what + ": el segundo queda BLOQUEADO en el candado (" + second.getState() + ")",
+                    second.getState() == Thread.State.BLOCKED);
             release.countDown();
             second.join(5000);
             first.join(5000);
-            a.isTrue("al soltar, el segundo pinta", secondRan[0]);
+            a.eq(what + ": orden", Arrays.asList("A fin", "B"), new ArrayList<>(log));
         } catch (InterruptedException e) {
-            a.fail("pushLock interrumpida");
+            a.fail(what + ": interrumpida");
         } finally {
             release.countDown();
         }
     }
 
+    private static void pushLock(Assert a) {
+        Snapshot s = Snapshot.of(Snapshot.Problem.OFFLINE);
+        exclusion(a, "dos refrescos", log ->
+                WidgetUpdateJob.pushIfCurrent(s, 1, () -> 1, x -> log.add("B")));
+    }
+
     /**
-     * El pintado incondicional (el del logout) toma el MISMO candado que el del refresco. Se
-     * prueba `pushLocked`, que es por donde pasa `pushToWidgets`: llamar a este ultimo pintaria
-     * en los widgets del dueno.
+     * El camino REAL del logout: `pushToWidgets`, con el pintado desviado a un recolector por
+     * `paintHook` para no tocar los widgets del dueno. Borrar `pushLocked` de ese camino falla.
      */
-    private static void logoutPushLock(Assert a) {
+    private static void logoutPushLock(Assert a, Context ctx) {
         Snapshot s = Snapshot.of(Snapshot.Problem.NO_SESSION);
-        CountDownLatch inside = new CountDownLatch(1);
-        CountDownLatch release = new CountDownLatch(1);
-        CountDownLatch pushed = new CountDownLatch(1);
-        Thread refresh = new Thread(() -> WidgetUpdateJob.pushIfCurrent(s, 1, () -> 1, x -> {
-            inside.countDown();
-            try { release.await(5, TimeUnit.SECONDS); } catch (InterruptedException ignored) { }
-        }));
-        refresh.start();
         try {
-            a.isTrue("un refresco esta pintando", inside.await(5, TimeUnit.SECONDS));
-            new Thread(() -> {
-                WidgetUpdateJob.pushLocked(s, x -> { });
-                pushed.countDown();
-            }).start();
-            a.isTrue("el pintado del logout ESPERA al refresco que pinta",
-                    !pushed.await(300, TimeUnit.MILLISECONDS));
-            release.countDown();
-            a.isTrue("y pinta en cuanto este suelta", pushed.await(5, TimeUnit.SECONDS));
-            refresh.join(5000);
-        } catch (InterruptedException e) {
-            a.fail("logoutPushLock interrumpida");
+            exclusion(a, "refresco vs pintado del logout", log -> {
+                WidgetUpdateJob.paintHook = x -> log.add("B");
+                WidgetUpdateJob.pushToWidgets(ctx, s);
+            });
         } finally {
-            release.countDown();
+            WidgetUpdateJob.paintHook = null;
         }
+    }
+
+    // ---- el ciclo de vida del servicio --------------------------------------------------
+
+    private static void jobLifecycle(Assert a) {
+        a.isTrue("onStopJob no pide reintento", !WidgetUpdateJob.RETRY_ON_STOP);
+        a.isTrue("jobFinished no pide reprogramar", !WidgetUpdateJob.RESCHEDULE_ON_FINISH);
+        java.util.concurrent.Executor sync = Runnable::run;
+        Snapshot good = Snapshot.of(Snapshot.Problem.OFFLINE);
+
+        List<String> log = new ArrayList<>();
+        boolean r = WidgetUpdateJob.runJob(sync, () -> 2, () -> log.add("cancel"),
+                () -> { log.add("refresh"); return good; }, () -> 1, x -> log.add("push"),
+                () -> log.add("finish"));
+        a.isTrue("con widgets: arranca (true)", r);
+        a.eq("con widgets: consulta, pinta y avisa una vez", Arrays.asList("refresh", "push", "finish"), log);
+
+        log.clear();
+        r = WidgetUpdateJob.runJob(sync, () -> 0, () -> log.add("cancel"),
+                () -> { log.add("refresh"); return good; }, () -> 1, x -> log.add("push"),
+                () -> log.add("finish"));
+        a.isTrue("sin widgets: devuelve true (el aviso viene del hilo)", r);
+        a.eq("sin widgets: se cancela, NO consulta ni pinta, y avisa", Arrays.asList("cancel", "finish"), log);
+
+        // Un fallo en el hilo no puede dejar el trabajo sin avisar.
+        log.clear();
+        WidgetUpdateJob.runJob(sync, () -> { throw new IllegalStateException("x"); }, () -> log.add("cancel"),
+                () -> good, () -> 1, x -> log.add("push"), () -> log.add("finish"));
+        a.eq("el contador de widgets que lanza: avisa igual", Arrays.asList("finish"), log);
+
+        // Aviso unico: `finish` que lanza la primera vez no se repite desde el catch.
+        int[] finishes = {0};
+        WidgetUpdateJob.runJob(sync, () -> 2, () -> { }, () -> good, () -> 1, x -> { },
+                () -> { finishes[0]++; throw new IllegalStateException("jobFinished"); });
+        a.eq("finish que lanza: se llama UNA sola vez", 1, finishes[0]);
+        int[] n = {0};
+        Runnable once = WidgetUpdateJob.once(() -> n[0]++);
+        once.run(); once.run(); once.run();
+        a.eq("once: una vez", 1, n[0]);
+
+        // Sin hilo no hay trabajo: false y sin avisar (el sistema lo da por terminado).
+        log.clear();
+        r = WidgetUpdateJob.runJob(x -> { throw new java.util.concurrent.RejectedExecutionException(); },
+                () -> 2, () -> { }, () -> good, () -> 1, x -> { }, () -> log.add("finish"));
+        a.isTrue("sin hilo: false", !r);
+        a.eq("sin hilo: no avisa", Collections.emptyList(), log);
+
+        // Asincrono de verdad: vuelve true ya, y el aviso llega despues, desde otro hilo.
+        CountDownLatch go = new CountDownLatch(1);
+        CountDownLatch fin = new CountDownLatch(1);
+        r = WidgetUpdateJob.runJob(x -> new Thread(x).start(), () -> 2, () -> { },
+                () -> { try { go.await(5, TimeUnit.SECONDS); } catch (InterruptedException ignored) { } return good; },
+                () -> 1, x -> { }, fin::countDown);
+        a.isTrue("asincrono: true antes de terminar", r && fin.getCount() == 1);
+        go.countDown();
+        try { a.isTrue("asincrono: acaba avisando", fin.await(5, TimeUnit.SECONDS)); }
+        catch (InterruptedException e) { a.fail("interrumpida"); }
+    }
+
+    /** Session.logout llama a cancelar el job y a pintar "sin sesion", en ese orden y DESPUES de borrar. */
+    private static void logoutHooks(Assert a, Context ctx) {
+        final String file = "session-hooks-test.bin", alias = "cuw-session-hooks-test", prefs = "cuw-hooks-test";
+        SessionStore st = new SessionStore(ctx, file, alias);
+        st.clear();
+        try {
+            st.save("sessionKey=falsa");
+        } catch (Exception e) {
+            a.fail("logoutHooks: no se pudo preparar la sesion");
+            return;
+        }
+        SampleStore samples = new SampleStore(new java.io.File(ctx.getCacheDir(), "hooks-samples-" + System.nanoTime()));
+        List<String> log = new ArrayList<>();
+        List<Snapshot> pushed = new ArrayList<>();
+        boolean ok = Session.logout(ctx, st, samples, new SnapshotStore(ctx, prefs), prefs, false,
+                () -> log.add("cancel:sesion=" + st.hasSession()),
+                x -> { log.add("push"); pushed.add(x); });
+        a.isTrue("logout con ganchos: true", ok);
+        a.eq("cancela el job y luego pinta, ya con la sesion borrada",
+                Arrays.asList("cancel:sesion=false", "push"), log);
+        a.eq("pinta exactamente un snapshot", 1, pushed.size());
+        if (pushed.size() == 1) {
+            a.eq("y es NO_SESSION", Snapshot.Problem.NO_SESSION, pushed.get(0).problem);
+            a.isTrue("sin numeros", !pushed.get(0).hasData());
+        }
+        // Un gancho que lanza no impide el resto, y devuelve false.
+        st.clear();
+        log.clear();
+        ok = Session.logout(ctx, st, samples, new SnapshotStore(ctx, prefs), prefs, false,
+                () -> { throw new IllegalStateException("x"); }, x -> log.add("push"));
+        a.isTrue("cancel que lanza: logout false", !ok);
+        a.eq("cancel que lanza: aun asi pinta", Arrays.asList("push"), log);
+        // Sin ganchos (realDevice=false de siempre): ni cancela ni pinta.
+        log.clear();
+        a.isTrue("sin ganchos: true", Session.logout(ctx, st, samples, new SnapshotStore(ctx, prefs), prefs, false, null, null));
+        st.clear();
     }
 
     // ---- runNow no bloquea --------------------------------------------------------------

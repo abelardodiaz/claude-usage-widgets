@@ -109,7 +109,7 @@ public final class WidgetRenderer {
      * Nunca lleva extras: ni cookie ni uuid viajan en un Intent.
      *
      * Los dos CALLEJONES SIN SALIDA que dejo la 4.3 estan cerrados (4.4):
-     *  - Un fallo PERMANENTE del Keystore (el dueno cambia o quita el bloqueo de pantalla) ya no
+     *  - Un fallo PERMANENTE del Keystore (corrupcion del Keystore o restauracion en otro aparato; cambiar el bloqueo de pantalla NO invalida esta llave) ya no
      *    llega aqui como OFFLINE: SessionStore lo distingue (`KeyLostException`) y el refrescador
      *    lo devuelve como AUTH_EXPIRED, que lleva al login. OFFLINE vuelve a significar solo
      *    "sin red" o un hipo transitorio, donde reintentar si es lo correcto.

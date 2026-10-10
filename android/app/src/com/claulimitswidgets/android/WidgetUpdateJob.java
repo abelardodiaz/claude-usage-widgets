@@ -239,7 +239,12 @@ public class WidgetUpdateJob extends JobService {
         }
     }
 
+    /** Solo para las pruebas: recoge el pintado en vez de tocar los widgets del dueno. */
+    static volatile Consumer<Snapshot> paintHook;
+
     private static void paintAll(Context ctx, Snapshot s) {
+        Consumer<Snapshot> hook = paintHook;
+        if (hook != null) { hook.accept(s); return; }
         AppWidgetManager awm = AppWidgetManager.getInstance(ctx);
         for (int id : awm.getAppWidgetIds(new ComponentName(ctx, Widget4x1Provider.class))) {
             paint(awm, id, ctx, s, true);
@@ -334,44 +339,63 @@ public class WidgetUpdateJob extends JobService {
 
     // ---- el servicio --------------------------------------------------------------------
 
+    /** `jobFinished(params, wantsReschedule)`: false, el periodico ya vuelve solo en su ciclo. */
+    static final boolean RESCHEDULE_ON_FINISH = false;
+    /** `onStopJob`: false, un reintento con la espera del sistema solo sumaria consultas. */
+    static final boolean RETRY_ON_STOP = false;
+
     @Override
     public boolean onStartJob(JobParameters params) {
         Context app = getApplicationContext();
+        return runJob(r -> new Thread(r, "cuw-job").start(), () -> countAll(app), () -> cancel(app),
+                () -> new UsageRefresher(app).refresh(), Session.EPOCH::get,
+                s -> pushToWidgets(app, s), () -> jobFinished(params, RESCHEDULE_ON_FINISH));
+    }
+
+    /** `finish` como mucho una vez: dos avisos de `jobFinished` por el mismo trabajo son un error. */
+    static Runnable once(Runnable finish) {
         AtomicBoolean finished = new AtomicBoolean();
-        Runnable done = () -> {
-            // Una sola vez: el periodico y un refresco cortado por el sistema no pueden avisar dos.
-            if (finished.compareAndSet(false, true)) jobFinished(params, false);
+        return () -> {
+            if (finished.compareAndSet(false, true)) finish.run();
         };
+    }
+
+    /**
+     * La decision de `onStartJob`, sin tocar el sistema. true = sigue trabajando en segundo
+     * plano (hay que avisar con `finish`); false = no se pudo arrancar el trabajo y el sistema lo
+     * da por terminado (el siguiente periodo reintenta). Si estamos en espera por backoff el
+     * periodo (15 min) es mas largo que el primer escalon: `refresh()` se salta la red y el
+     * siguiente ciclo reintenta.
+     */
+    static boolean runJob(java.util.concurrent.Executor spawn, java.util.function.IntSupplier widgets,
+                          Runnable cancel, Supplier<Snapshot> refresh, LongSupplier epoch,
+                          Consumer<Snapshot> sink, Runnable finish) {
+        Runnable done = once(finish);
         try {
-            new Thread(() -> {
+            spawn.execute(() -> {
                 try {
                     // El dueno quito el ultimo widget (o el sistema no llamo a onDisabled): no hay
                     // a quien actualizar ni razon para gastar una consulta ni seguir despertando.
-                    if (countAll(app) == 0) {
-                        cancel(app);
+                    if (widgets.getAsInt() == 0) {
+                        cancel.run();
                         done.run();
                         return;
                     }
-                    cycle(() -> new UsageRefresher(app).refresh(), Session.EPOCH::get,
-                            s -> pushToWidgets(app, s), done);
+                    cycle(refresh, epoch, sink, done);
                 } catch (RuntimeException e) {
                     done.run();
                 }
-            }, "cuw-job").start();
+            });
         } catch (RuntimeException | Error e) {
-            return false;   // sin hilo no hay trabajo; el siguiente periodo reintenta
+            return false;
         }
-        // Si estamos en espera por backoff, el periodo normal (15 min) es mas largo que el primer
-        // escalon, asi que no se reprograma nada especial: `refresh()` se salta la red mientras
-        // dure la espera y el siguiente ciclo reintenta cuando toca.
-        return true;   // sigue trabajando en segundo plano
+        return true;
     }
 
     @Override
     public boolean onStopJob(JobParameters params) {
         // El sistema corto el trabajo (se perdio la red, ahorro de bateria). No se pide
-        // reintento propio: el periodico vuelve a correr en su ciclo, y un reintento con la
-        // espera exponencial del sistema solo sumaria consultas a claude.ai.
-        return false;
+        // reintento propio: el periodico vuelve a correr en su ciclo.
+        return RETRY_ON_STOP;
     }
 }

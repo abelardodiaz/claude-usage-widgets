@@ -32,7 +32,8 @@ public class SettingsActivity extends Activity {
         getWindow().setFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE,
                 android.view.WindowManager.LayoutParams.FLAG_SECURE);
         setContentView(R.layout.activity_settings);
-        paintOrgs(Collections.emptyList());   // ya: "Automatica" no espera al disco
+        // Nada de preferencias aqui: `getSharedPreferences` es lo que carga el archivo del disco,
+        // y onCreate corre en el principal. Los radios se pintan cuando el hilo vuelve.
         loadAndPaint();
         // La lista cacheada no se refresca sola: abrir esta pantalla es el momento natural de
         // mirar. Al terminar se vuelve a leer y a pintar, porque la lista pudo cambiar.
@@ -56,21 +57,22 @@ public class SettingsActivity extends Activity {
     private void loadAndPaint() {
         Context app = getApplicationContext();
         new Thread(() -> {
+            // Las PRIMERAS lecturas de preferencias (las que cargan el archivo) van aqui.
+            SharedPreferences prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+            String current = prefs.getString(KEY_ORG, null);
             List<UsageClient.Org> orgs = loadKnownOrgs(app);
-            runOnUiThread(() -> paintOrgs(orgs));
+            runOnUiThread(() -> paintOrgs(orgs, prefs, current));
         }, "cuw-orgs-read").start();
     }
 
     /**
-     * Dibuja los radios desde la lista dada. Va siempre al hilo principal. `refreshOrgs` vuelve
-     * de un hilo de red y la pantalla pudo cerrarse mientras tanto.
+     * Dibuja los radios desde la lista dada. Va siempre al hilo principal y NO lee disco: lo que
+     * necesita llega ya leido. `refreshOrgs` vuelve de un hilo de red y la pantalla pudo cerrarse.
      */
-    private void paintOrgs(List<UsageClient.Org> orgs) {
+    private void paintOrgs(List<UsageClient.Org> orgs, SharedPreferences prefs, String current) {
         if (isFinishing() || isDestroyed()) return;
         RadioGroup group = findViewById(R.id.orgs);
         group.removeAllViews();
-        SharedPreferences prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-        String current = prefs.getString(KEY_ORG, null);
 
         RadioButton auto = new RadioButton(this);
         auto.setText(R.string.settings_org_auto);

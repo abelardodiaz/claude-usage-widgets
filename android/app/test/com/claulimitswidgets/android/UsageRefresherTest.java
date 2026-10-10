@@ -741,7 +741,9 @@ public final class UsageRefresherTest {
                     r.samples, r.meta, r.prefs, c -> r.fake, () -> r.now[0]);
             Snapshot ls = lost.refresh();
             a.eq("llave perdida -> AUTH_EXPIRED, no OFFLINE", Snapshot.Problem.AUTH_EXPIRED, ls.problem);
-            a.isTrue("llave perdida: se conserva el ultimo dato", ls.hasData());
+            // Ojo: en produccion SessionStore.load() borra la sesion ANTES de lanzar, asi que
+            // `last()` ya no encuentra sesion y el resultado es AUTH_EXPIRED SIN datos. Este doble
+            // lanza sin borrar, por eso aqui no se afirma nada sobre los datos.
             a.eq("llave perdida: ninguna peticion", before, r.fake.usageCalls.size());
             for (int i = 0; i < 3; i++) lost.refresh();
             a.isTrue("llave perdida: sin backoff (lo arregla el usuario)", !r.prefs.contains("backoff_attempt"));

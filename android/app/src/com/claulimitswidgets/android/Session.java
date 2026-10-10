@@ -66,6 +66,20 @@ public final class Session {
      */
     static boolean logout(Context ctx, SessionStore store, SampleStore samples,
                           SnapshotStore snapshot, String prefsName, boolean realDevice) {
+        Context a = ctx.getApplicationContext() != null ? ctx.getApplicationContext() : ctx;
+        return logout(ctx, store, samples, snapshot, prefsName, realDevice,
+                realDevice ? () -> WidgetUpdateJob.cancel(a) : null,
+                realDevice ? s -> WidgetUpdateJob.pushToWidgets(a, s) : null);
+    }
+
+    /**
+     * Con los dos pasos del aparato inyectados: `cancelJob` (cancela los trabajos) y
+     * `pushWidgets` (pinta "sin sesion"). null = no hacerlo. Asi se prueba que el logout los
+     * llama, y en orden, sin cancelar el job ni repintar los widgets reales del dueno.
+     */
+    static boolean logout(Context ctx, SessionStore store, SampleStore samples,
+                          SnapshotStore snapshot, String prefsName, boolean realDevice,
+                          Runnable cancelJob, java.util.function.Consumer<Snapshot> pushWidgets) {
         // NO envolver esto en synchronized (UsageRefresher.LOCK): un refresco mantiene ese candado
         // durante toda la red (hasta ~20 s por peticion y hay varias sondas), y logout se llama
         // desde el hilo de la UI = ANR. La coordinacion es la epoca: se incrementa aqui y el
@@ -95,16 +109,14 @@ public final class Session {
             ok &= deleteContents(app.getCacheDir());              // cache (incluye la del WebView)
         }
 
-        // cancel y push tocan el job y los widgets REALES del dueno: la prueba (realDevice=false)
-        // no debe cancelarlos ni repintarlos.
-        if (realDevice) {
-            ok &= attempt(() -> WidgetUpdateJob.cancel(app));
+        // cancel y push tocan el job y los widgets REALES del dueno: la prueba inyecta dobles.
+        if (cancelJob != null) {
+            ok &= attempt(cancelJob);
         }
         // Los widgets pasan a "sin sesion". Va bajo el candado de pintado de WidgetUpdateJob: un
         // refresco que empezo antes no puede pintar despues los numeros de la cuenta cerrada.
-        if (realDevice) {
-            ok &= attempt(() -> WidgetUpdateJob.pushToWidgets(app,
-                    Snapshot.of(Snapshot.Problem.NO_SESSION)));
+        if (pushWidgets != null) {
+            ok &= attempt(() -> pushWidgets.accept(Snapshot.of(Snapshot.Problem.NO_SESSION)));
         }
         EPOCH.incrementAndGet();   // por si un refresco empezo entre el primer incremento y los borrados
         return ok;
