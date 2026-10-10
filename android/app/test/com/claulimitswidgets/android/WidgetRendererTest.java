@@ -171,6 +171,8 @@ public final class WidgetRendererTest {
         translations(a, en, es);
         fitsMinHeight(a, en);
         forecastReappears(a, en);
+        forecastTexts(a, en);
+        partialToday(a, en);
     }
 
     /**
@@ -255,6 +257,52 @@ public final class WidgetRendererTest {
         });
         a.eq("con aviso el pronostico se oculta", View.GONE, vis[0]);
         a.eq("reapply sin aviso: el pronostico vuelve", View.VISIBLE, vis[1]);
+    }
+
+    /** El pronostico respeta `beforeReset` y dice la FECHA cuando cae a mas de 6 dias. */
+    private static void forecastTexts(Assert a, Context en) {
+        Instant fetched = NOW.minus(Duration.ofMinutes(5));
+        // Semana al 16% y ~3% en 24 h: se llenaria en cuatro semanas, DESPUES del reinicio.
+        Snapshot far = snap(10, 16, 1, 5.0, 0.4,
+                new Forecast(NOW.plus(Duration.ofDays(28)), false, Basis.WINDOW), fetched, null);
+        a.eq("no llega antes del reinicio (con hitsAt lejano)", "Will not fill before reset",
+                text(a, "beforeReset=false", paint(en, far, false), R.id.forecast));
+        Snapshot nullFlag = snap(10, 16, 1, 5.0, 0.4,
+                new Forecast(null, null, null), fetched, null);
+        a.eq("sin proyeccion", "No forecast yet", text(a, "nulo", paint(en, nullFlag, false), R.id.forecast));
+        Snapshot soon = snap(10, 16, 1, 5.0, 0.4,
+                new Forecast(NOW.plus(Duration.ofDays(2)), true, Basis.WINDOW), fetched, null);
+        String s2 = text(a, "cerca", paint(en, soon, false), R.id.forecast);
+        a.isTrue("a 2 dias: 'Full at <dia> <hora>': " + s2, s2.startsWith("Full at "));
+        Snapshot edge = snap(10, 16, 1, 5.0, 0.4,
+                new Forecast(NOW.plus(Duration.ofDays(6)), true, Basis.WINDOW), fetched, null);
+        a.isTrue("justo a 6 dias aun es 'Full at'",
+                text(a, "borde", paint(en, edge, false), R.id.forecast).startsWith("Full at "));
+        Snapshot lejos = snap(10, 16, 1, 5.0, 0.4,
+                new Forecast(NOW.plus(Duration.ofDays(6)).plusSeconds(60), true, Basis.WINDOW), fetched, null);
+        String s7 = text(a, "lejos", paint(en, lejos, false), R.id.forecast);
+        a.isTrue("pasados 6 dias lleva FECHA ('Full on <mes dia ...>'): " + s7, s7.startsWith("Full on "));
+        String es7 = text(a, "lejos es", paint(localized(en, "es"), lejos, false), R.id.forecast);
+        a.isTrue("en espanol tambien: " + es7, es7.startsWith("Se llena el "));
+        Snapshot esNo = far;
+        a.eq("espanol: no llega", "No se llena antes del reinicio",
+                text(a, "es no", paint(localized(en, "es"), esNo, false), R.id.forecast));
+    }
+
+    /** `day.partial`: la historia no cubre el dia, el texto de hoy lo dice. */
+    private static void partialToday(Assert a, Context en) {
+        UsageModel m = new UsageModel(Source.CLAUDE_AI, win(10), win(16),
+                Collections.emptyList(), Collections.emptyList());
+        Snapshot p = new Snapshot(m, new DayUsage(new HashMap<>(), 3, 10.0, true), null, null, 0.4,
+                NOW.minus(Duration.ofMinutes(5)), null);
+        Snapshot full = new Snapshot(m, new DayUsage(new HashMap<>(), 3, 10.0, false), null, null, 0.4,
+                NOW.minus(Duration.ofMinutes(5)), null);
+        a.eq("hoy parcial", "Today 3.0% of 10.0% (partial)", text(a, "p", paint(en, p, false), R.id.today));
+        a.eq("hoy completo", "Today 3.0% of 10.0%", text(a, "f", paint(en, full, false), R.id.today));
+        Snapshot pu = new Snapshot(m, new DayUsage(new HashMap<>(), 3, null, true), null, null, 0.4,
+                NOW.minus(Duration.ofMinutes(5)), null);
+        a.isTrue("hoy parcial sin cuota tambien lo dice",
+                text(a, "pu", paint(en, pu, false), R.id.today).endsWith("(partial)"));
     }
 
     private static boolean fullText(View v) {

@@ -57,7 +57,8 @@ public class Widget4x1Provider extends AppWidgetProvider {
     @Override
     public void onReceive(Context ctx, Intent intent) {
         if (WidgetUpdateJob.ACTION_TAP.equals(intent.getAction())) {
-            WidgetUpdateJob.runNow(ctx);
+            // goAsync: el receptor sigue vivo mientras dura el refresco (ver WidgetUpdateJob.tap).
+            WidgetUpdateJob.tap(ctx, goAsync());
             return;
         }
         super.onReceive(ctx, intent);

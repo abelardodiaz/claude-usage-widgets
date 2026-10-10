@@ -30,6 +30,9 @@
     <string name="w_age_min">%1$d min ago</string>
     <string name="w_age_hour">%1$d h ago</string>
     <string name="w_full_at">Full at %1$s</string>
+    <string name="w_no_hit_before_reset">Will not fill before reset</string>
+    <string name="w_full_on">Full on %1$s</string>
+    <string name="w_today_partial">Today %1$s of %2$s (partial)</string>
     <string name="w_no_forecast">No forecast yet</string>
     <string name="p_no_session">Tap to sign in</string>
     <string name="p_auth_expired">Session expired — tap to sign in</string>

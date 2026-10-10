@@ -57,6 +57,8 @@ public final class WidgetUpdateJobTest {
         runNowDoesNotBlock(a);
         orgs(a, ctx);
         paintEach(a);
+        asyncAndTap(a);
+        settingsHelpers(a);
         errorsInThreads(a);
         manifest(a, ctx);
         sizes(a, ctx);
@@ -157,6 +159,7 @@ public final class WidgetUpdateJobTest {
      */
     @SuppressWarnings("deprecation")
     private static void realSchedule(Assert a, Context ctx) {
+        try {
         // Primero se cancela: tras `install -r` el widget ya registro el 4201 en su onUpdate, y
         // `ensure` cortocircuita con un pendiente igual SIN llamar a schedule (pasaria en vacio).
         ctx.getSystemService(JobScheduler.class).cancel(4201);
@@ -171,6 +174,10 @@ public final class WidgetUpdateJobTest {
             a.isTrue("JobScheduler real: persistido", got.isPersisted());
             a.isTrue("JobScheduler real: igual a lo pedido",
                     WidgetUpdateJob.same(got, WidgetUpdateJob.periodicInfo(ctx)));
+        }
+            } finally {
+            // Si algo falla a mitad, el dueno no se queda sin job: se vuelve a programar.
+            WidgetUpdateJob.schedule(ctx);
         }
     }
 
@@ -433,9 +440,9 @@ public final class WidgetUpdateJobTest {
             return Snapshot.of(Snapshot.Problem.OFFLINE);
         };
         long t0 = System.nanoTime();
-        WidgetUpdateJob.runNowWith(g, slow, () -> 1, s -> pushed.incrementAndGet());
+        WidgetUpdateJob.runNowWith(g, slow, () -> 1, s -> pushed.incrementAndGet(), () -> { });
         // Cuatro toques mas mientras el primero sigue consultando.
-        for (int i = 0; i < 4; i++) WidgetUpdateJob.runNowWith(g, slow, () -> 1, s -> pushed.incrementAndGet());
+        for (int i = 0; i < 4; i++) WidgetUpdateJob.runNowWith(g, slow, () -> 1, s -> pushed.incrementAndGet(), () -> { });
         long ms = (System.nanoTime() - t0) / 1_000_000;
         a.isTrue("runNow vuelve YA aunque el refresco este colgado (" + ms + " ms)", ms < 1000);
         try {
@@ -510,7 +517,7 @@ public final class WidgetUpdateJobTest {
         WidgetUpdateJob.NowGate g = new WidgetUpdateJob.NowGate();
         CountDownLatch ran = new CountDownLatch(1);
         WidgetUpdateJob.runNowWith(g, () -> { ran.countDown(); throw new OutOfMemoryError("prueba"); },
-                () -> 1, x -> { });
+                () -> 1, x -> { }, () -> { });
         boolean freed = false;
         try {
             a.isTrue("el refresco con Error llego a correr", ran.await(5, TimeUnit.SECONDS));
@@ -536,6 +543,83 @@ public final class WidgetUpdateJobTest {
         a.isTrue("runJob con Error: no se escapa", !threw);
         a.isTrue("runJob con Error: el trabajo arranco (true, el aviso viene del hilo)", started);
         a.eq("runJob con Error: se avisa exactamente una vez", 1, finishes[0]);
+    }
+
+    private static void settingsHelpers(Assert a) {
+        a.isTrue("ayuda visible solo en CHOOSE_ORG", SettingsActivity.helpVisible(true));
+        a.isTrue("ayuda oculta si no se esta eligiendo", !SettingsActivity.helpVisible(false));
+        a.isTrue("Automatica marcada: sin manual y sin ambigua", SettingsActivity.autoChecked(null, false));
+        a.isTrue("Automatica NO marcada cuando la automatica fallo por ambigua", !SettingsActivity.autoChecked(null, true));
+        a.isTrue("Automatica NO marcada con eleccion manual", !SettingsActivity.autoChecked("uuid", false));
+    }
+
+    /** Logout asincrono, hop al principal, y el aviso `done` de los toques. */
+    private static void asyncAndTap(Assert a) {
+        android.os.Looper main = android.os.Looper.getMainLooper();
+        Thread[] workThread = new Thread[1];
+        Thread[] doneThread = new Thread[1];
+        CountDownLatch fin = new CountDownLatch(1);
+        Boolean[] got = new Boolean[1];
+        Session.runAsync(() -> { workThread[0] = Thread.currentThread(); return true; },
+                ok -> { doneThread[0] = Thread.currentThread(); got[0] = ok; fin.countDown(); });
+        try {
+            a.isTrue("runAsync termina", fin.await(5, TimeUnit.SECONDS));
+        } catch (InterruptedException e) { a.fail("interrumpida"); }
+        a.isTrue("el trabajo NO corre en el principal", workThread[0] != null && workThread[0] != main.getThread());
+        a.isTrue("el aviso SI vuelve al principal", doneThread[0] == main.getThread());
+        a.eq("y lleva el resultado", Boolean.TRUE, got[0]);
+        CountDownLatch fin2 = new CountDownLatch(1);
+        Boolean[] got2 = new Boolean[1];
+        Session.runAsync(() -> { throw new IllegalStateException("x"); }, ok -> { got2[0] = ok; fin2.countDown(); });
+        try { fin2.await(5, TimeUnit.SECONDS); } catch (InterruptedException e) { a.fail("interrumpida"); }
+        a.eq("un trabajo que lanza da false (y avisa)", Boolean.FALSE, got2[0]);
+
+        // onMainAndWait desde un hilo de fondo: el trabajo corre en el principal.
+        Thread[] where = new Thread[1];
+        boolean[] res = new boolean[1];
+        Thread bg = new Thread(() -> res[0] = Session.onMainAndWait(() -> {
+            where[0] = Thread.currentThread();
+            return true;
+        }, 5));
+        bg.start();
+        try { bg.join(8000); } catch (InterruptedException e) { a.fail("interrumpida"); }
+        a.isTrue("onMainAndWait: corrio en el principal", where[0] == main.getThread());
+        a.isTrue("onMainAndWait: devuelve el resultado", res[0]);
+        boolean[] timeout = new boolean[1];
+        Thread bg2 = new Thread(() -> timeout[0] = Session.onMainAndWait(() -> {
+            try { Thread.sleep(3000); } catch (InterruptedException ignored) { }
+            return true;
+        }, 1));
+        bg2.start();
+        try { bg2.join(8000); } catch (InterruptedException e) { a.fail("interrumpida"); }
+        a.isTrue("onMainAndWait: si no llega a tiempo, false", !timeout[0]);
+
+        // runNowWith: `done` tras terminar; y enseguida si ya habia uno en curso.
+        WidgetUpdateJob.NowGate g = new WidgetUpdateJob.NowGate();
+        CountDownLatch inRefresh = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        CountDownLatch d1 = new CountDownLatch(1);
+        AtomicInteger order = new AtomicInteger();
+        int[] doneAt = new int[2];
+        WidgetUpdateJob.runNowWith(g, () -> {
+            inRefresh.countDown();
+            try { release.await(5, TimeUnit.SECONDS); } catch (InterruptedException ignored) { }
+            order.incrementAndGet();
+            return Snapshot.of(Snapshot.Problem.OFFLINE);
+        }, () -> 1, x -> { }, () -> { doneAt[0] = order.get(); d1.countDown(); });
+        try {
+            inRefresh.await(5, TimeUnit.SECONDS);
+            boolean[] immediate = {false};
+            WidgetUpdateJob.runNowWith(g, () -> Snapshot.of(Snapshot.Problem.OFFLINE), () -> 1, x -> { },
+                    () -> immediate[0] = true);
+            a.isTrue("con uno en curso, done se llama ENSEGUIDA (no espera al refresco)", immediate[0]);
+            a.eq("el primero aun no avisa", 1, (int) d1.getCount());
+            release.countDown();
+            a.isTrue("el primero avisa al terminar", d1.await(5, TimeUnit.SECONDS));
+            a.isTrue("y avisa DESPUES de consultar", doneAt[0] >= 1);
+        } catch (InterruptedException e) { a.fail("interrumpida"); }
+        finally { release.countDown(); }
+        a.eq("presupuesto del toque < 10 s de goAsync", true, WidgetUpdateJob.TAP_BUDGET_MS < 10_000L);
     }
 
     // ---- el manifiesto ------------------------------------------------------------------

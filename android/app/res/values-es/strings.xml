@@ -31,6 +31,9 @@
     <string name="w_age_min">hace %1$d min</string>
     <string name="w_age_hour">hace %1$d h</string>
     <string name="w_full_at">Al 100%% a las %1$s</string>
+    <string name="w_no_hit_before_reset">No se llena antes del reinicio</string>
+    <string name="w_full_on">Se llena el %1$s</string>
+    <string name="w_today_partial">Hoy %1$s de %2$s (parcial)</string>
     <string name="w_no_forecast">Sin proyección todavía</string>
     <string name="p_no_session">Toca para iniciar sesión</string>
     <string name="p_auth_expired">Sesión vencida — toca para entrar</string>

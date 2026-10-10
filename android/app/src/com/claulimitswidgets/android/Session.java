@@ -126,6 +126,12 @@ public final class Session {
      */
     @SuppressWarnings("deprecation")   // clearHttpAuthUsernamePassword: sin sustituto
     static boolean clearWebData(Context app) {
+        // Las APIs del WebView quieren el hilo principal (y `removeAllCookies` un Looper). Desde
+        // un hilo de fondo (el logout ya no corre en el principal) se salta al principal y se espera.
+        return onMainAndWait(() -> clearWebDataHere(app), 10);
+    }
+
+    private static boolean clearWebDataHere(Context app) {
         boolean ok = attempt(() -> {
             CookieManager cm = CookieManager.getInstance();
             // removeAllCookies es asincrono: el flush va DENTRO del callback, cuando ya borro.
@@ -134,6 +140,54 @@ public final class Session {
         ok &= attempt(() -> WebStorage.getInstance().deleteAllData());
         ok &= attempt(() -> WebViewDatabase.getInstance(app).clearHttpAuthUsernamePassword());
         return ok;
+    }
+
+    /**
+     * Ejecuta `work` en el hilo principal y espera su resultado (como mucho `seconds`). Si ya se
+     * esta en el principal lo hace directamente. false si no llego a tiempo o lanzo.
+     */
+    static boolean onMainAndWait(java.util.function.BooleanSupplier work, int seconds) {
+        android.os.Looper main = android.os.Looper.getMainLooper();
+        if (android.os.Looper.myLooper() == main) {
+            try { return work.getAsBoolean(); } catch (RuntimeException e) { return false; }
+        }
+        java.util.concurrent.CountDownLatch done = new java.util.concurrent.CountDownLatch(1);
+        boolean[] result = {false};
+        new android.os.Handler(main).post(() -> {
+            try { result[0] = work.getAsBoolean(); } catch (RuntimeException e) { result[0] = false; }
+            finally { done.countDown(); }
+        });
+        try {
+            return done.await(seconds, java.util.concurrent.TimeUnit.SECONDS) && result[0];
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
+    }
+
+    /**
+     * Cerrar sesion SIN bloquear la UI: borrado de Keystore, `commit()`, barrido recursivo de la
+     * cache e IPC por widget van a un hilo; `done` vuelve en el principal con el resultado.
+     */
+    public static void logoutAsync(Context ctx, java.util.function.Consumer<Boolean> done) {
+        Context app = ctx.getApplicationContext() != null ? ctx.getApplicationContext() : ctx;
+        runAsync(() -> logout(app), done);
+    }
+
+    /** `work` en un hilo, `done` en el principal. Aparte para probarlo sin cerrar ninguna sesion. */
+    static void runAsync(java.util.function.Supplier<Boolean> work,
+                         java.util.function.Consumer<Boolean> done) {
+        android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
+        new Thread(() -> {
+            boolean ok;
+            try {
+                ok = work.get();
+            } catch (RuntimeException | Error e) {
+                ok = false;   // sin citar nada: no hay datos que se puedan citar
+            }
+            boolean result = ok;
+            main.post(() -> done.accept(result));
+        }, "cuw-logout").start();
     }
 
     private static boolean attempt(Runnable r) {

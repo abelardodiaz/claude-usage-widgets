@@ -40,7 +40,7 @@ public final class SessionStore {
     private static final int IV_LEN = 12;
 
     /**
-     * La llave del Keystore se perdio PARA SIEMPRE (`KeyPermanentlyInvalidatedException` o
+     * El Keystore declara la llave inservible (`KeyPermanentlyInvalidatedException` o
      * `UnrecoverableKeyException`: corrupcion del Keystore o copia/restauracion en otro aparato. OJO:
      * cambiar o quitar el bloqueo de pantalla NO la invalida, porque la llave se crea con
      * `setUserAuthenticationRequired(false)` a proposito, para refrescar con la pantalla apagada). La
@@ -148,8 +148,8 @@ public final class SessionStore {
 
     /**
      * Null si no hay sesion. Si el archivo esta corrupto (forma invalida o etiqueta GCM que no
-     * cuadra) se borra y se devuelve null. Si la llave se perdio para siempre se borra todo y se
-     * lanza {@link KeyLostException}: no hay nada que salvar. Cualquier otro fallo del Keystore se
+     * cuadra) se borra y se devuelve null. Si el Keystore dice que la llave no sirve se lanza
+     * {@link KeyLostException} SIN borrar nada (puede ser un hipo disfrazado). Cualquier otro fallo del Keystore se
      * propaga SIN borrar nada: puede ser transitorio y borrar costaria la sesion del usuario.
      */
     public String load() throws GeneralSecurityException, IOException {
@@ -170,9 +170,12 @@ public final class SessionStore {
             try {
                 c.init(Cipher.DECRYPT_MODE, keys.get(), new GCMParameterSpec(TAG_BITS, iv));
             } catch (KeyPermanentlyInvalidatedException | UnrecoverableKeyException e) {
-                // Sin la llave el archivo es basura, y dejarlo haria que hasSession() siguiera
-                // diciendo que hay sesion y la pantalla de entrada mostrara "sesion iniciada".
-                clear();
+                // NO se borra nada. Desde Android 12 (keystore2) AndroidKeyStoreSpi envuelve en
+                // UnrecoverableKeyException tambien errores TRANSITORIOS (se han visto tras el
+                // arranque y en Samsung), y el 4202 corre justo despues del arranque: borrar
+                // aqui cerraria la sesion del dueno por un hipo y le obligaria a repetir el
+                // login por correo. El lado seguro es no borrar; el siguiente `save()` regenera la
+                // llave si de verdad estaba perdida.
                 throw new KeyLostException();
             }
             try {

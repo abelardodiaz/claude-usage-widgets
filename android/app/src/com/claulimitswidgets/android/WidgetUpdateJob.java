@@ -152,15 +152,42 @@ public class WidgetUpdateJob extends JobService {
      * ahi mataria el proceso.
      */
     public static void runNow(Context ctx) {
+        runNow(ctx, () -> { });
+    }
+
+    /** Con aviso `done` al terminar (o enseguida si ya habia un refresco en curso). Solo ENCOLA. */
+    public static void runNow(Context ctx, Runnable done) {
         Context app = ctx.getApplicationContext() != null ? ctx.getApplicationContext() : ctx;
         runNowWith(GATE, () -> new UsageRefresher(app).refresh(), Session.EPOCH::get,
-                s -> paintAll(app, s));
+                s -> paintAll(app, s), done);
     }
+
+    /**
+     * El toque sobre un widget. Un hilo suelto lanzado desde `onReceive` puede perder el proceso
+     * antes de acabar la red; con `goAsync` el receptor sigue vivo mientras dura el refresco. El
+     * presupuesto de `goAsync` es de ~10 s, asi que se suelta a los 8 s pase lo que pase (una
+     * sola vez: `finish` dos veces lanza). `pending` puede ser null fuera de un receptor real.
+     */
+    public static void tap(Context ctx, android.content.BroadcastReceiver.PendingResult pending) {
+        Runnable fin = once(() -> {
+            if (pending != null) pending.finish();
+        });
+        if (pending != null) {
+            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(fin, TAP_BUDGET_MS);
+        }
+        runNow(ctx, fin);
+    }
+
+    static final long TAP_BUDGET_MS = 8000L;
 
     /** `runNow` con todo inyectado: las pruebas no pueden tocar la red ni los widgets del dueno. */
     static void runNowWith(NowGate gate, Supplier<Snapshot> refresh, LongSupplier epoch,
-                           Consumer<Snapshot> sink) {
-        if (!gate.claim()) return;
+                           Consumer<Snapshot> sink, Runnable done) {
+        if (!gate.claim()) {
+            // Ya hay un refresco en curso (y uno en cola anotado): nada que esperar.
+            safely(done);
+            return;
+        }
         try {
             new Thread(() -> {
                 try {
@@ -169,11 +196,18 @@ public class WidgetUpdateJob extends JobService {
                     } while (gate.next());
                 } catch (RuntimeException | Error e) {
                     gate.abort();   // no debe quedar la puerta cerrada ni llevarse el proceso
+                } finally {
+                    safely(done);
                 }
             }, "cuw-refresh").start();
         } catch (RuntimeException | Error e) {
             gate.abort();   // sin hilo no hay trabajo, y la puerta no puede quedar cerrada
+            safely(done);
         }
+    }
+
+    private static void safely(Runnable r) {
+        try { r.run(); } catch (RuntimeException ignored) { }
     }
 
     /**

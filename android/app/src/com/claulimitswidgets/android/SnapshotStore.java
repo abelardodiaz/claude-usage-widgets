@@ -15,7 +15,8 @@ import java.util.List;
  * Guarda lo minimo para volver a pintar el widget sin red: los dos porcentajes con sus reinicios,
  * la hora de la ultima consulta buena y las organizaciones conocidas.
  *
- * Los uuid son credenciales: viven en las preferencias privadas y no se registran. Session.logout
+ * Los uuid son datos de cuenta privados (no credenciales): viven en las preferencias privadas y
+ * no se registran. Session.logout
  * llama a {@link #clear()} de forma explicita; que hoy comparta archivo con el resto de
  * preferencias (que logout tambien vacia) es un detalle que no se da por supuesto.
  */
@@ -24,6 +25,7 @@ public final class SnapshotStore {
     private static final String KEY_FETCHED_AT = "fetched_at";
     private static final String KEY_ORGS = "known_orgs";
     private static final String KEY_ORGS_AT = "known_orgs_at";
+    private static final String KEY_CHOOSING = "choosing_org";
     private static final String KEY_SP = "last_session_percent";
     private static final String KEY_SR = "last_session_resets";
     private static final String KEY_WP = "last_weekly_percent";
@@ -140,9 +142,25 @@ public final class SnapshotStore {
         return prefs.edit().remove(KEY_ORGS).remove(KEY_ORGS_AT).commit();
     }
 
+    /**
+     * La eleccion automatica de organizacion fallo por ambigua (varias y ninguna pista): Ajustes
+     * muestra la ayuda SOLO en ese estado y no marca ningun radio. false cuando se resuelve.
+     */
+    public void setChoosingOrg(boolean choosing) {
+        prefs.edit().putBoolean(KEY_CHOOSING, choosing).apply();
+    }
+
+    public boolean choosingOrg() {
+        try {
+            return prefs.getBoolean(KEY_CHOOSING, false);
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
     /** Borra todo lo que guarda este almacen. commit(): tiene que estar en disco al volver. */
     public boolean clear() {
         return prefs.edit().remove(KEY_FETCHED_AT).remove(KEY_ORGS).remove(KEY_ORGS_AT)
-                .remove(KEY_SP).remove(KEY_SR).remove(KEY_WP).remove(KEY_WR).commit();
+                .remove(KEY_CHOOSING).remove(KEY_SP).remove(KEY_SR).remove(KEY_WP).remove(KEY_WR).commit();
     }
 }

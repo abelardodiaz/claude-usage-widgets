@@ -7,6 +7,7 @@ import android.widget.RemoteViews;
 
 import com.claudewidgets.core.Color;
 import com.claudewidgets.core.Colors;
+import com.claudewidgets.core.Forecast;
 import com.claudewidgets.core.TodayFill;
 
 import java.time.Duration;
@@ -75,7 +76,7 @@ public final class WidgetRenderer {
                 if (s.paceMark != null) {
                     v.setProgressBar(R.id.pace, 100, (int) Math.round(s.paceMark * 100), false);
                 }
-                v.setTextViewText(R.id.forecast, forecast(ctx, s));
+                v.setTextViewText(R.id.forecast, forecast(ctx, s, now));
                 // Con un aviso (sin red, bloqueado...) el pronostico de un dato viejo se oculta: el
                 // aviso ocupa su sitio y, en la altura minima del 4x2 (170dp), sumarlo al contenido
                 // recortaba las ultimas filas. Se fija en AMBOS sentidos: el lanzador actualiza
@@ -139,9 +140,11 @@ public final class WidgetRenderer {
         // caer en silencio en la rama de los numeros.
         switch (fill.state) {
             case EXHAUSTED: return ctx.getString(R.string.w_today_exhausted);
-            case UNKNOWN:   return ctx.getString(R.string.w_today, one(ctx, d.todayUsed), "\u2014");
-            case OK:        return ctx.getString(R.string.w_today, one(ctx, d.todayUsed),
-                                    one(ctx, d.quotaToday));
+            case UNKNOWN:   return ctx.getString(d.partial ? R.string.w_today_partial : R.string.w_today,
+                                    one(ctx, d.todayUsed), "\u2014");
+            // `partial`: la historia no cubre todo el dia, asi que el consumo de hoy puede ser mayor.
+            case OK:        return ctx.getString(d.partial ? R.string.w_today_partial : R.string.w_today,
+                                    one(ctx, d.todayUsed), one(ctx, d.quotaToday));
             default: throw new IllegalStateException("estado de hoy sin texto: " + fill.state);
         }
     }
@@ -196,16 +199,25 @@ public final class WidgetRenderer {
         }
     }
 
-    private static String forecast(Context ctx, Snapshot s) {
-        if (s.weeklyForecast == null || s.weeklyForecast.hitsAt == null) {
-            return ctx.getString(R.string.w_no_forecast);
-        }
-        // "j" = la hora segun la preferencia 12/24 h del aparato.
+    /** Mas lejos que esto, "dom 5:08" se lee como "este domingo": hay que decir la fecha. */
+    static final Duration FAR = Duration.ofDays(6);
+
+    private static String forecast(Context ctx, Snapshot s, Instant now) {
+        Forecast f = s.weeklyForecast;
+        if (f == null) return ctx.getString(R.string.w_no_forecast);
+        // `hitsAt` solo vale si ocurre ANTES del reinicio de la ventana: si no, la ventana se
+        // reinicia antes y decir "se llena el domingo" seria decirle que se queda sin cuota
+        // cuando no es verdad. (Los tres campos van nulos juntos cuando no se puede proyectar.)
+        if (Boolean.FALSE.equals(f.beforeReset)) return ctx.getString(R.string.w_no_hit_before_reset);
+        if (f.hitsAt == null || f.beforeReset == null) return ctx.getString(R.string.w_no_forecast);
         Locale loc = locale(ctx);
+        boolean far = Duration.between(now, f.hitsAt).compareTo(FAR) > 0;
+        // "j" = la hora segun la preferencia 12/24 h del aparato.
         String when = DateTimeFormatter.ofPattern(
-                        android.text.format.DateFormat.getBestDateTimePattern(loc, "EEEjm"), loc)
-                .withZone(ZoneId.systemDefault()).format(s.weeklyForecast.hitsAt);
-        return ctx.getString(R.string.w_full_at, when);
+                        android.text.format.DateFormat.getBestDateTimePattern(loc,
+                                far ? "MMMdjm" : "EEEjm"), loc)
+                .withZone(ZoneId.systemDefault()).format(f.hitsAt);
+        return ctx.getString(far ? R.string.w_full_on : R.string.w_full_at, when);
     }
 
     private static String age(Context ctx, Instant fetchedAt, Instant now) {

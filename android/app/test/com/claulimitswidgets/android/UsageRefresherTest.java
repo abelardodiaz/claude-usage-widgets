@@ -123,6 +123,8 @@ public final class UsageRefresherTest {
         logoutDuringFetch(a, ctx);
         lastBeforeFirstFetch(a, ctx);
         serialized(a, ctx);
+        clockWentBack(a, ctx);
+        choosingFlag(a, ctx);
         productionPathTied(a, ctx);
         logoutClearsSnapshot(a, ctx);
         logoutInFlightWritesNothing(a, ctx);
@@ -335,7 +337,7 @@ public final class UsageRefresherTest {
     /** Cada fracaso del cliente se convierte en SU problema, y solo los que esperan hacen backoff. */
     private static void failureMapping(Assert a, Context ctx) {
         Object[][] cases = {
-            {new AuthExpiredException("401"), Snapshot.Problem.AUTH_EXPIRED, false},
+            {new AuthExpiredException("401"), Snapshot.Problem.AUTH_EXPIRED, true},
             {new BlockedException("403"), Snapshot.Problem.BLOCKED, true},
             {new UsageClient.RetryLaterException("HTTP 429"), Snapshot.Problem.OFFLINE, true},
             {new IOException("x"), Snapshot.Problem.OFFLINE, true},
@@ -363,6 +365,21 @@ public final class UsageRefresherTest {
                 try {
                     a.eq(what + " no guardo muestra nueva", 1, r.samples.load(r.now[0]).size());
                 } catch (IOException e) { a.fail(what + ": no se pudo leer el almacen"); }
+                if (c[1] == Snapshot.Problem.AUTH_EXPIRED) {
+                    a.isTrue("401: espera LARGA (>= 5 h), no la de 15 min",
+                            prefs(r).getLong("backoff_next_allowed_at", 0)
+                                    >= r.now[0].getEpochSecond() + 5 * 3600);
+                    a.isTrue("401: no cuenta como intento", !prefs(r).contains("backoff_attempt"));
+                    int before401 = r.fake.usageCalls.size();
+                    r.now[0] = r.now[0].plusSeconds(15 * 60);
+                    Snapshot held = r.refresher.refresh();
+                    a.eq("401: a los 15 min no se vuelve a la red", before401, r.fake.usageCalls.size());
+                    a.eq("401: sigue diciendo AUTH_EXPIRED", Snapshot.Problem.AUTH_EXPIRED, held.problem);
+                    prefs(r).edit().clear().commit();
+                    r.fake.usage.put(ORG1, model(31, 41));
+                    a.isTrue("401: tras volver a entrar (espera borrada) se consulta",
+                            r.refresher.refresh().problem == null);
+                }
             } finally { r.close(); }
         }
 
@@ -751,6 +768,50 @@ public final class UsageRefresherTest {
             a.isTrue("llave perdida: sin backoff (lo arregla el usuario)", !r.prefs.contains("backoff_attempt"));
             a.eq("llave perdida: el toque lleva al login", LoginActivity.class.getName(),
                     WidgetRenderer.tapTarget(ctx, ls, true).getComponent().getClassName());
+        } finally { r.close(); }
+    }
+
+    /** Un reloj que retrocedio no puede dejar la espera dias en el futuro. */
+    private static void clockWentBack(Assert a, Context ctx) {
+        Rig r = new Rig(ctx, true, COOKIES);
+        try {
+            r.fake.orgs = Arrays.asList(new UsageClient.Org(ORG1, "Uno"));
+            r.fake.usage.put(ORG1, model(30, 40));
+            a.isTrue("preparacion", r.refresher.refresh().problem == null);
+            long far = r.now[0].getEpochSecond() + 5 * 24 * 3600L;
+            prefs(r).edit().putLong("backoff_next_allowed_at", far).putString("backoff_last_problem", "OFFLINE").commit();
+            int before = r.fake.usageCalls.size();
+            r.now[0] = r.now[0].plusSeconds(60);
+            r.fake.usage.put(ORG1, model(31, 41));
+            Snapshot s = r.refresher.refresh();
+            a.isTrue("espera absurda (5 dias): se ignora y se consulta", r.fake.usageCalls.size() > before);
+            a.isTrue("y recupera", s.problem == null);
+            // Control: una espera legitima (1 h) SI se respeta.
+            long ok = r.now[0].getEpochSecond() + 3600;
+            prefs(r).edit().putLong("backoff_next_allowed_at", ok).putString("backoff_last_problem", "OFFLINE").commit();
+            int before2 = r.fake.usageCalls.size();
+            r.refresher.refresh();
+            a.eq("espera legitima de 1 h: no se consulta", before2, r.fake.usageCalls.size());
+        } finally { r.close(); }
+    }
+
+    /** Estado CHOOSE_ORG: lo guarda el refrescador y lo borra una eleccion que funciona. */
+    private static void choosingFlag(Assert a, Context ctx) {
+        Rig r = new Rig(ctx, true, "sessionKey=falsa");
+        try {
+            r.fake.orgs = Arrays.asList(new UsageClient.Org(ORG1, "Uno"), new UsageClient.Org(ORG2, "Dos"));
+            r.fake.usage.put(ORG1, model(30, 40));
+            r.fake.usage.put(ORG2, model(30, 40));
+            a.isTrue("antes: sin estado", !r.meta.choosingOrg());
+            Snapshot s = r.refresher.refresh();
+            a.eq("ambigua -> CHOOSE_ORG", Snapshot.Problem.CHOOSE_ORG, s.problem);
+            a.isTrue("ambigua: queda anotado", r.meta.choosingOrg());
+            prefs(r).edit().putString(SettingsActivity.KEY_ORG, ORG1).commit();
+            a.isTrue("con eleccion manual se resuelve", r.refresher.refresh().problem == null);
+            a.isTrue("resuelto: el estado se borra", !r.meta.choosingOrg());
+            r.meta.setChoosingOrg(true);
+            r.meta.clear();
+            a.isTrue("SnapshotStore.clear lo borra", !r.meta.choosingOrg());
         } finally { r.close(); }
     }
 

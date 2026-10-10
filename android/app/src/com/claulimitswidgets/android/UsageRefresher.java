@@ -149,6 +149,11 @@ public final class UsageRefresher {
         }
     }
 
+    /** Tras un 401 la cookie esta muerta: no se manda cada 15 min para siempre. El login lo borra. */
+    static final long AUTH_WAIT_SECONDS = 6 * 3600L;
+    static final long MAX_WAIT_SECONDS = Math.max(AUTH_WAIT_SECONDS, 1800L);
+    static final long WAIT_MARGIN_SECONDS = 3600L;
+
     private static final String KEY_ATTEMPT = "backoff_attempt";
     private static final String KEY_NEXT_ALLOWED = "backoff_next_allowed_at";
     private static final String KEY_LAST_PROBLEM = "backoff_last_problem";
@@ -201,7 +206,11 @@ public final class UsageRefresher {
         // Aqui NO se llama a keepOld: incrementaria el contador sin haber hecho una sola
         // peticion, y cinco toques en un minuto dejarian al widget media hora sin consultar.
         long notBefore = prefs.getLong(KEY_NEXT_ALLOWED, 0L);
-        if (clock.now().getEpochSecond() < notBefore) {
+        long nowSec = clock.now().getEpochSecond();
+        // Un reloj que retrocedio (o se ajusto a mano) puede dejar la espera DIAS en el futuro y
+        // al widget mudo para siempre: una espera nunca puede pasar de la mayor que ponemos.
+        if (notBefore > nowSec + MAX_WAIT_SECONDS + WAIT_MARGIN_SECONDS) notBefore = 0L;
+        if (nowSec < notBefore) {
             Snapshot old = last();
             Snapshot.Problem p = problemFromName(prefs.getString(KEY_LAST_PROBLEM, null));
             return old.hasData() ? old.withProblem(p) : Snapshot.of(p);
@@ -234,7 +243,14 @@ public final class UsageRefresher {
                 sel.rethrow();
             }
             OrgSelector.Choice choice = sel.choice;
-            if (choice.ambiguous) return keepOld(Snapshot.Problem.CHOOSE_ORG);
+            if (choice.ambiguous) {
+                // Ajustes muestra la ayuda y deja sin marcar "Automatica" SOLO en este estado.
+                if (alive()) {
+                    meta.setChoosingOrg(true);
+                    committed(() -> meta.setChoosingOrg(false));
+                }
+                return keepOld(Snapshot.Problem.CHOOSE_ORG);
+            }
             if (choice.orgUuid == null) return keepOld(Snapshot.Problem.BAD_FORMAT);
 
             // Si la eleccion vino del manual, la sonda no corrio: hay que consultar.
@@ -371,9 +387,9 @@ public final class UsageRefresher {
     }
 
     private Snapshot keepOld(Snapshot.Problem p) {
-        // Solo cuentan los fallos que se arreglan esperando. Un 401 o una organizacion por
-        // elegir no mejoran con el tiempo: los arregla el usuario, y hacerle esperar media hora
-        // despues de volver a entrar seria absurdo.
+        // Los fallos que se arreglan esperando cuentan como intento (espera exponencial). Un 401
+        // tiene espera larga fija y NO cuenta; una organizacion por elegir no espera nada: la
+        // arregla el usuario, y hacerle esperar media hora despues de elegir seria absurdo.
         // Y solo si la sesion sigue viva: tras un logout, estas claves resucitarian en un archivo
         // de preferencias recien borrado.
         if ((p == Snapshot.Problem.OFFLINE || p == Snapshot.Problem.BLOCKED
@@ -386,6 +402,16 @@ public final class UsageRefresher {
                     .putString(KEY_LAST_PROBLEM, p.name())
                     .apply();
             committed(() -> wipeBackoff(prefs.edit()).commit());   // autocuracion, como en compute
+        }
+        if (p == Snapshot.Problem.AUTH_EXPIRED && alive()) {
+            // 401: la cookie esta muerta y reintentar cada 15 min solo la reenvia a claude.ai. Espera
+            // larga, SIN contar intentos; volver a entrar (o elegir organizacion) la borra con
+            // clearBackoff. Mientras tanto el widget sigue diciendo AUTH_EXPIRED y su toque va al login.
+            prefs.edit()
+                    .putLong(KEY_NEXT_ALLOWED, clock.now().getEpochSecond() + AUTH_WAIT_SECONDS)
+                    .putString(KEY_LAST_PROBLEM, p.name())
+                    .apply();
+            committed(() -> wipeBackoff(prefs.edit()).commit());
         }
         return oldWith(p);
     }
@@ -440,6 +466,7 @@ public final class UsageRefresher {
             }
         }
         meta.remember(model, now);
+        meta.setChoosingOrg(false);   // ya hay eleccion que funciona
         // Si el logout gano la carrera (p. ej. espero en el candado de SampleStore y borro justo
         // antes de nuestro append) se deshace lo escrito para no dejar la cuenta en disco.
         if (!committed(() -> {

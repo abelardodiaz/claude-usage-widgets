@@ -237,14 +237,19 @@ public class LoginActivity extends Activity {
     }
 
     private void logout() {
-        boolean ok = Session.logout(this);
-        wipeWebView();        // el WebView pudo quedar con cookies de un login anterior
-        showIntro();
-        paintIntro();         // refleja el estado real, no el que se esperaba
-        if (!ok) {
-            // No se cierra la pantalla como si hubiera salido bien.
-            ((TextView) findViewById(R.id.intro_status)).setText(R.string.logout_failed);
-        }
+        // El borrado (Keystore, commit, barrido de la cache, widgets) va a un hilo: en el
+        // principal, con una cache de WebView grande, "Cerrar sesion" daba ANR. Aqui, en el
+        // principal, solo queda lo que exige la instancia del WebView.
+        Session.logoutAsync(this, ok -> {
+            if (isFinishing() || isDestroyed()) return;
+            wipeWebView();        // el WebView pudo quedar con cookies de un login anterior
+            showIntro();
+            paintIntro();         // refleja el estado real, no el que se esperaba
+            if (!ok) {
+                // No se cierra la pantalla como si hubiera salido bien.
+                ((TextView) findViewById(R.id.intro_status)).setText(R.string.logout_failed);
+            }
+        });
     }
 
     /**
