@@ -1,0 +1,1 @@
+{"description": "Relleno de hoy: cuota 0 y nada gastado hoy sigue siendo exhausted con fraccion 1; no se calcula 0 / 0", "input": {"bar": "today_fill", "today_used": 0, "quota_today": 0}, "expected": {"state": "exhausted", "fraction": 1}}

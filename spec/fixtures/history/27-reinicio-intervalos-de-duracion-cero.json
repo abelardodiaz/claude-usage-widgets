@@ -1,5 +1,5 @@
 {
-  "description": "R4 con resets_at que oscilan (R2): un par cruzado de duracion 0 aporta entero si b.t >= day_start (14:30) y nada si b.t < day_start (13:30); el par de 13:30 a 14:20 solo aporta sus 20 min posteriores a las 14:00",
+  "description": "R4 con resets_at que oscilan (R2): un par cruzado de duracion 0 aporta entero si b.t >= day_start (14:30) y nada si b.t < day_start (13:30); el par de 13:30 a 14:20 solo aporta sus 20 min posteriores a las 14:00. today_used = 7.2 supera a weekly.percent = 6 por esa oscilacion: cada resets_at esta a menos de 3600 s del de weekly (R2: son de su ventana), pero entre muestras consecutivas difieren mas de 3600 s (13:30 a 14:40, 14:45 a 13:30), asi que R3 toma esos pares como reinicios y suma b.percent entero (3 y 4) en vez de la diferencia",
   "input": {
     "tz": "-06:00",
     "now": "2026-10-09T15:00:00-06:00",

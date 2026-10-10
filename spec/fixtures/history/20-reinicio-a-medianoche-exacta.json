@@ -1,5 +1,5 @@
 {
-  "description": "R4: reinicio exactamente a las 00:00: day_start = medianoche, mismo resultado que antes de la regla del reinicio",
+  "description": "R4: reinicio exactamente a las 00:00 con datos coherentes: day_start = medianoche y el resultado de siempre. NO fija la frontera medianoche < inicio_ventana: aqui inicio_ventana = medianoche y las dos ramas dan el mismo instante y el mismo today_used, asi que pasaria igual con <=. La frontera la fija history/29",
   "input": {
     "tz": "-06:00",
     "now": "2026-10-09T06:00:00-06:00",

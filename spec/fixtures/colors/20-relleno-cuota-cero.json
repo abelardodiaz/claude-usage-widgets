@@ -1,0 +1,1 @@
+{"description": "Relleno de hoy: cuota exactamente 0 (semana justo agotada) es exhausted con fraccion 1, no unknown", "input": {"bar": "today_fill", "today_used": 10, "quota_today": 0}, "expected": {"state": "exhausted", "fraction": 1}}

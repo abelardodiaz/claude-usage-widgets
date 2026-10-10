@@ -12,8 +12,8 @@ Las reglas con pasos numerados se evalúan **en ese orden**: la primera que apli
   - Los dos operandos se llevan a **milisegundos desde la época con piso** (`toEpochMilli` en
     Java, `div_euclid` en Rust) antes de comparar. Vale para `same_window` (R2), para
     `before_reset` (R5, R6) y para las comparaciones de R4 con `day_start`:
-    `medianoche < inicio_ventana ≤ now`, `t < day_start` (`partial`) y `b.t ≥ day_start`
-    (intervalo de duración 0). Lo fija `history/31`.
+    `medianoche < inicio_ventana ≤ now` y `b.t ≥ day_start` (intervalo de duración 0), que fija
+    `history/31`, y `t < day_start` (`partial`), que fija `history/34`.
   - `hits_at` se materializa como **piso en ms de `now`** más el **redondeo al milisegundo más
     cercano** de la duración en segundos.
   - `before_reset` compara esos dos enteros de milisegundos.
@@ -132,9 +132,16 @@ o si `|a.resets_at − b.resets_at| < 3600 s`.
   reinicio suma todo su consumo, el de la ventana anterior (la mañana) y el de la nueva. Es el
   historial de 7 días; "hoy" se calcula aparte y puede ser menor que `per_day[hoy]`
   (lo fija `history/22`).
+- **Gráfica de 7 días**: la columna de hoy muestra `today_used` (lo que cuenta contra la cuota
+  semanal actual), **no** `per_day[hoy]`; los días pasados muestran `per_day[d]`. Fuera del día
+  de un reinicio semanal las dos cifras coinciden; ese día `per_day[hoy]` también suma lo de la
+  ventana anterior, que ya no descuenta de nada, y la gráfica no lo enseña. `per_day` no cambia.
 - **`day_start`**, el instante en que empieza "hoy" para la cuota. Sea `medianoche` la medianoche
   local de hoy (R0). En este orden:
   1. `weekly.resets_at` nulo, o `now ≥ weekly.resets_at` (dato rancio) → `day_start = medianoche`.
+     Con dato rancio el paso 2 tampoco aplicaría (`inicio_ventana ≤ now − 7 días < medianoche`):
+     este paso es **defensa en profundidad**, para que ninguna implementación dependa de esa
+     cuenta. Se mantiene.
   2. Sea `inicio_ventana = weekly.resets_at − 7 días`. Si `medianoche < inicio_ventana ≤ now`
      (la ventana semanal actual empezó **hoy**, después de las 00:00; `inicio_ventana = now`
      cuenta, `history/30`) →
@@ -143,7 +150,8 @@ o si `|a.resets_at − b.resets_at| < 3600 s`.
   3. Si no → `day_start = medianoche`. Cubre todos los demás días (`inicio_ventana ≤ medianoche`,
      incluido el reinicio exacto a las 00:00: la desigualdad es estricta y lo fija `history/29`
      con una muestra incoherente de la ventana vieja posterior a medianoche; con datos
-     coherentes las dos ramas dan lo mismo, `history/20`) y el dato incoherente
+     coherentes las dos ramas dan lo mismo y `history/20` solo comprueba ese resultado, no la
+     frontera) y el dato incoherente
      `inicio_ventana > now` (`resets_at` a más de 7 días), que no se usa para recortar
      (`history/24`).
 
@@ -177,11 +185,14 @@ o si `|a.resets_at − b.resets_at| < 3600 s`.
   `quota_today = (100 − base) / max(days_left, 1)`.
   El día del reinicio `days_left = 7` exactos, aunque el día tenga 23 o 25 h (`history/25`):
   `quota_today = (100 − base) / 7`.
-  Excluido el caso rancio, `days_left` es siempre > 0 (`day_start ≤ now < resets_at`),
-  así que `max(days_left, 1)` solo redondea hacia arriba el último día de la ventana, nunca tapa
-  un negativo.
+  Excluido el caso rancio, `days_left` es siempre > 0: en el paso 2 vale 7 exactos, y en los
+  pasos 1 y 3 `day_start = medianoche ≤ now < resets_at`. (Ojo: en el paso 2 `day_start ≤ now`
+  vale a milisegundos con piso, no en nanosegundos; en `history/31` `day_start` queda 0.8 ms
+  **después** de `now`.) Así que `max(days_left, 1)` solo redondea hacia arriba el último día de
+  la ventana, nunca tapa un negativo.
 - `quota_today` puede salir **negativo** si `weekly.percent > 100` (R0 lo permite) y
   `today_used < weekly.percent − 100`: significa que la cuota semanal ya se agotó. R7 lo pinta rojo.
+  También el día de un reinicio (`history/35`).
 
 ## R5. Proyección de la sesión (ventana de 5 h)
 
@@ -225,6 +236,7 @@ Cada fixture trae `input.bar`, que dice qué se está pintando y qué más lleva
 |---|---|---|
 | `session`, `weekly`, `scoped` | `percent` | `color` |
 | `today` | `today_used`, `quota_today` (puede ser nulo) | `color` |
+| `today_fill` | `today_used`, `quota_today` (puede ser nulo) | `state`, `fraction` (número o nulo) |
 | `pace_mark` | `now`, `resets_at` (puede ser nulo) | `mark`: número en [0, 1] o nulo |
 
 - Barras de sesión, semana y limitados, por `percent`: verde `< 60`, ámbar `< 85`, rojo `≥ 85`.
@@ -232,15 +244,25 @@ Cada fixture trae `input.bar`, que dice qué se está pintando y qué más lleva
   de los dos es error.
 - Barra de hoy, **en este orden** (el nulo va primero a propósito: en Java `quota_today` es un
   `Double` y compararlo antes de descartar el nulo lanzaría `NullPointerException` al desenvolver):
-  1. `quota_today` nulo → gris.
-  2. `quota_today < 0` → **rojo**. La cuota semanal ya se agotó, así que hoy no queda nada.
-     Sin este paso el cociente saldría negativo y caería en "verde", diciendo que todo va bien
-     justo cuando no es así.
-  3. `quota_today` igual a 0 → gris.
-  4. Si no, por `today_used / quota_today`: verde `< 0.7`, ámbar `< 1`, rojo `≥ 1`.
+  1. `quota_today` nulo → gris. Es el **único** gris: "no se puede calcular".
+  2. `quota_today ≤ 0` → **rojo**. La cuota semanal ya llegó al 100 % (0) o lo pasó (negativa),
+     así que hoy no queda nada. El 0 es el caso frecuente, la semana justo gastada, y no puede
+     verse como "no se puede calcular": por eso ya no es gris (antes lo era). Sin este paso, con
+     cuota negativa el cociente saldría negativo y caería en "verde", diciendo que todo va bien
+     justo cuando no es así; con cuota 0 sería una división entre cero.
+  3. Si no, por `today_used / quota_today`: verde `< 0.7`, ámbar `< 1`, rojo `≥ 1`.
      Los umbrales se comparan **sobre el cociente en doble precisión**, no con multiplicación
      cruzada: `today_used / quota_today < 0.7`, nunca `today_used < 0.7 * quota_today`. Con
      `quota_today` negativo las dos formas difieren, y el paso 2 ya cubre ese caso.
+- Relleno de la barra de hoy (`today_fill`), en el mismo orden y con el mismo cuidado con el nulo:
+  1. `quota_today` nulo → `state = "unknown"`, `fraction = null`.
+  2. `quota_today ≤ 0` → `state = "exhausted"`, `fraction = 1` (barra llena, sin dividir).
+  3. Si no → `state = "ok"`, `fraction = today_used / quota_today` en doble precisión, **cruda**:
+     sin acotar, puede pasar de 1 (hoy se gastó más que el cupo) o ser negativa. La UI la acota a
+     [0, 1] **solo para dibujar**. Es el mismo cociente que decide el color del paso 3 de arriba.
+
+  Así las interfaces no recalculan R7 por su cuenta: el ancho de la barra sale de `fraction` y
+  el texto (p. ej. "agotado") de `state`.
 - Marca de ritmo parejo en la barra semanal: `1 − (resets_at − now) / 7 días`, acotada a [0, 1];
   sin marca (nula) solo si `resets_at` es nulo. **Con el reinicio ya pasado la marca es 1, no
   nula**: aquí el dato rancio no se descarta como en R4, R5 y R6, porque la marca solo dice cuánto

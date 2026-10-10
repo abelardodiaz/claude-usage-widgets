@@ -180,8 +180,24 @@ for p in sorted((ROOT / "fixtures" / "colors").glob("*.json")):
     need(p, fx, ["description", "input", "expected"])
     inp, exp = fx.get("input", {}), fx.get("expected", {})
     bar = inp.get("bar")
-    if bar not in ("session", "weekly", "scoped", "today", "pace_mark"):
-        errors.append(f"{p}: 'bar' debe ser session, weekly, scoped, today o pace_mark")
+    if bar not in ("session", "weekly", "scoped", "today", "today_fill", "pace_mark"):
+        errors.append(
+            f"{p}: 'bar' debe ser session, weekly, scoped, today, today_fill o pace_mark"
+        )
+    elif bar == "today_fill":
+        need(p, inp, ["bar", "today_used", "quota_today"])
+        check_num(p, "today_used", inp.get("today_used"))
+        check_num(p, "quota_today", inp.get("quota_today"), nullable=True)
+        need(p, exp, ["state", "fraction"])
+        state, fraction = exp.get("state"), exp.get("fraction")
+        if state not in ("unknown", "exhausted", "ok"):
+            errors.append(f"{p}: 'state' debe ser unknown, exhausted u ok")
+        check_num(p, "fraction", fraction, nullable=True)
+        # R7: fraccion nula si y solo si el estado es unknown; exhausted siempre llena (1).
+        if (state == "unknown") != (fraction is None):
+            errors.append(f"{p}: 'fraction' es null si y solo si 'state' es unknown")
+        if state == "exhausted" and fraction != 1:
+            errors.append(f"{p}: con 'state' exhausted la fraccion es 1")
     elif bar == "pace_mark":
         need(p, inp, ["bar", "now", "resets_at"])
         check_instant(p, "now", inp.get("now"))

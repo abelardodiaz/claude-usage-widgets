@@ -19,6 +19,7 @@ public final class CoreTest {
 
     public static void run(Assert a) {
         farFuture(a);
+        weekBeforeMin(a);
         yearOutOfRange(a);
         strictFormat(a);
         parseWithoutCause(a);
@@ -85,6 +86,20 @@ public final class CoreTest {
         a.near("History con resets lejano reparte igual", 10.0,
                 d.perDay.values().stream().mapToDouble(Double::doubleValue).sum(), 0.001);
         a.isTrue("History con resets lejano da cuota", d.quotaToday != null);
+    }
+
+    /**
+     * `resets_at - 7 dias` por debajo de Instant.MIN no lanza: devuelve null, como el
+     * `checked_sub` de Rust, y History cae a `a.t` (R3) o a medianoche (R4).
+     */
+    private static void weekBeforeMin(Assert a) {
+        a.eq("minusWeek(Instant.MIN) es null", null, History.minusWeek(Instant.MIN));
+        a.eq("minusWeek(MIN + 7 dias - 1 s) es null", null,
+                History.minusWeek(Instant.MIN.plusSeconds(7 * 86400 - 1)));
+        a.eq("minusWeek(MIN + 7 dias) es MIN", Instant.MIN,
+                History.minusWeek(Instant.MIN.plusSeconds(7 * 86400)));
+        a.eq("minusWeek normal resta 7 dias", Instant.parse("2026-10-09T20:00:00Z"),
+                History.minusWeek(Instant.parse("2026-10-16T20:00:00Z")));
     }
 
     /** RFC 3339 solo admite cuatro digitos de anio; OffsetDateTime acepta hasta +-999999999. */

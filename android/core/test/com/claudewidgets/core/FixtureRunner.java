@@ -31,7 +31,7 @@ public final class FixtureRunner {
      * corredor en verde con cero comprobaciones: una suite que no contrasta nada no falla nunca.
      * Se sube cuando el contrato crece.
      */
-    static final int MIN_TOTAL = 81;
+    static final int MIN_TOTAL = 91;
 
     public static void run(Assert a, Path fixtures) {
         int n = 0;
@@ -165,6 +165,18 @@ public final class FixtureRunner {
                 a.eq(name + ".mark", want, got);
             } else {
                 a.near(name + ".mark", want, got, NUM_TOL);
+            }
+            return;
+        }
+        if ("today_fill".equals(bar)) {
+            TodayFill got = Colors.todayFill((Double) in.get("today_used"),
+                    (Double) in.get("quota_today"));
+            a.eq(name + ".state", exp.get("state"), got.state.toString());
+            Double want = (Double) exp.get("fraction");
+            if (want == null || got.fraction == null) {
+                a.eq(name + ".fraction", want, got.fraction);
+            } else {
+                a.near(name + ".fraction", want, got.fraction, NUM_TOL);
             }
             return;
         }

@@ -1,0 +1,1 @@
+{"description": "Relleno de hoy: cociente 1 exacto (umbral rojo de R7), fraccion 1 con estado ok", "input": {"bar": "today_fill", "today_used": 10, "quota_today": 10}, "expected": {"state": "ok", "fraction": 1}}

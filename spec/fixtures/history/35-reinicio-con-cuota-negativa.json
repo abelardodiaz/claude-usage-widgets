@@ -1,0 +1,41 @@
+{
+  "description": "R4 y R7: cuota de hoy negativa el dia del reinicio. weekly.percent = 106 (R0 permite pasar de 100) con day_start en el reinicio de las 14:00: la muestra de las 13:30 ya es de la ventana nueva (resets_at 14:40, a menos de 3600 s del de weekly) pero es anterior a day_start y su par cruzado dura 0, asi que no aporta; el par de 13:30 a 18:00 aporta 1 x 4/4.5. today_used = 0.888889, base = 105.111111 > 100, days_left = 7 y quota_today = -5.111111 / 7 < 0 (R7 lo pinta rojo, estado exhausted)",
+  "input": {
+    "tz": "-06:00",
+    "now": "2026-10-09T18:00:00-06:00",
+    "weekly": {
+      "percent": 106,
+      "resets_at": "2026-10-16T14:00:00-06:00"
+    },
+    "samples": [
+      {
+        "t": "2026-10-09T08:00:00-06:00",
+        "percent": 80,
+        "resets_at": "2026-10-09T14:00:00-06:00"
+      },
+      {
+        "t": "2026-10-09T13:00:00-06:00",
+        "percent": 90,
+        "resets_at": "2026-10-09T14:00:00-06:00"
+      },
+      {
+        "t": "2026-10-09T13:30:00-06:00",
+        "percent": 105,
+        "resets_at": "2026-10-16T14:40:00-06:00"
+      },
+      {
+        "t": "2026-10-09T18:00:00-06:00",
+        "percent": 106,
+        "resets_at": "2026-10-16T14:00:00-06:00"
+      }
+    ]
+  },
+  "expected": {
+    "per_day": {
+      "2026-10-09": 116
+    },
+    "today_used": 0.888889,
+    "quota_today": -0.730159,
+    "partial": false
+  }
+}

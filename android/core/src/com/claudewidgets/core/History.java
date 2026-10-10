@@ -1,5 +1,6 @@
 package com.claudewidgets.core;
 
+import java.time.DateTimeException;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -15,7 +16,7 @@ import java.util.TreeMap;
  *
  * Nota de portabilidad: se usa {@code instant.atZone(tz).toLocalDate()} y no
  * {@code LocalDate.ofInstant(instant, tz)}, que es de Java 9. Android trae {@code java.time}
- * desde API 26 con la superficie de Java 8, y este nucleo tiene que correr con minSdk 29.
+ * desde API 26 con la superficie de Java 8, y este nucleo tiene que correr con minSdk 31.
  */
 public final class History {
 
@@ -54,8 +55,9 @@ public final class History {
             } else {
                 // Hubo reinicio: lo de `b` se consumio dentro de su propia ventana.
                 delta = b.percent;
-                Instant windowStart = b.resetsAt.minusSeconds((long) SEVEN_DAYS_SECONDS);
-                start = a.t.isAfter(windowStart) ? a.t : windowStart;
+                Instant windowStart = minusWeek(b.resetsAt);
+                // Sin inicio representable (desborda), como en Rust: inicio = a.t.
+                start = windowStart == null || !windowStart.isAfter(a.t) ? a.t : windowStart;
                 if (start.isAfter(b.t)) start = b.t;
             }
             if (delta <= 0) continue;
@@ -75,9 +77,10 @@ public final class History {
         Instant dayStart = midnight;
         double todayUsed = perDay.getOrDefault(today.toString(), 0.0);
         if (fresh) {
-            Instant windowStart = weekly.resetsAt.minusSeconds((long) SEVEN_DAYS_SECONDS);
+            Instant windowStart = minusWeek(weekly.resetsAt);
+            // Sin inicio representable (desborda), como en Rust: day_start = medianoche.
             // R0: a milisegundos con piso, como same_window y before_reset.
-            long startMs = windowStart.toEpochMilli();
+            long startMs = windowStart == null ? Long.MIN_VALUE : windowStart.toEpochMilli();
             if (startMs > midnight.toEpochMilli() && startMs <= now.toEpochMilli()) {
                 dayStart = windowStart;
                 todayUsed = usedSince(contribs, dayStart, weekly.resetsAt);
@@ -97,6 +100,18 @@ public final class History {
             quotaToday = (100 - base) / Math.max(daysLeft, 1);
         }
         return new DayUsage(perDay, todayUsed, quotaToday, partial);
+    }
+
+    /**
+     * `resetsAt - 7 dias`, o null si no es representable (por debajo de {@link Instant#MIN}).
+     * Simetrico al `checked_sub` de Rust: `minusSeconds` lanzaria DateTimeException.
+     */
+    static Instant minusWeek(Instant resetsAt) {
+        try {
+            return resetsAt.minusSeconds((long) SEVEN_DAYS_SECONDS);
+        } catch (DateTimeException e) {
+            return null;
+        }
     }
 
     /** R3 paso 2: aporte de un par con delta > 0, consumido en [start, end]; resetsAt es el de b. */
