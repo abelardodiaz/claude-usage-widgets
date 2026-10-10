@@ -82,7 +82,16 @@ Valen para **todas** las tareas. Son de `SECURITY.md` §5, de la spec §5 y §6,
     ASCII, porque también corren en consolas de Windows.
 11. **El token de esta sesión no puede tocar `.github/workflows/`.** Todo workflow nuevo se escribe
     en otra ruta y una tarea explícita pide a la sesión PC que lo mueva.
-12. **`MIN_TOTAL` del corredor de fixtures se sube a mano** cuando el contrato crece. Hoy 60.
+12. **`MIN_TOTAL` del corredor de fixtures se sube a mano** cuando el contrato crece. Hoy 92.
+13. **N2: las pruebas no tocan el estado real del dueño.** La suite corre dentro del proceso de la
+    app instalada en su teléfono, así que ninguna prueba puede escribir en los almacenes,
+    preferencias, jobs ni contadores de producción (`Session.EPOCH`, `SampleStore`,
+    `SnapshotStore`, preferencias `cuw`, job 4201). Se cumple con dos guardas, no con memoria:
+    la de ejecución en `AppTestRunner` (contador y `getAll()` de preferencias en `finally`) y la
+    **guarda estática** `android/app/guard-tests.sh`, que `build.sh` invoca con `TEST=1` y que
+    prohíbe las vías de producción en las fuentes de prueba. Toda vía nueva de producción que
+    escriba estado entra a la guarda estática en el mismo commit. Cuatro trampas de este tipo se
+    colaron en F4 y F5 antes de instrumentarla.
 
 ## Review Focus
 
@@ -3777,6 +3786,30 @@ añade funciones: busca las que faltan.
 **Por qué el ritmo importa:** el spike A2 observó 8 peticiones en tres minutos desde una IP
 doméstica con una sesión recién emitida, y de ahí no se puede concluir que no haya reto nunca.
 Cloudflare puntúa huella TLS, ritmo y reputación de IP. Esta fase mide el ritmo real.
+
+### Entrada de F5: deuda de F4 (memo 079, cerrada en la rama, memo 080)
+
+Obligatoria antes de las tareas 5.x. Cerrada en `de12def` a `99d57be` (cuatro rondas de revisión):
+
+1. Los dos proveedores comparten un `static update(...)`, con prueba.
+2. Refrescos coalescidos (arranque, periódico, toque) y `onStopJob` avisa al trabajador.
+3. No se programa el job sin sesión (`Widget4x*Provider` y `BootReceiver`).
+4. `LoginActivity`: los botones de logout y login quedan desactivados hasta el callback.
+5. El 401 de un refresco con la cookie vieja no escribe espera después de un login nuevo.
+6. Menores de la re-revisión de F4: tope por reloj atrasado con el máximo de `Backoff`, borrar la
+   clave del aviso en vez de escribir `false`, `Error` de `Thread.start()` cubierto en
+   `Session`, comentario de `WidgetRenderer` corregido.
+7. Marcador de "llave perdida" para que `hasSession()` no diga "sesión iniciada".
+
+Salieron además: la restricción global 13 (N2) con su guarda estática, `onStartJob` filtra el id
+del job (un job ajeno persistido corría el ciclo completo con la cookie y nada en la app podía
+cancelarlo), y una prueba de F4 dejó de cancelar el job real 4201 (usa una sonda con otro id;
+`WidgetUpdateJob.periodicInfo(Context,int)` aceptada como factoría pura de paquete).
+
+**Limitación conocida del banco de pruebas:** el tamaño del widget en el launcher no lo caza
+ninguna prueba. El 4x2 declaraba `minHeight` 170dp con `targetCellHeight="2"` y One UI lo ponía en
+tres filas sin poder encogerlo; lo encontró el dueño usándolo (`989482f`, 120dp/110dp). Los
+cambios de `res/xml/*widget*` se verifican en el aparato.
 
 ### Tarea 5.1: Guion de recorrido automatizado
 

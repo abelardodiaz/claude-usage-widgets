@@ -23,6 +23,9 @@ Revisa, en este orden:
    zona horaria), condiciones de carrera.
 4. Pruebas: los tests prueban comportamiento real; ningun fixture de spec/ fue alterado para
    que un test pase; los tests corren en CI.
+5. Android (N2): ninguna prueba escribe estado real del dueno (almacenes, preferencias, jobs,
+   contadores). Comprueba que android/app/guard-tests.sh existe, corre con TEST=1 y cubre
+   toda via nueva de produccion que escriba estado. Si falta, es CRITICO.
 
 Formato de respuesta:
 - Lista de hallazgos, cada uno con severidad (CRITICO | IMPORTANTE | MENOR), archivo:linea,
