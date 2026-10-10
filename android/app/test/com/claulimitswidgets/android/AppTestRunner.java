@@ -33,12 +33,27 @@ public final class AppTestRunner {
         // ocupa la guarda estatica `android/app/guard-tests.sh`, que corre en el build de pruebas.
         withEpochGuard(a, Session.EPOCH, () ->
                 withPrefsGuard(a, realPrefs(ctx), () -> suite(a, ctx)));
+        return report(a);
+    }
+
+    /** El texto del resultado, construido SIEMPRE desde `a.failures()` (tambien al abortar). */
+    static String report(Assert a) {
         List<String> failures = a.failures();
         if (failures.isEmpty()) return "OK: " + a.checks() + " comprobaciones, 0 fallos";
         StringBuilder sb = new StringBuilder("FALLOS (" + failures.size()
                 + " de " + a.checks() + "):");
         for (String f : failures) sb.append("\n  - ").append(f);
         return sb.toString();
+    }
+
+    /**
+     * El camino de aborto: la suite lanzo. Anota la excepcion como un fallo mas y devuelve el
+     * texto con TODOS los fallos, los que las guardas (finally) ya habian anotado incluidos: la
+     * evidencia de que claves cambiaron no se pierde justo cuando la suite aborta.
+     */
+    static String abortText(Assert a, Throwable e) {
+        a.fail("excepcion no controlada: " + e);
+        return report(a);
     }
 
     private static void suite(Assert a, android.content.Context ctx) {
@@ -74,10 +89,12 @@ public final class AppTestRunner {
      * comprueba que las preferencias no cambiaron. Vigila `getAll()` entero.
      *
      * Puede fallar en falso: el periodico REAL del dueno puede dispararse durante la corrida y
-     * escribir `backoff_*` (o `fetched_at`...) legitimamente. Si falla solo con esas claves y sin
-     * que ninguna prueba las toque, es ese fantasma: no hay nada que perseguir, se vuelve a correr.
-     * Pasa sobre todo justo tras `adb install -r`: MY_PACKAGE_REPLACED lanza un refresco REAL que
-     * escribe `fetched_at`, `last_*`... mientras corre la suite (esperar ~25 s tras instalar).
+     * escribir `fetched_at`, `last_*`, `backoff_*`. Pero ESA huella (`fetched_at`, `last_*`) es
+     * tambien la de una consulta REAL hecha por la suite con la sesion del dueno (el peor
+     * accidente), asi que NO basta con "son esas claves": solo se llama refresco real si
+     * `fetched_at` AVANZO (ver {@link #verdict}). `last_*` o `backoff_*` sin que avance
+     * `fetched_at` es la suite. Para no llegar al falso positivo, `job-quiet.sh` espera a que el
+     * periodico no este a punto de vencer antes de `am instrument`.
      */
     static void withPrefsGuard(Assert a, android.content.SharedPreferences prefs, Runnable body) {
         Map<String, Object> before = snapshot(prefs);
@@ -121,9 +138,38 @@ public final class AppTestRunner {
      * los valores: contienen el uuid de la organizacion y el user agent, y el repo es publico.
      */
     static void guardPrefs(Assert a, Map<String, Object> before, android.content.SharedPreferences prefs) {
-        List<String> changed = changedKeys(before, snapshot(prefs));
-        a.isTrue("la suite no toco las preferencias reales (N2); claves cambiadas: " + changed,
-                changed.isEmpty());
+        Map<String, Object> after = snapshot(prefs);
+        List<String> changed = changedKeys(before, after);
+        a.isTrue("la suite no toco las preferencias reales (N2); claves cambiadas: " + changed
+                + verdict(before, after, changed), changed.isEmpty());
+    }
+
+    /** Claves que escribe un refresco real: la huella de `fetched_at`, `last_*` y `backoff_*`. */
+    private static boolean refreshKey(String k) {
+        return k.equals("fetched_at") || k.startsWith("last_") || k.startsWith("backoff_");
+    }
+
+    /**
+     * Veredicto sobre la huella ("" si no cambio nada). Un refresco REAL del periodico escribe
+     * `fetched_at` y SIEMPRE lo hace avanzar. Si cambiaron `last_*` o `backoff_*` sin que
+     * `fetched_at` avance, o cambio cualquier otra clave, NO es el fantasma: es la suite (o una
+     * consulta real que ella provoco), y hay que perseguirlo. Solo el primer caso es "volver a
+     * correr".
+     */
+    static String verdict(Map<String, Object> before, Map<String, Object> after, List<String> changed) {
+        if (changed.isEmpty()) return "";
+        boolean onlyRefreshKeys = true;
+        for (String k : changed) if (!refreshKey(k)) onlyRefreshKeys = false;
+        Object f0 = before.get("fetched_at");
+        Object f1 = after.get("fetched_at");
+        boolean advanced = f0 instanceof Long && f1 instanceof Long && (Long) f1 > (Long) f0
+                || f0 == null && f1 instanceof Long;
+        if (onlyRefreshKeys && advanced) {
+            return " | fetched_at AVANZO: huella de un refresco real del periodico durante la"
+                    + " corrida; volver a correr (esperar con job-quiet.sh antes)";
+        }
+        return " | es la SUITE: fetched_at no avanzo o cambio una clave que no es de un refresco."
+                + " No volver a correr hasta entender que clave cambio y quien la toco";
     }
 
     /** El primer fallo, o "" si no hubo ninguno (para que una guarda ausente falle con nombre, no con un IOOBE). */
@@ -187,6 +233,37 @@ public final class AppTestRunner {
             } catch (OutOfMemoryError e) { err = true; }
             a.isTrue("envoltorio: el Error sigue su camino", err);
             a.eq("envoltorio: cuerpo con Error -> la guarda corrio igual", 1, inner.failures().size());
+
+            // El veredicto: solo un fetched_at que AVANZA es "refresco real".
+            inner = new Assert();
+            Assert i9 = inner;
+            withPrefsGuard(i9, p, () -> p.edit().putLong("fetched_at", 100L).commit());   // 7 -> 100
+            a.isTrue("veredicto: fetched_at avanza -> refresco real",
+                    first(inner).contains("fetched_at AVANZO") && !first(inner).contains("es la SUITE"));
+            inner = new Assert();
+            Assert i10 = inner;
+            withPrefsGuard(i10, p, () -> p.edit().putLong("fetched_at", 100L)
+                    .putString("last_session_percent", "x").commit());   // sin avanzar, con last_*
+            a.isTrue("veredicto: last_* sin que fetched_at avance -> la suite",
+                    first(inner).contains("es la SUITE") && !first(inner).contains("AVANZO"));
+            inner = new Assert();
+            Assert i11 = inner;
+            withPrefsGuard(i11, p, () -> p.edit().putLong("fetched_at", 50L).commit());   // retrocede
+            a.isTrue("veredicto: fetched_at retrocede -> la suite", first(inner).contains("es la SUITE"));
+            inner = new Assert();
+            Assert i12 = inner;
+            withPrefsGuard(i12, p, () -> p.edit().putLong("fetched_at", 500L)
+                    .putString("manual_org", secret).commit());   // avanza pero hay una clave ajena
+            a.isTrue("veredicto: fetched_at avanza pero cambio otra clave -> la suite",
+                    first(inner).contains("es la SUITE") && !first(inner).contains(secret));
+
+            // El camino de aborto conserva los fallos que las guardas ya anotaron.
+            Assert ab = new Assert();
+            ab.fail("N2 claves cambiadas: [fetched_at]");
+            String txt = abortText(ab, new IllegalStateException("la suite aborto"));
+            a.isTrue("aborto: el texto trae el fallo de la guarda", txt.contains("N2 claves cambiadas: [fetched_at]"));
+            a.isTrue("aborto: y la excepcion", txt.contains("la suite aborto"));
+            a.isTrue("aborto: cuenta los dos fallos", txt.startsWith("FALLOS (2 de "));
 
             // Epoca, con un contador de usar y tirar.
             java.util.concurrent.atomic.AtomicLong ep = new java.util.concurrent.atomic.AtomicLong();

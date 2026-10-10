@@ -373,7 +373,7 @@ public final class F5DebtTest {
         Cancel[] seen = new Cancel[1];
         List<String> log = java.util.Collections.synchronizedList(new ArrayList<>());
         boolean started = WidgetUpdateJob.startJob(running, 4201, r -> new Thread(r).start(), () -> 2,
-                () -> false, () -> log.add("cancelJob"),
+                () -> false, () -> log.add("cancelJob"), id -> log.add("foreign"),
                 c -> {
                     seen[0] = c;
                     inRefresh.countDown();
@@ -406,7 +406,7 @@ public final class F5DebtTest {
         // Un trabajo normal: pinta, avisa una vez y se desregistra.
         List<String> log2 = new ArrayList<>();
         Map<Integer, Cancel> r2 = new HashMap<>();
-        boolean ok = WidgetUpdateJob.startJob(r2, 4202, Runnable::run, () -> 2, () -> false, () -> { },
+        boolean ok = WidgetUpdateJob.startJob(r2, 4202, Runnable::run, () -> 2, () -> false, () -> { }, id -> log2.add("foreign"),
                 c -> Snapshot.of(Snapshot.Problem.OFFLINE), () -> 1, s -> log2.add("push"),
                 () -> log2.add("finish"));
         a.isTrue("normal: arranca", ok);
@@ -416,9 +416,35 @@ public final class F5DebtTest {
         // Sin hilo: false y nada queda registrado.
         Map<Integer, Cancel> r3 = new HashMap<>();
         boolean no = WidgetUpdateJob.startJob(r3, 4201, x -> { throw new java.util.concurrent.RejectedExecutionException(); },
-                () -> 2, () -> false, () -> { }, c -> null, () -> 1, s -> { }, () -> { });
+                () -> 2, () -> false, () -> { }, id -> { }, c -> null, () -> 1, s -> { }, () -> { });
         a.isTrue("sin hilo: false", !no);
         a.isTrue("sin hilo: nada registrado", r3.isEmpty());
+
+        // Un id que NO es nuestro (un job persistido de una version vieja del APK, o una sonda
+        // que sobrevivio): ni red, ni pintado, ni hilo; se cancela ese id y se avisa una vez.
+        for (int foreign : new int[] {4299, 0, 4200, 4203, -1}) {
+            List<String> log4 = new ArrayList<>();
+            Map<Integer, Cancel> r4 = new HashMap<>();
+            boolean f = WidgetUpdateJob.startJob(r4, foreign,
+                    x -> log4.add("spawn"), () -> { log4.add("widgets"); return 2; },
+                    () -> { log4.add("nosession"); return false; }, () -> log4.add("cancelAll"),
+                    id -> log4.add("foreign:" + id),
+                    c -> { log4.add("refresh"); return Snapshot.of(Snapshot.Problem.OFFLINE); },
+                    () -> 1, s -> log4.add("push"), () -> log4.add("finish"));
+            a.isTrue("id ajeno " + foreign + ": no arranca", !f);
+            a.eq("id ajeno " + foreign + ": solo cancela ese id y avisa una vez",
+                    Arrays.asList("foreign:" + foreign, "finish"), log4);
+            a.isTrue("id ajeno " + foreign + ": nada registrado", r4.isEmpty());
+        }
+        // Los dos ids buenos NO se cancelan como ajenos.
+        for (int mine : new int[] {WidgetUpdateJob.JOB_ID, WidgetUpdateJob.JOB_ID_BOOT}) {
+            List<String> log5 = new ArrayList<>();
+            WidgetUpdateJob.startJob(new HashMap<>(), mine, Runnable::run, () -> 2, () -> false,
+                    () -> { }, id -> log5.add("foreign:" + id),
+                    c -> Snapshot.of(Snapshot.Problem.OFFLINE), () -> 1, s -> log5.add("push"),
+                    () -> log5.add("finish"));
+            a.eq("id propio " + mine + ": se ejecuta y no se cancela", Arrays.asList("push", "finish"), log5);
+        }
 
         // El servicio real: onStopJob corta el trabajo registrado con ese id (un id de prueba,
         // que no es ninguno de los dos de produccion).

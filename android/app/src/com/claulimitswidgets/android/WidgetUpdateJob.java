@@ -421,8 +421,15 @@ public class WidgetUpdateJob extends JobService {
         Context app = getApplicationContext();
         return startJob(RUNNING, params.getJobId(), r -> new Thread(r, "cuw-job").start(),
                 () -> countAll(app), () -> new SessionStore(app).isAbsent(), () -> cancel(app),
+                id -> cancelForeign(app, id),
                 c -> new UsageRefresher(app, c).refresh(), Session.EPOCH::get,
                 s -> paintAll(app, s), () -> jobFinished(params, RESCHEDULE_ON_FINISH));
+    }
+
+    /** Cancela un job que llega a este servicio con un id que no es de la app (ver `startJob`). */
+    private static void cancelForeign(Context app, int id) {
+        JobScheduler js = app.getSystemService(JobScheduler.class);
+        if (js != null) js.cancel(id);
     }
 
     /**
@@ -434,8 +441,18 @@ public class WidgetUpdateJob extends JobService {
                             java.util.concurrent.Executor spawn,
                             java.util.function.IntSupplier widgets,
                             java.util.function.BooleanSupplier noSessionFile, Runnable cancelJob,
+                            java.util.function.IntConsumer cancelForeign,
                             java.util.function.Function<Cancel, Snapshot> refresh,
                             LongSupplier epoch, Consumer<Snapshot> sink, Runnable finish) {
+        // Solo el periodico y el de arranque son nuestros. Cualquier otro id registrado contra
+        // este servicio (un job persistido de una version vieja del APK, una sonda que sobrevivio
+        // a un reinicio) ejecutaria el ciclo completo con la cookie del dueno: se cancela ese id
+        // y no se hace nada mas (ni red, ni pintado, ni hilo).
+        if (jobId != JOB_ID && jobId != JOB_ID_BOOT) {
+            cancelForeign.accept(jobId);
+            finish.run();
+            return false;
+        }
         final Cancel cancel = new Cancel();
         running.put(jobId, cancel);
         boolean started = runJob(spawn, widgets, noSessionFile, cancelJob,

@@ -27,8 +27,8 @@ public class AppInstrumentation extends Instrumentation {
             // que algun dia se agregue una prueba y no corra.
             text = AppTestRunner.run(a, getTargetContext());
         } catch (Throwable e) {   // tambien Error: ninguno puede tirar la evidencia
-            a.fail("excepcion no controlada: " + e);
-            text = "FALLOS (1 de " + a.checks() + "):\n  - " + e;
+            // Desde a.failures(): conserva lo que las guardas (finally) ya anotaron.
+            text = AppTestRunner.abortText(a, e);
         }
         out.putString("stream", text);
         finish(a.failures().isEmpty() ? 0 : 1, out);
