@@ -405,11 +405,15 @@ public final class UsageRefresher {
      * la espera acumulada ya no tiene sentido.
      */
     public static void clearBackoff(Context ctx) {
+        clearBackoff(app(ctx).getSharedPreferences(SettingsActivity.PREFS, Context.MODE_PRIVATE));
+    }
+
+    /** Lo mismo con las preferencias a la vista: las pruebas pasan las suyas (N2). */
+    static void clearBackoff(SharedPreferences prefs) {
         // Login y eleccion de organizacion cambian lo que un refresco debe consultar: ninguno que
         // empezara antes puede contestar por quien llegue despues.
         Coalescer.SHARED.invalidate();
-        wipeBackoff(app(ctx).getSharedPreferences(SettingsActivity.PREFS, Context.MODE_PRIVATE)
-                .edit()).apply();
+        wipeBackoff(prefs.edit()).apply();
     }
 
     private static Snapshot.Problem problemFromName(String name) {

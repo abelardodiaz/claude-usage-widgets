@@ -49,6 +49,7 @@ public final class F5DebtTest {
         staleAuthWait(a, ctx);
         minors(a, ctx);
         keyLostMarker(a, ctx);
+        r1Fixes(a);
     }
 
     // ================= 1. ProviderUpdate =================
@@ -77,7 +78,7 @@ public final class F5DebtTest {
         p.run();
         a.eq("proveedor con sesion: programa y avisa una vez", Arrays.asList("schedule", "finish"), p.log);
         a.eq("proveedor con sesion: pinta lo leido", 1, p.painted.size());
-        a.isTrue("proveedor con sesion: lo que pinta es lo que leyo", p.painted.get(0) == p.last);
+        a.isTrue("proveedor con sesion: lo que pinta es lo que leyo", p.painted.size() > 0 && p.painted.get(0) == p.last);
 
         p = new Probe();
         p.last = Snapshot.of(Snapshot.Problem.LOADING);
@@ -116,7 +117,7 @@ public final class F5DebtTest {
         p.inLast = () -> { throw new IllegalStateException("x"); };
         p.run();
         a.eq("lectura que lanza: pinta OFFLINE", 1, p.painted.size());
-        a.eq("lectura que lanza: es OFFLINE", Snapshot.Problem.OFFLINE, p.painted.get(0).problem);
+        if (p.painted.size() > 0) a.eq("lectura que lanza: es OFFLINE", Snapshot.Problem.OFFLINE, p.painted.get(0).problem);
         a.eq("lectura que lanza: avisa una vez y no programa", Arrays.asList("finish"), p.log);
 
         // Hasta el pintado de emergencia puede fallar: el goAsync se suelta igual.
@@ -267,10 +268,20 @@ public final class F5DebtTest {
             } finally { r2.close(); }
         } finally { r.close(); }
 
-        // El invalidar de produccion es el de clearBackoff(ctx): login y eleccion de organizacion.
-        long v = Coalescer.SHARED.version();
-        UsageRefresher.clearBackoff(ctx);
-        a.isTrue("clearBackoff(ctx) invalida el unificador de produccion", Coalescer.SHARED.version() > v);
+        // El invalidar de produccion es el de clearBackoff(prefs): login y eleccion de organizacion.
+        // Con las preferencias de una plataforma propia: las del dueno (cuw) no se tocan (N2).
+        r = rig(ctx);
+        try {
+            r.prefs.edit().putInt("backoff_attempt", 3).putLong("backoff_next_allowed_at", 99L)
+                    .putString("backoff_last_problem", "OFFLINE").putString("manual_org", "x").commit();
+            long v = Coalescer.SHARED.version();
+            UsageRefresher.clearBackoff(r.prefs);
+            a.isTrue("clearBackoff(prefs) invalida el unificador de produccion", Coalescer.SHARED.version() > v);
+            a.isTrue("clearBackoff(prefs): quita el intento", !r.prefs.contains("backoff_attempt"));
+            a.isTrue("clearBackoff(prefs): quita la espera", !r.prefs.contains("backoff_next_allowed_at"));
+            a.isTrue("clearBackoff(prefs): quita el problema", !r.prefs.contains("backoff_last_problem"));
+            a.eq("clearBackoff(prefs): no toca lo demas", "x", r.prefs.getString("manual_org", null));
+        } finally { r.close(); }
     }
 
     // ================= 2b. Cancel / UsageClient / onStopJob =================
@@ -492,14 +503,14 @@ public final class F5DebtTest {
         a.isTrue("durante el cierre: los 4 botones inactivos", allOff);
         boolean second = LoginActivity.guardedLogout(busy, bs, pending::add, after::add);
         a.isTrue("2o toque (doble toque): NO lanza otro cierre", !second && pending.size() == 1);
-        pending.get(0).accept(true);
+        if (pending.size() > 0) pending.get(0).accept(true);
         boolean allOn = true;
         for (View b : bs) allOn &= b.isEnabled();
         a.isTrue("al volver el callback: los 4 botones activos", allOn);
         a.eq("al volver: avisa con el resultado", Arrays.asList(true), after);
         a.isTrue("y se puede cerrar de nuevo", LoginActivity.guardedLogout(busy, bs, pending::add, after::add)
                 && pending.size() == 2);
-        pending.get(1).accept(false);
+        if (pending.size() > 1) pending.get(1).accept(false);
         a.eq("un cierre fallido tambien reactiva y avisa", Arrays.asList(true, false), after);
 
         // Si el cierre ni arranca, los botones no quedan muertos.
@@ -749,6 +760,17 @@ public final class F5DebtTest {
             a.isTrue("preparacion: marcado antes de clear", marker.exists());
             a.isTrue("clear() devuelve true", good.clear());
             a.isTrue("clear() quita el marcador", !marker.exists());
+
+            // Si el marcador NO se puede borrar (aqui, un directorio con un hijo), clear() lo dice:
+            // el retorno mira tambien el marcador, no solo el archivo y el temporal.
+            File child = new File(marker, "hijo");
+            try {
+                a.isTrue("preparacion: marcador-directorio con hijo",
+                        marker.mkdir() && child.createNewFile() && marker.exists());
+                a.isTrue("clear() con marcador imborrable: devuelve false", !good.clear());
+            } finally {
+                if (!child.delete() | !marker.delete()) a.isTrue("limpieza del marcador-directorio", !marker.exists());
+            }
         } catch (Exception e) {
             a.fail("keyLostMarker: " + e.getClass().getSimpleName());
         } finally {
@@ -777,5 +799,54 @@ public final class F5DebtTest {
             s.clear();
             ctx.deleteSharedPreferences(prefsName);
         }
+    }
+
+    // ================= Ronda r1 =================
+
+    private static void r1Fixes(Assert a) {
+        // m43: aunque `work` lance una excepcion comprobada a lo bruto, `finish` corre UNA vez.
+        AtomicInteger fins = new AtomicInteger();
+        Throwable escaped = null;
+        try {
+            BootReceiver.offMain(Runnable::run, () -> { throw F5DebtTest.<RuntimeException>sneaky(new IOException("x")); },
+                    fins::incrementAndGet);
+        } catch (Throwable t) { escaped = t; }
+        a.eq("offMain: work con excepcion comprobada: finish exactamente una vez", 1, fins.get());
+        a.isTrue("offMain: work con excepcion comprobada: la excepcion no se traga", escaped instanceof IOException);
+
+        // Red de seguridad del periodico: solo con archivo de sesion.
+        List<String> log = new ArrayList<>();
+        WidgetUpdateJob.healPeriodic(() -> false, () -> log.add("schedule"));
+        a.eq("healPeriodic con sesion: programa", Arrays.asList("schedule"), log);
+        log.clear();
+        WidgetUpdateJob.healPeriodic(() -> true, () -> log.add("schedule"));
+        a.isTrue("healPeriodic sin sesion: NO programa", log.isEmpty());
+
+        // ... y corre en el hilo del refresco, antes de la primera vuelta, no en el de quien llama.
+        Thread caller = Thread.currentThread();
+        List<String> order = Collections.synchronizedList(new ArrayList<>());
+        Thread[] where = new Thread[1];
+        CountDownLatch done = new CountDownLatch(1);
+        WidgetUpdateJob.runNowWith(new WidgetUpdateJob.NowGate(),
+                () -> { where[0] = Thread.currentThread(); order.add("heal"); },
+                () -> { order.add("refresh"); return Snapshot.of(Snapshot.Problem.OFFLINE); },
+                () -> 1, s -> order.add("paint"), done::countDown);
+        try { a.isTrue("runNowWith: termina", done.await(5, TimeUnit.SECONDS)); }
+        catch (InterruptedException e) { a.fail("interrumpida"); }
+        a.eq("runNowWith: la red de seguridad va primero", Arrays.asList("heal", "refresh", "paint"), order);
+        a.isTrue("runNowWith: la red de seguridad NO corre en el hilo de quien llama",
+                where[0] != null && where[0] != caller);
+
+        // Si la red de seguridad lanza, el refresco se hace igual y la puerta no queda cerrada.
+        List<String> order2 = Collections.synchronizedList(new ArrayList<>());
+        CountDownLatch done2 = new CountDownLatch(1);
+        WidgetUpdateJob.NowGate gate = new WidgetUpdateJob.NowGate();
+        WidgetUpdateJob.runNowWith(gate, () -> { throw new IllegalStateException("x"); },
+                () -> { order2.add("refresh"); return Snapshot.of(Snapshot.Problem.OFFLINE); },
+                () -> 1, s -> order2.add("paint"), done2::countDown);
+        try { a.isTrue("prelude que lanza: termina", done2.await(5, TimeUnit.SECONDS)); }
+        catch (InterruptedException e) { a.fail("interrumpida"); }
+        a.eq("prelude que lanza: refresca y pinta igual", Arrays.asList("refresh", "paint"), order2);
+        a.isTrue("prelude que lanza: la puerta queda libre", gate.claim());
     }
 }

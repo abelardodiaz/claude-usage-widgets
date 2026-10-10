@@ -191,10 +191,7 @@ public class LoginActivity extends Activity {
                 out1.setEnabled(true);
                 out2.setEnabled(true);
                 // Si la pantalla se cerro mientras se guardaba, onDestroy ya limpio el WebView.
-                if (isFinishing() || isDestroyed()) {
-                    if (ok) scheduleAfterLogin();
-                    return;
-                }
+                if (closeOrFail(ok, isFinishing() || isDestroyed(), this::scheduleAfterLogin)) return;
                 if (!ok) {
                     // Entro bien pero la sesion se perdio al guardarla. El mensaje promete que no
                     // quedo sesion: el WebView tampoco debe conservar la cookie.
@@ -221,8 +218,6 @@ public class LoginActivity extends Activity {
         } catch (RuntimeException ignored) {
             // Sin UA guardado las consultas llevan uno vacio: no hay respaldo a proposito (ver userAgent).
         }
-        // Volver a entrar arregla el problema: la espera acumulada ya no aplica.
-        UsageRefresher.clearBackoff(this);
         wipeWebView();
         status.setText(R.string.login_ok);   // ya no se queda en "Comprobando..."
         showIntro();
@@ -230,10 +225,32 @@ public class LoginActivity extends Activity {
         scheduleAfterLogin();
     }
 
+    /**
+     * Con la sesion ya guardada, por las dos ramas (pantalla abierta o cerrandose). Volver a
+     * entrar arregla el problema: la espera acumulada ya no aplica y ningun refresco en vuelo con
+     * la cookie vieja puede contestar por el de ahora (clearBackoff invalida el unificador).
+     */
     private void scheduleAfterLogin() {
+        scheduleAfterLogin(() -> UsageRefresher.clearBackoff(this),
+                () -> WidgetUpdateJob.schedule(this), () -> WidgetUpdateJob.runNow(this));
+    }
+
+    /** El orden importa: primero se borra la espera, luego se programa y se lanza el refresco. */
+    static void scheduleAfterLogin(Runnable clearBackoff, Runnable schedule, Runnable runNow) {
+        clearBackoff.run();
         // Los dos solo encolan (programan el periodico y lanzan el primer refresco en un hilo).
-        WidgetUpdateJob.schedule(this);
-        WidgetUpdateJob.runNow(this);
+        schedule.run();
+        runNow.run();
+    }
+
+    /**
+     * Si la pantalla se cerro mientras se guardaba, onDestroy ya limpio el WebView y solo queda
+     * dejar el widget funcionando (si se guardo). Devuelve true si no hay mas que hacer en pantalla.
+     */
+    static boolean closeOrFail(boolean saved, boolean closing, Runnable scheduleAfterLogin) {
+        if (!closing) return false;
+        if (saved) scheduleAfterLogin.run();
+        return true;
     }
 
     /** true mientras un cierre de sesion esta en curso (solo se toca en el hilo principal). */

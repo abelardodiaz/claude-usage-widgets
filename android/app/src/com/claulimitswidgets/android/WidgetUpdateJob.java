@@ -158,8 +158,22 @@ public class WidgetUpdateJob extends JobService {
     /** Con aviso `done` al terminar (o enseguida si ya habia un refresco en curso). Solo ENCOLA. */
     public static void runNow(Context ctx, Runnable done) {
         Context app = ctx.getApplicationContext() != null ? ctx.getApplicationContext() : ctx;
-        runNowWith(GATE, () -> new UsageRefresher(app).refresh(), Session.EPOCH::get,
+        runNowWith(GATE, healPeriodic(app), () -> new UsageRefresher(app).refresh(), Session.EPOCH::get,
                 s -> paintAll(app, s), done);
+    }
+
+    /**
+     * Red de seguridad: `updatePeriodMillis="0"`, asi que el lanzador nunca llama a `onUpdate` por
+     * tiempo, y el toque no programa nada. Si el periodico se perdio (cancelacion espuria, carrera
+     * con el login), el toque o el login lo repone. Solo con sesion (no se programa sin ella) y
+     * `schedule` es idempotente: no reinicia el periodo. Corre en el hilo del refresco (toca disco).
+     */
+    static Runnable healPeriodic(Context app) {
+        return () -> healPeriodic(() -> new SessionStore(app).isAbsent(), () -> schedule(app));
+    }
+
+    static void healPeriodic(java.util.function.BooleanSupplier noSessionFile, Runnable schedule) {
+        if (!noSessionFile.getAsBoolean()) schedule.run();
     }
 
     /**
@@ -183,6 +197,12 @@ public class WidgetUpdateJob extends JobService {
     /** `runNow` con todo inyectado: las pruebas no pueden tocar la red ni los widgets del dueno. */
     static void runNowWith(NowGate gate, Supplier<Snapshot> refresh, LongSupplier epoch,
                            Consumer<Snapshot> sink, Runnable done) {
+        runNowWith(gate, () -> { }, refresh, epoch, sink, done);
+    }
+
+    /** Con `prelude`: se corre en el hilo del refresco, antes de la primera vuelta; si lanza, se ignora. */
+    static void runNowWith(NowGate gate, Runnable prelude, Supplier<Snapshot> refresh, LongSupplier epoch,
+                           Consumer<Snapshot> sink, Runnable done) {
         if (!gate.claim()) {
             // Ya hay un refresco en curso (y uno en cola anotado): nada que esperar.
             safely(done);
@@ -191,6 +211,7 @@ public class WidgetUpdateJob extends JobService {
         try {
             new Thread(() -> {
                 try {
+                    safely(prelude);
                     do {
                         cycle(refresh, epoch, sink, () -> { });
                     } while (gate.next());
