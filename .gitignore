@@ -28,3 +28,6 @@ android/**/build/
 
 # Tauri: esquemas generados y salida de build
 desktop/src-tauri/gen/
+
+# Llaves de firma del updater: nunca al repo
+*.key

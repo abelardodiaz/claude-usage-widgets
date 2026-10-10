@@ -208,8 +208,12 @@ async function load(force = false) {
 
 document.querySelectorAll(".ico[data-p]").forEach((el) => el.addEventListener("click", () => toggle(el.dataset.p)));
 $("btnRefresh").addEventListener("click", () => load(true));
-$("btnClose").addEventListener("click", () => getCurrentWindow().close());
+$("btnClose").addEventListener("click", () => getCurrentWindow().hide());
 listen("refresh", () => load(true));
+listen("update-status", (event) => {
+  $("status").textContent = T.update[event.payload] || "";
+  $("status").classList.toggle("err", event.payload === "failed" || event.payload === "install_failed");
+});
 setLang("es");
 load();
 setInterval(() => load(false), POLL_MS);
