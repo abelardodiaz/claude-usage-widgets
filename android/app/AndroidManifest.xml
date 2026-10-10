@@ -4,9 +4,15 @@
 
     <!-- lint lee el minSdk de AQUI, no de las banderas de aapt2: sin esto asumiria minSdk 1
          y NewApi marcaria medio SDK. Los valores tienen que coincidir con los de build.sh. -->
-    <uses-sdk android:minSdkVersion="29" android:targetSdkVersion="34" />
+    <uses-sdk android:minSdkVersion="31" android:targetSdkVersion="34" />
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Un job con restriccion de red (setRequiredNetworkType) lanza SecurityException sin este
+         permiso: se vio en el aparato, el plan lo olvidaba. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Sin esto JobScheduler no sobrevive al reinicio (setPersisted(true) lanza
+         SecurityException) y el widget se congela para siempre sin que el dueno sepa por que. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <application
         android:label="@string/app_name"
@@ -28,6 +34,33 @@
         <activity
             android:name=".SettingsActivity"
             android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden"
             android:label="@string/settings_title" />
+
+        <receiver android:name=".Widget4x1Provider" android:exported="false">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider"
+                android:resource="@xml/widget_4x1_info" />
+        </receiver>
+
+        <receiver android:name=".Widget4x2Provider" android:exported="false">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider"
+                android:resource="@xml/widget_4x2_info" />
+        </receiver>
+
+        <service
+            android:name=".WidgetUpdateJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
+        <!-- exported="true": el sistema manda el arranque desde fuera del proceso. Ambas acciones
+             son protegidas (solo el sistema puede emitirlas) y el receptor comprueba la accion. -->
+        <receiver android:name=".BootReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

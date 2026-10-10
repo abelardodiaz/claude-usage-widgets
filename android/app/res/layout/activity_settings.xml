@@ -4,7 +4,8 @@
     android:orientation="vertical" android:padding="20dp">
     <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
         android:text="@string/settings_org" android:textSize="18sp" android:textStyle="bold" />
-    <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+    <TextView android:id="@+id/org_help" android:visibility="gone"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
         android:text="@string/settings_org_help" android:textSize="14sp"
         android:paddingTop="4dp" android:paddingBottom="12dp" />
     <RadioGroup android:id="@+id/orgs" android:layout_width="match_parent"

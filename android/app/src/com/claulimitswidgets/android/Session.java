@@ -26,20 +26,74 @@ public final class Session {
      * quien llama debe avisar al usuario, no cerrar la pantalla como si hubiera salido bien.
      */
     public static boolean logout(Context ctx) {
-        return logout(ctx, new SessionStore(ctx), SettingsActivity.PREFS, true);
+        SampleStore samples;
+        try {
+            samples = samplesFor(ctx);
+        } catch (RuntimeException e) {
+            samples = null;   // no se pudo abrir el directorio: no se sabe si hay muestras -> false
+        }
+        Context a = ctx.getApplicationContext() != null ? ctx.getApplicationContext() : ctx;
+        return logout(ctx, new SessionStore(ctx), samples, snapshotFor(ctx),
+                SettingsActivity.PREFS, true,
+                () -> WidgetUpdateJob.cancel(a),
+                s -> WidgetUpdateJob.pushLocked(s, x -> WidgetUpdateJob.paintAll(a, x)), EPOCH);
     }
 
     /**
-     * Para las pruebas: almacen y preferencias inyectados; con realDevice=false no toca WebView, cache,
-     * job ni widgets, para no afectar la sesion ni el aparato reales del dueno.
+     * Epoca de sesion. Cada logout la incrementa al empezar y al terminar. Un refresco guarda la
+     * epoca al empezar y no escribe nada si cambio: asi un cierre de sesion que llega mientras
+     * consulta no puede resucitar lo que acaba de borrarse, y sin bloquear nunca el hilo de la UI.
      */
-    static boolean logout(Context ctx, SessionStore store, String prefsName, boolean realDevice) {
-        // F4: envolver esto en synchronized (UsageRefresher.LOCK) para no borrar mientras un
-        // refresco escribe.
+    static final java.util.concurrent.atomic.AtomicLong EPOCH =
+            new java.util.concurrent.atomic.AtomicLong();
+
+    /**
+     * El almacen de ultimo modelo/orgs/hora de produccion. Misma idea que `samplesFor`: el logout
+     * borra por aqui y UsageRefresher guarda por aqui.
+     */
+    static SnapshotStore snapshotFor(Context ctx) {
+        return new SnapshotStore(ctx);
+    }
+
+    /**
+     * El almacen de muestras de produccion. UNA sola via: el logout borra por aqui y
+     * UsageRefresher escribe por aqui, asi que no pueden divergir sin romper la prueba de la ruta.
+     */
+    static SampleStore samplesFor(Context ctx) {
+        return SampleStore.of(ctx);
+    }
+
+    /**
+     * Con los dos pasos del aparato inyectados: `cancelJob` (cancela los trabajos) y
+     * `pushWidgets` (pinta "sin sesion"). null = no hacerlo. Asi se prueba que el logout los
+     * llama, y en orden, sin cancelar el job ni repintar los widgets reales del dueno.
+     *
+     * `epoch` tambien se inyecta: la suite corre en el proceso de la app, donde puede haber un
+     * refresco REAL en vuelo; si las pruebas incrementaran el global `EPOCH`, ese refresco
+     * creeria que hubo un cierre de sesion y ejecutaria su deshacer sobre los almacenes de
+     * produccion. Las pruebas pasan un contador propio. Con realDevice=false no toca WebView ni cache.
+     */
+    static boolean logout(Context ctx, SessionStore store, SampleStore samples,
+                          SnapshotStore snapshot, String prefsName, boolean realDevice,
+                          Runnable cancelJob, java.util.function.Consumer<Snapshot> pushWidgets,
+                          java.util.concurrent.atomic.AtomicLong epoch) {
+        // NO envolver esto en synchronized (UsageRefresher.LOCK): un refresco mantiene ese candado
+        // durante toda la red (hasta ~20 s por peticion y hay varias sondas), y logout se llama
+        // desde el hilo de la UI = ANR. La coordinacion es la epoca: se incrementa aqui y el
+        // refresco no escribe si cambio (ver EPOCH). Si hiciera falta mas, un tryLock con espera
+        // corta, nunca un lock bloqueante. (SampleStore ya serializa su append/clear.)
+        epoch.incrementAndGet();
         Context app = ctx.getApplicationContext() != null ? ctx.getApplicationContext() : ctx;
         boolean ok = true;
 
         ok &= store.clear();                                      // cookie cifrada + llave Keystore
+        // Historico de uso. El almacen viene inyectado: la prueba pasa uno propio, asi que borrarlo
+        // no depende de realDevice. null = no se pudo abrir el directorio: cuenta como fallo.
+        ok &= samples != null && samples.clear();
+        // Ultimo modelo, organizaciones conocidas y hora de la consulta: datos de la cuenta.
+        // El almacen viene inyectado (por `snapshotFor` en produccion) y la prueba usa uno en OTRO
+        // archivo de preferencias que el que vacia el paso siguiente: quitar esta linea la rompe.
+        ok &= snapshot != null && snapshot.clear();
 
         // Preferencias: manual_org (uuid de cuenta) y lo que se anada. commit() y no apply():
         // tiene que estar en disco cuando el metodo vuelve.
@@ -52,17 +106,16 @@ public final class Session {
             ok &= deleteContents(app.getCacheDir());              // cache (incluye la del WebView)
         }
 
-        // F4: borrar aqui samples.jsonl (SampleStore.clear()) y el ultimo modelo/orgs/hora
-        // (SnapshotStore.clear()).
-        // cancel y push tocan el job y los widgets REALES del dueno: la prueba (realDevice=false)
-        // no debe cancelarlos ni repintarlos cuando F4 los llene.
-        if (realDevice) {
-            ok &= attempt(() -> WidgetUpdateJob.cancel(app));
+        // cancel y push tocan el job y los widgets REALES del dueno: la prueba inyecta dobles.
+        if (cancelJob != null) {
+            ok &= attempt(cancelJob);
         }
-        // F4: pasar Snapshot.of(Snapshot.Problem.NO_SESSION) para que los widgets muestren "sin sesion".
-        if (realDevice) {
-            ok &= attempt(() -> WidgetUpdateJob.pushToWidgets(app));
+        // Los widgets pasan a "sin sesion". Va bajo el candado de pintado de WidgetUpdateJob: un
+        // refresco que empezo antes no puede pintar despues los numeros de la cuenta cerrada.
+        if (pushWidgets != null) {
+            ok &= attempt(() -> pushWidgets.accept(Snapshot.of(Snapshot.Problem.NO_SESSION)));
         }
+        epoch.incrementAndGet();   // por si un refresco empezo entre el primer incremento y los borrados
         return ok;
     }
 
@@ -73,6 +126,12 @@ public final class Session {
      */
     @SuppressWarnings("deprecation")   // clearHttpAuthUsernamePassword: sin sustituto
     static boolean clearWebData(Context app) {
+        // Las APIs del WebView quieren el hilo principal (y `removeAllCookies` un Looper). Desde
+        // un hilo de fondo (el logout ya no corre en el principal) se salta al principal y se espera.
+        return onMainAndWait(() -> clearWebDataHere(app), 10);
+    }
+
+    private static boolean clearWebDataHere(Context app) {
         boolean ok = attempt(() -> {
             CookieManager cm = CookieManager.getInstance();
             // removeAllCookies es asincrono: el flush va DENTRO del callback, cuando ya borro.
@@ -81,6 +140,54 @@ public final class Session {
         ok &= attempt(() -> WebStorage.getInstance().deleteAllData());
         ok &= attempt(() -> WebViewDatabase.getInstance(app).clearHttpAuthUsernamePassword());
         return ok;
+    }
+
+    /**
+     * Ejecuta `work` en el hilo principal y espera su resultado (como mucho `seconds`). Si ya se
+     * esta en el principal lo hace directamente. false si no llego a tiempo o lanzo.
+     */
+    static boolean onMainAndWait(java.util.function.BooleanSupplier work, int seconds) {
+        android.os.Looper main = android.os.Looper.getMainLooper();
+        if (android.os.Looper.myLooper() == main) {
+            try { return work.getAsBoolean(); } catch (RuntimeException e) { return false; }
+        }
+        java.util.concurrent.CountDownLatch done = new java.util.concurrent.CountDownLatch(1);
+        boolean[] result = {false};
+        new android.os.Handler(main).post(() -> {
+            try { result[0] = work.getAsBoolean(); } catch (RuntimeException e) { result[0] = false; }
+            finally { done.countDown(); }
+        });
+        try {
+            return done.await(seconds, java.util.concurrent.TimeUnit.SECONDS) && result[0];
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
+    }
+
+    /**
+     * Cerrar sesion SIN bloquear la UI: borrado de Keystore, `commit()`, barrido recursivo de la
+     * cache e IPC por widget van a un hilo; `done` vuelve en el principal con el resultado.
+     */
+    public static void logoutAsync(Context ctx, java.util.function.Consumer<Boolean> done) {
+        Context app = ctx.getApplicationContext() != null ? ctx.getApplicationContext() : ctx;
+        runAsync(() -> logout(app), done);
+    }
+
+    /** `work` en un hilo, `done` en el principal. Aparte para probarlo sin cerrar ninguna sesion. */
+    static void runAsync(java.util.function.Supplier<Boolean> work,
+                         java.util.function.Consumer<Boolean> done) {
+        android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
+        new Thread(() -> {
+            boolean ok;
+            try {
+                ok = work.get();
+            } catch (RuntimeException | Error e) {
+                ok = false;   // sin citar nada: no hay datos que se puedan citar
+            }
+            boolean result = ok;
+            main.post(() -> done.accept(result));
+        }, "cuw-logout").start();
     }
 
     private static boolean attempt(Runnable r) {

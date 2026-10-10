@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root" android:layout_width="match_parent" android:layout_height="match_parent"
+    android:orientation="vertical" android:padding="12dp" android:background="#CC14161B">
+    <TextView android:maxLines="1" android:ellipsize="end" android:id="@+id/notice" android:layout_width="match_parent"
+        android:layout_height="wrap_content" android:textColor="#FFE8B03F"
+        android:textSize="12sp" android:visibility="gone" android:paddingBottom="4dp" />
+    <LinearLayout android:id="@+id/numbers" android:layout_width="match_parent"
+        android:layout_height="0dp" android:layout_weight="1" android:orientation="vertical">
+
+        <TextView android:maxLines="1" android:ellipsize="end" android:id="@+id/session" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:textColor="#FFFFFFFF" android:textSize="13sp" />
+        <!-- Una ProgressBar por color: se enciende la del color que toca y se apagan las otras
+             tres. Con minSdk 31 RemoteViews ya podria pintar una sola con setColorStateList, pero
+             este camino solo usa setProgressBar y setViewVisibility, que estan probados y no
+             dependen de que el lanzador respete el tinte. -->
+        <FrameLayout android:layout_width="match_parent" android:layout_height="8dp"
+            android:layout_marginBottom="6dp">
+            <ProgressBar android:id="@+id/session_green" style="?android:attr/progressBarStyleHorizontal"
+                android:layout_width="match_parent" android:layout_height="8dp"
+                android:max="100" android:progressDrawable="@drawable/bar_green" />
+            <ProgressBar android:id="@+id/session_amber" style="?android:attr/progressBarStyleHorizontal"
+                android:layout_width="match_parent" android:layout_height="8dp"
+                android:max="100" android:progressDrawable="@drawable/bar_amber"
+                android:visibility="gone" />
+            <ProgressBar android:id="@+id/session_red" style="?android:attr/progressBarStyleHorizontal"
+                android:layout_width="match_parent" android:layout_height="8dp"
+                android:max="100" android:progressDrawable="@drawable/bar_red"
+                android:visibility="gone" />
+            <ProgressBar android:id="@+id/session_gray" style="?android:attr/progressBarStyleHorizontal"
+                android:layout_width="match_parent" android:layout_height="8dp"
+                android:max="100" android:progressDrawable="@drawable/bar_gray"
+                android:visibility="gone" />
+        </FrameLayout>
+
+        <TextView android:maxLines="1" android:ellipsize="end" android:id="@+id/weekly" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:textColor="#FFFFFFFF" android:textSize="13sp" />
+        <FrameLayout android:layout_width="match_parent" android:layout_height="8dp"
+            android:layout_marginBottom="2dp">
+            <ProgressBar android:id="@+id/weekly_green" style="?android:attr/progressBarStyleHorizontal"
+                android:layout_width="match_parent" android:layout_height="8dp"
+                android:max="100" android:progressDrawable="@drawable/bar_green" />
+            <ProgressBar android:id="@+id/weekly_amber" style="?android:attr/progressBarStyleHorizontal"
+                android:layout_width="match_parent" android:layout_height="8dp"
+                android:max="100" android:progressDrawable="@drawable/bar_amber" android:visibility="gone" />
+            <ProgressBar android:id="@+id/weekly_red" style="?android:attr/progressBarStyleHorizontal"
+                android:layout_width="match_parent" android:layout_height="8dp"
+                android:max="100" android:progressDrawable="@drawable/bar_red" android:visibility="gone" />
+            <ProgressBar android:id="@+id/weekly_gray" style="?android:attr/progressBarStyleHorizontal"
+                android:layout_width="match_parent" android:layout_height="8dp"
+                android:max="100" android:progressDrawable="@drawable/bar_gray" android:visibility="gone" />
+        </FrameLayout>
+
+        <!-- Marca de ritmo parejo (R7): una barra fina gris justo debajo de la barra semanal, que avanza
+             con la ventana. Sin esto, `Colors.paceMark` se calcularia y no se veria. -->
+        <ProgressBar android:id="@+id/pace" style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent" android:layout_height="2dp" android:layout_marginBottom="6dp"
+            android:max="100" android:progressDrawable="@drawable/bar_gray" />
+
+        <TextView android:maxLines="1" android:ellipsize="end" android:id="@+id/today" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:textColor="#FFFFFFFF" android:textSize="13sp" />
+        <FrameLayout android:layout_width="match_parent" android:layout_height="8dp">
+            <ProgressBar android:id="@+id/today_green" style="?android:attr/progressBarStyleHorizontal"
+                android:layout_width="match_parent" android:layout_height="8dp"
+                android:max="100" android:progressDrawable="@drawable/bar_green" />
+            <ProgressBar android:id="@+id/today_amber" style="?android:attr/progressBarStyleHorizontal"
+                android:layout_width="match_parent" android:layout_height="8dp"
+                android:max="100" android:progressDrawable="@drawable/bar_amber" android:visibility="gone" />
+            <ProgressBar android:id="@+id/today_red" style="?android:attr/progressBarStyleHorizontal"
+                android:layout_width="match_parent" android:layout_height="8dp"
+                android:max="100" android:progressDrawable="@drawable/bar_red" android:visibility="gone" />
+            <ProgressBar android:id="@+id/today_gray" style="?android:attr/progressBarStyleHorizontal"
+                android:layout_width="match_parent" android:layout_height="8dp"
+                android:max="100" android:progressDrawable="@drawable/bar_gray" android:visibility="gone" />
+        </FrameLayout>
+
+        <TextView android:maxLines="1" android:ellipsize="end" android:id="@+id/forecast" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:textColor="#FF9AA3B2"
+            android:textSize="11sp" android:paddingTop="6dp" />
+    </LinearLayout>
+    <TextView android:maxLines="1" android:ellipsize="end" android:id="@+id/age" android:layout_width="match_parent"
+        android:layout_height="wrap_content" android:textColor="#FF6B7280" android:textSize="10sp" />
+</LinearLayout>

@@ -219,10 +219,10 @@ public class LoginActivity extends Activity {
             getSharedPreferences(SettingsActivity.PREFS, MODE_PRIVATE).edit()
                     .putString(SettingsActivity.KEY_UA, ua).apply();
         } catch (RuntimeException ignored) {
-            // F4 usara su UA por omision.
+            // Sin UA guardado las consultas llevan uno vacio: no hay respaldo a proposito (ver userAgent).
         }
-        // F4: aqui engancha UsageRefresher.clearBackoff(this): volver a entrar arregla el
-        // problema y la espera acumulada ya no aplica.
+        // Volver a entrar arregla el problema: la espera acumulada ya no aplica.
+        UsageRefresher.clearBackoff(this);
         wipeWebView();
         status.setText(R.string.login_ok);   // ya no se queda en "Comprobando..."
         showIntro();
@@ -231,20 +231,25 @@ public class LoginActivity extends Activity {
     }
 
     private void scheduleAfterLogin() {
-        // F3: ambos son esqueleto y no hacen nada hasta F4.
+        // Los dos solo encolan (programan el periodico y lanzan el primer refresco en un hilo).
         WidgetUpdateJob.schedule(this);
         WidgetUpdateJob.runNow(this);
     }
 
     private void logout() {
-        boolean ok = Session.logout(this);
-        wipeWebView();        // el WebView pudo quedar con cookies de un login anterior
-        showIntro();
-        paintIntro();         // refleja el estado real, no el que se esperaba
-        if (!ok) {
-            // No se cierra la pantalla como si hubiera salido bien.
-            ((TextView) findViewById(R.id.intro_status)).setText(R.string.logout_failed);
-        }
+        // El borrado (Keystore, commit, barrido de la cache, widgets) va a un hilo: en el
+        // principal, con una cache de WebView grande, "Cerrar sesion" daba ANR. Aqui, en el
+        // principal, solo queda lo que exige la instancia del WebView.
+        Session.logoutAsync(this, ok -> {
+            if (isFinishing() || isDestroyed()) return;
+            wipeWebView();        // el WebView pudo quedar con cookies de un login anterior
+            showIntro();
+            paintIntro();         // refleja el estado real, no el que se esperaba
+            if (!ok) {
+                // No se cierra la pantalla como si hubiera salido bien.
+                ((TextView) findViewById(R.id.intro_status)).setText(R.string.logout_failed);
+            }
+        });
     }
 
     /**

@@ -2,6 +2,7 @@ package com.claulimitswidgets.android;
 
 import android.content.Context;
 import android.security.keystore.KeyGenParameterSpec;
+import android.security.keystore.KeyPermanentlyInvalidatedException;
 import android.security.keystore.KeyProperties;
 
 import java.io.File;
@@ -11,6 +12,7 @@ import java.io.RandomAccessFile;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.KeyStore;
+import java.security.UnrecoverableKeyException;
 
 import javax.crypto.AEADBadTagException;
 import javax.crypto.Cipher;
@@ -37,9 +39,28 @@ public final class SessionStore {
     private static final int TAG_BITS = 128;
     private static final int IV_LEN = 12;
 
+    /**
+     * El Keystore declara la llave inservible (`KeyPermanentlyInvalidatedException` o
+     * `UnrecoverableKeyException`: corrupcion del Keystore o copia/restauracion en otro aparato. OJO:
+     * cambiar o quitar el bloqueo de pantalla NO la invalida, porque la llave se crea con
+     * `setUserAuthenticationRequired(false)` a proposito, para refrescar con la pantalla apagada). La
+     * cookie cifrada con ella ya no se puede leer jamas, asi que NO es "sin red" ni un hipo
+     * transitorio: el widget debe mandar al login, como con una sesion vencida. Subclase de
+     * GeneralSecurityException para que quien ya atrapaba esa no se rompa; sin causa ni mensaje
+     * para no arrastrar nada del almacen.
+     */
+    public static final class KeyLostException extends GeneralSecurityException {
+        private static final long serialVersionUID = 1L;
+        KeyLostException() { super("llave del Keystore perdida"); }
+    }
+
+    /** De donde sale la llave. Las pruebas inyectan fallos que el Keystore real no da a pedido. */
+    interface KeySource { SecretKey get() throws GeneralSecurityException, IOException; }
+
     private final Context ctx;
     private final String fileName;
     private final String keyAlias;
+    private final KeySource keys;
 
     public SessionStore(Context ctx) {
         this(ctx, FILE_NAME, KEY_ALIAS);
@@ -52,9 +73,15 @@ public final class SessionStore {
      * archivo y su propia llave.
      */
     SessionStore(Context ctx, String fileName, String keyAlias) {
+        this(ctx, fileName, keyAlias, null);
+    }
+
+    /** Con la fuente de llaves inyectada (null = la del Keystore). Solo para las pruebas. */
+    SessionStore(Context ctx, String fileName, String keyAlias, KeySource keys) {
         this.ctx = ctx.getApplicationContext() != null ? ctx.getApplicationContext() : ctx;
         this.fileName = fileName;
         this.keyAlias = keyAlias;
+        this.keys = keys != null ? keys : this::key;
     }
 
     /**
@@ -82,8 +109,7 @@ public final class SessionStore {
 
     public void save(String cookies) throws GeneralSecurityException, IOException {
         synchronized (LOCK) {
-            Cipher c = Cipher.getInstance(TRANSFORM);
-            c.init(Cipher.ENCRYPT_MODE, key());
+            Cipher c = encryptCipher();
             byte[] iv = c.getIV();
             byte[] body = c.doFinal(cookies.getBytes(StandardCharsets.UTF_8));
             // Escritura atomica: a un temporal y renombrar, para que un lector nunca vea un
@@ -104,9 +130,27 @@ public final class SessionStore {
     }
 
     /**
+     * Volver a entrar es como se arregla una llave perdida: si la de siempre ya no sirve se
+     * descarta y se crea otra. Sin esto el login fallaria para siempre con "no se pudo guardar".
+     */
+    private Cipher encryptCipher() throws GeneralSecurityException, IOException {
+        try {
+            Cipher c = Cipher.getInstance(TRANSFORM);
+            c.init(Cipher.ENCRYPT_MODE, keys.get());
+            return c;
+        } catch (KeyPermanentlyInvalidatedException | UnrecoverableKeyException e) {
+            deleteKey();
+            Cipher c = Cipher.getInstance(TRANSFORM);
+            c.init(Cipher.ENCRYPT_MODE, keys.get());
+            return c;
+        }
+    }
+
+    /**
      * Null si no hay sesion. Si el archivo esta corrupto (forma invalida o etiqueta GCM que no
-     * cuadra) se borra y se devuelve null. Cualquier otro fallo del Keystore se propaga SIN
-     * borrar nada: puede ser transitorio y borrar costaria la sesion del usuario.
+     * cuadra) se borra y se devuelve null. Si el Keystore dice que la llave no sirve se lanza
+     * {@link KeyLostException} SIN borrar nada (puede ser un hipo disfrazado). Cualquier otro fallo del Keystore se
+     * propaga SIN borrar nada: puede ser transitorio y borrar costaria la sesion del usuario.
      */
     public String load() throws GeneralSecurityException, IOException {
         synchronized (LOCK) {
@@ -123,7 +167,17 @@ public final class SessionStore {
             byte[] body = new byte[all.length - 1 - ivLen];
             System.arraycopy(all, 1 + ivLen, body, 0, body.length);
             Cipher c = Cipher.getInstance(TRANSFORM);
-            c.init(Cipher.DECRYPT_MODE, key(), new GCMParameterSpec(TAG_BITS, iv));
+            try {
+                c.init(Cipher.DECRYPT_MODE, keys.get(), new GCMParameterSpec(TAG_BITS, iv));
+            } catch (KeyPermanentlyInvalidatedException | UnrecoverableKeyException e) {
+                // NO se borra nada. Desde Android 12 (keystore2) AndroidKeyStoreSpi envuelve en
+                // UnrecoverableKeyException tambien errores TRANSITORIOS (se han visto tras el
+                // arranque y en Samsung), y el 4202 corre justo despues del arranque: borrar
+                // aqui cerraria la sesion del dueno por un hipo y le obligaria a repetir el
+                // login por correo. El lado seguro es no borrar; el siguiente `save()` regenera la
+                // llave si de verdad estaba perdida.
+                throw new KeyLostException();
+            }
             try {
                 return new String(c.doFinal(body), StandardCharsets.UTF_8);
             } catch (AEADBadTagException e) {
@@ -145,14 +199,32 @@ public final class SessionStore {
                 overwrite(f);
                 if (!f.delete()) f.deleteOnExit();
             }
+            // El temporal de save() (cookie CIFRADA a medio escribir si el proceso murio entre
+            // la escritura y el renombrado) tambien es parte de la sesion: SampleStore.clear
+            // borra el suyo, y cerrar sesion no puede dejar texto cifrado de la cookie atras.
+            File tmp = new File(f.getParentFile(), fileName + ".tmp");
+            if (tmp.isFile()) {
+                overwrite(tmp);
+                if (!tmp.delete()) tmp.deleteOnExit();
+            }
             try {
                 KeyStore ks = KeyStore.getInstance(KEYSTORE);
                 ks.load(null);
                 if (ks.containsAlias(keyAlias)) ks.deleteEntry(keyAlias);
-                return !f.exists();
+                return !f.exists() && !tmp.exists();
             } catch (GeneralSecurityException | IOException e) {
                 return false;
             }
+        }
+    }
+
+    private void deleteKey() {
+        try {
+            KeyStore ks = KeyStore.getInstance(KEYSTORE);
+            ks.load(null);
+            if (ks.containsAlias(keyAlias)) ks.deleteEntry(keyAlias);
+        } catch (GeneralSecurityException | IOException ignored) {
+            // Si no se puede borrar, el siguiente intento de generar fallara y se vera arriba.
         }
     }
 

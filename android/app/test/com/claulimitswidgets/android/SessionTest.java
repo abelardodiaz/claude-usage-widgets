@@ -17,8 +17,26 @@ public final class SessionTest {
     private static final String TEST_PREFS = "cuw-logout-test";
 
     public static void run(Assert a, Context ctx) {
+        // Ata la ruta de produccion: logout(ctx) borra SampleStore.of(ctx); esa ruta es filesDir/DIR_NAME,
+        // el sitio donde escribira la Tarea 4.2. Si alguien cambia una, esto falla.
+        a.eq("SampleStore.of apunta al directorio de produccion",
+                new java.io.File(ctx.getFilesDir(), SampleStore.DIR_NAME).getAbsolutePath(),
+                SampleStore.of(ctx).dir().getAbsolutePath());
         SessionStore s = new SessionStore(ctx, TEST_FILE, TEST_ALIAS);
         s.clear();
+        // Almacen de muestras PROPIO: nunca el real del dueno.
+        java.io.File samplesDir = new java.io.File(ctx.getCacheDir(), "logout-samples-" + System.nanoTime());
+        SampleStore samples = new SampleStore(samplesDir);
+        java.io.File samplesFile = new java.io.File(samplesDir, SampleStore.FILE_NAME);
+        try {
+            java.time.Instant now = java.time.Instant.parse("2026-10-03T12:00:00Z");
+            a.isTrue("la muestra de prueba se acepta",
+                    samples.append(new com.claudewidgets.core.Sample(now, 12, null), now));
+        } catch (Exception e) {
+            a.fail("no se pudo preparar la muestra de prueba: " + e.getClass().getSimpleName());
+            return;
+        }
+        a.isTrue("antes: hay archivo de muestras", samplesFile.isFile());
         try {
             s.save("sessionKey=falsa");
         } catch (Exception e) {
@@ -31,13 +49,14 @@ public final class SessionTest {
         a.isTrue("antes: hay sesion", s.hasSession());
         a.isTrue("antes: hay preferencias", p.getAll().size() == 2);
 
-        boolean ok = Session.logout(ctx, s, TEST_PREFS, false);
+        boolean ok = Session.logout(ctx, s, samples, new SnapshotStore(ctx, TEST_PREFS), TEST_PREFS, false, null, null, new java.util.concurrent.atomic.AtomicLong());
 
         a.isTrue("logout devuelve true", ok);
         a.isTrue("logout borra la sesion", !s.hasSession());
         a.isTrue("logout vacia las preferencias",
                 ctx.getSharedPreferences(TEST_PREFS, Context.MODE_PRIVATE).getAll().isEmpty());
-        a.isTrue("logout es repetible", Session.logout(ctx, s, TEST_PREFS, false));
+        a.isTrue("logout borra el archivo de muestras", !samplesFile.exists());
+        a.isTrue("logout es repetible", Session.logout(ctx, s, samples, new SnapshotStore(ctx, TEST_PREFS), TEST_PREFS, false, null, null, new java.util.concurrent.atomic.AtomicLong()));
 
         // Rama de fallo: deleteSharedPreferences falla -> false, pero sigue y borra la sesion.
         try {
@@ -65,7 +84,7 @@ public final class SessionTest {
             return;
         }
         a.isTrue("control: el envoltorio sin fallo devuelve true",
-                Session.logout(passthrough, s2, TEST_PREFS, false));
+                Session.logout(passthrough, s2, samples, new SnapshotStore(ctx, TEST_PREFS), TEST_PREFS, false, null, null, new java.util.concurrent.atomic.AtomicLong()));
         s2.clear();
 
         Context failing = new ContextWrapper(ctx) {
@@ -75,7 +94,7 @@ public final class SessionTest {
                 return false;
             }
         };
-        boolean ok2 = Session.logout(failing, s, TEST_PREFS, false);
+        boolean ok2 = Session.logout(failing, s, samples, new SnapshotStore(ctx, TEST_PREFS), TEST_PREFS, false, null, null, new java.util.concurrent.atomic.AtomicLong());
         a.eq("el unico fallo inyectado fue deleteSharedPreferences de las prefs de prueba",
                 TEST_PREFS, deleted[0]);
         a.isTrue("si un borrado falla, logout devuelve false", !ok2);

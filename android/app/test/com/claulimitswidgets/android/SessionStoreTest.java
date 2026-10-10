@@ -63,6 +63,107 @@ public final class SessionStoreTest {
         s.clear();
     }
 
+    /**
+     * Tarea 4.4: una llave perdida PARA SIEMPRE no es un hipo. El Keystore real no da ese fallo a
+     * pedido, asi que la llave se inyecta; el cifrado es real (AES-GCM con una llave de software).
+     */
+    public static void runKeyLoss(Assert a, android.content.Context ctx) {
+        final String file = "session-keyloss-test.bin";
+        final String alias = "cuw-session-keyloss-test";
+        javax.crypto.SecretKey soft = new javax.crypto.spec.SecretKeySpec(new byte[32], "AES");
+        SessionStore real = new SessionStore(ctx, file, alias);
+        real.clear();
+        File f = new File(ctx.getFilesDir(), file);
+        try {
+            // Control: con una llave sana, guarda y lee. Sin esto lo de abajo pasaria en vacio.
+            SessionStore ok = new SessionStore(ctx, file, alias, () -> soft);
+            call(a, () -> { ok.save(COOKIE); return null; });
+            a.eq("control: lee lo que guardo", COOKIE, call(a, () -> ok.load()));
+
+            Throwable[] lost = {new android.security.keystore.KeyPermanentlyInvalidatedException(),
+                    new java.security.UnrecoverableKeyException("x")};
+            for (Throwable t : lost) {
+                String n = t.getClass().getSimpleName();
+                call(a, () -> { ok.save(COOKIE); return null; });
+                a.isTrue(n + ": antes hay sesion", ok.hasSession());
+                SessionStore dead = new SessionStore(ctx, file, alias, () -> { throw sneaky(t); });
+                Throwable got = null;
+                try { dead.load(); } catch (Throwable e) { got = e; }
+                a.isTrue(n + ": load lanza KeyLostException", got instanceof SessionStore.KeyLostException);
+                a.isTrue(n + ": KeyLostException sigue siendo GeneralSecurityException",
+                        got instanceof java.security.GeneralSecurityException);
+                // NO se borra: UnrecoverableKeyException puede ser un hipo disfrazado (keystore2,
+                // Android 12+), y borrar cerraria la sesion del dueno por un fallo transitorio.
+                a.isTrue(n + ": la sesion NO se borra (puede ser un hipo)", dead.hasSession());
+                a.isTrue(n + ": el archivo sigue", f.exists());
+                a.eq(n + ": y cuando la llave vuelve, se lee", COOKIE, call(a, () -> ok.load()));
+            }
+
+            // Un hipo transitorio NO es esto: se propaga tal cual y no se borra nada.
+            call(a, () -> { ok.save(COOKIE); return null; });
+            SessionStore flaky = new SessionStore(ctx, file, alias,
+                    () -> { throw new java.security.GeneralSecurityException("hipo"); });
+            Throwable hipo = null;
+            try { flaky.load(); } catch (Throwable e) { hipo = e; }
+            a.isTrue("hipo: lanza", hipo != null);
+            a.isTrue("hipo: NO es KeyLostException", !(hipo instanceof SessionStore.KeyLostException));
+            a.isTrue("hipo: la sesion sigue", flaky.hasSession());
+
+            // Volver a entrar arregla una llave perdida: save descarta la llave y reintenta UNA vez.
+            for (Throwable t : lost) {
+                String n = t.getClass().getSimpleName();
+                int[] calls = {0};
+                SessionStore heal = new SessionStore(ctx, file, alias, () -> {
+                    if (calls[0]++ == 0) throw sneaky(t);
+                    return soft;
+                });
+                call(a, () -> { heal.save(COOKIE); return null; });
+                a.eq(n + ": save pidio la llave dos veces (fallo y reintento)", 2, calls[0]);
+                a.eq(n + ": tras volver a entrar se lee", COOKIE, call(a, () -> ok.load()));
+            }
+            int[] always = {0};
+            SessionStore hopeless = new SessionStore(ctx, file, alias, () -> {
+                always[0]++;
+                throw new java.security.UnrecoverableKeyException("x");
+            });
+            Exception final1 = null;
+            try { hopeless.save(COOKIE); } catch (Exception e) { final1 = e; }
+            a.isTrue("llave irrecuperable siempre: save acaba lanzando",
+                    final1 instanceof java.security.UnrecoverableKeyException);
+            a.eq("y reintenta una sola vez, no en bucle", 2, always[0]);
+            int[] hipoCalls = {0};
+            SessionStore hipoSave = new SessionStore(ctx, file, alias, () -> {
+                hipoCalls[0]++;
+                throw new java.security.GeneralSecurityException("hipo");
+            });
+            try { hipoSave.save(COOKIE); } catch (Exception ignored) { }
+            a.eq("un hipo al guardar NO borra la llave ni reintenta", 1, hipoCalls[0]);
+        } finally {
+            real.clear();
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T extends Throwable> T sneaky(Throwable t) throws T { throw (T) t; }
+
+    /** M1: cerrar sesion borra tambien el temporal cifrado de save(). */
+    public static void runTmp(Assert a, android.content.Context ctx) {
+        SessionStore s = new SessionStore(ctx, "session-tmp-test.bin", "cuw-session-tmp-test");
+        s.clear();
+        File tmp = new File(ctx.getFilesDir(), "session-tmp-test.bin.tmp");
+        try {
+            Files.write(tmp.toPath(), new byte[] {12, 1, 2, 3, 4, 5});
+            a.isTrue("antes: existe el temporal", tmp.isFile());
+            a.isTrue("clear devuelve true", s.clear());
+            a.isTrue("clear borra el temporal de save()", !tmp.exists());
+        } catch (Exception e) {
+            a.fail("runTmp: " + e.getClass().getSimpleName());
+        } finally {
+            tmp.delete();
+            s.clear();
+        }
+    }
+
     /** Cierre de F3: hasSession() mira la forma del archivo, sin descifrar. */
     public static void runCierre(Assert a, android.content.Context ctx) {
         SessionStore s = new SessionStore(ctx, TEST_FILE, TEST_ALIAS);
