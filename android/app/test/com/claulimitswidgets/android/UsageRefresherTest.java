@@ -177,6 +177,13 @@ public final class UsageRefresherTest {
                     .putString("last_weekly_percent", "no-es-numero").commit();
             a.isTrue("porcentaje corrupto -> null", s.lastModel() == null);
 
+            // forgetOrgs es estrecho: tira las orgs y deja el modelo.
+            s.rememberOrgs(Arrays.asList(new UsageClient.Org(ORG1, "Uno")), T0);
+            a.isTrue("forgetOrgs devuelve true", s.forgetOrgs());
+            a.eq("forgetOrgs borra las orgs", 0, s.knownOrgs().size());
+            a.isTrue("forgetOrgs borra su hora", s.orgsFetchedAt() == null);
+            a.isTrue("forgetOrgs NO toca el modelo", s.lastFetchInstant() != null);
+            s.remember(model(5, 6), T0);
             a.isTrue("clear devuelve true", s.clear());
             a.isTrue("clear: sin modelo", s.lastModel() == null);
             a.isTrue("clear: sin hora", s.lastFetchInstant() == null);
@@ -634,6 +641,49 @@ public final class UsageRefresherTest {
             a.isTrue("preferencias vacias", r1c.prefs.getAll().isEmpty());
         } finally { r1c.close(); }
 
+        // (1d) Igual para keepOld: el logout cae entre la comprobacion y el apply() de la espera
+        // (la tercera lectura del reloj es la de dentro del bloque de escritura).
+        Rig r1d = new Rig(ctx, true, COOKIES);
+        try {
+            r1d.fake.orgs = Arrays.asList(new UsageClient.Org(ORG1, "Uno"));
+            r1d.fake.usage.put(ORG1, new IOException("sin red"));
+            int[] reads = {0};
+            r1d.refresher = new UsageRefresher(r1d.session, r1d.samples, r1d.meta, r1d.prefs,
+                    c -> r1d.fake, () -> {
+                        if (++reads[0] == 3) {
+                            Session.logout(ctx, r1d.session, r1d.samples, r1d.meta, r1d.prefsName, false);
+                        }
+                        return T0;
+                    });
+            r1d.refresher.refresh();
+            a.eq("keepOld: la consulta fallo de verdad", 1, r1d.fake.usageCalls.size());
+            a.isTrue("keepOld: el logout se disparo en la ventana", reads[0] >= 3);
+            a.isTrue("keepOld: no quedaron claves de espera", !r1d.prefs.contains("backoff_next_allowed_at"));
+            a.isTrue("keepOld: preferencias vacias", r1d.prefs.getAll().isEmpty());
+        } finally { r1d.close(); }
+
+        // (1e) Que hasSession() de falso SIN logout (epoca igual) no destruye datos legitimos:
+        // para borrar solo cuenta la epoca. Se simula vaciando la sesion desde la misma lectura
+        // del reloj que cae tras la ultima comprobacion; no hay Session.logout, asi que no es un cierre.
+        Rig r1e = new Rig(ctx, true, COOKIES);
+        try {
+            r1e.fake.orgs = Arrays.asList(new UsageClient.Org(ORG1, "Uno"));
+            r1e.fake.usage.put(ORG1, model(30, 40));
+            int[] reads = {0};
+            r1e.refresher = new UsageRefresher(r1e.session, r1e.samples, r1e.meta, r1e.prefs,
+                    c -> r1e.fake, () -> {
+                        if (++reads[0] == 3) r1e.session.clear();
+                        return T0;
+                    });
+            Snapshot s = r1e.refresher.refresh();
+            a.isTrue("1e: la sesion se vacio en la ventana", !r1e.session.hasSession());
+            a.isTrue("1e: sin logout no se destruye el modelo", r1e.meta.lastModel() != null);
+            a.eq("1e: ni la muestra", 1, r1e.samples.load(T0).size());
+            a.isTrue("1e: y el Snapshot sigue con datos", s.hasData());
+        } catch (IOException e) {
+            a.fail("1e: no se pudo leer el almacen");
+        } finally { r1e.close(); }
+
         // (2) Llega mientras la consulta de uso falla por red: keepOld no escribe la espera.
         Rig r2 = new Rig(ctx, true, COOKIES);
         try {
@@ -673,7 +723,9 @@ public final class UsageRefresherTest {
             // Cuando vuelve el Keystore se consulta de inmediato.
             fail[0] = false;
             r.fake.usage.put(ORG1, model(31, 41));
-            a.eq("tras el hipo se consulta sin esperar", 41.0, flaky.refresh().model.weekly.percent);
+            Snapshot after = flaky.refresh();
+            a.isTrue("tras el hipo hay datos", after.hasData());
+            if (after.hasData()) a.eq("tras el hipo se consulta sin esperar", 41.0, after.model.weekly.percent);
             a.isTrue("hipo del Keystore: la sesion NO se borro", r.session.hasSession());
 
             // load() que devuelve null si es "sin sesion".
@@ -727,7 +779,8 @@ public final class UsageRefresherTest {
             a.isTrue("cache con org vieja: se recupera", s.problem == null);
             if (s.hasData()) a.eq("cache con org vieja: muestra la nueva", 77.0, s.model.weekly.percent);
             else a.fail("cache con org vieja: no hay datos");
-            a.eq("la cache se actualizo", ORG1, r.meta.knownOrgs().get(0).uuid);
+            a.isTrue("la cache se actualizo", !r.meta.knownOrgs().isEmpty()
+                    && ORG1.equals(r.meta.knownOrgs().get(0).uuid));
         } finally { r.close(); }
 
         // (a2) varias responden (ambiguous): NO se revalida, es el estado sin backoff.

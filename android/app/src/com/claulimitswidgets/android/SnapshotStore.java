@@ -135,6 +135,11 @@ public final class SnapshotStore {
         return out;
     }
 
+    /** Borra solo la lista de organizaciones y su hora: lo unico que escribe `rememberOrgs`. */
+    public boolean forgetOrgs() {
+        return prefs.edit().remove(KEY_ORGS).remove(KEY_ORGS_AT).commit();
+    }
+
     /** Borra todo lo que guarda este almacen. commit(): tiene que estar en disco al volver. */
     public boolean clear() {
         return prefs.edit().remove(KEY_FETCHED_AT).remove(KEY_ORGS).remove(KEY_ORGS_AT)

@@ -153,6 +153,20 @@ public final class UsageRefresher {
         return Session.EPOCH.get() == epoch && session.hasSession();
     }
 
+    /**
+     * Despues de escribir: true si se puede dar por bueno lo escrito. Si hubo un logout de verdad
+     * (la epoca cambio) se ejecuta `undo` y devuelve false. Se decide SOLO por la epoca, no por
+     * `hasSession()`: este camino BORRA, y `hasSession()` puede dar falso con la sesion intacta
+     * (p. ej. sin descriptores de archivo), lo que destruiria datos legitimos del dueno. La epoca
+     * cubre todas las carreras porque logout la incrementa antes de borrar nada.
+     * Un unico sitio para el patron: compute, fetchOrgs y keepOld.
+     */
+    private boolean committed(Runnable undo) {
+        if (Session.EPOCH.get() == epoch) return true;
+        undo.run();
+        return false;
+    }
+
     private Snapshot refreshLocked() {
         String cookies;
         try {
@@ -246,7 +260,7 @@ public final class UsageRefresher {
         meta.rememberOrgs(orgs, at);   // Ajustes los necesita aunque el resto falle
         // Autocuracion: si el logout gano la carrera entre la comprobacion y la escritura, se
         // deshace lo escrito. No bloquea nada y deja el estado consistente.
-        if (!alive()) { meta.clear(); return null; }
+        if (!committed(meta::forgetOrgs)) return null;   // solo lo que este camino escribio
         return orgs;
     }
 
@@ -357,7 +371,7 @@ public final class UsageRefresher {
                             clock.now().getEpochSecond() + Backoff.seconds(attempt))
                     .putString(KEY_LAST_PROBLEM, p.name())
                     .apply();
-            if (!alive()) wipeBackoff(prefs.edit()).commit();   // autocuracion, como en compute
+            committed(() -> wipeBackoff(prefs.edit()).commit());   // autocuracion, como en compute
         }
         return oldWith(p);
     }
@@ -412,11 +426,12 @@ public final class UsageRefresher {
             }
         }
         meta.remember(model, now);
-        if (!alive()) {
-            // El logout gano la carrera (p. ej. espero en el candado de SampleStore y borro justo
-            // antes de nuestro append): se deshace lo escrito para no dejar la cuenta en disco.
+        // Si el logout gano la carrera (p. ej. espero en el candado de SampleStore y borro justo
+        // antes de nuestro append) se deshace lo escrito para no dejar la cuenta en disco.
+        if (!committed(() -> {
             if (samples != null) samples.clear();
             meta.clear();
+        })) {
             return Snapshot.of(Snapshot.Problem.NO_SESSION);
         }
         return build(model, loadSamples(now), now, now, null);
