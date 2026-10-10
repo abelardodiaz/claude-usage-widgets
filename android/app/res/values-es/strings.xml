@@ -16,7 +16,7 @@
     <string name="login_steps">Te llegará un enlace por correo. Vence en 10 minutos. Si al abrirlo
         te muestra un código de verificación en vez de iniciar sesión, escribe ese código aquí.</string>
     <string name="login_start">Entrar con correo</string>
-    <string name="login_again">Volver a entrar</string>
+    <string name="login_again">Entrar con otra cuenta</string>
     <string name="probe_title">Probar la conexión</string>
     <string name="login_done">Listo</string>
     <string name="login_checking">Comprobando…</string>

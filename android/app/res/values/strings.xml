@@ -15,7 +15,7 @@
     <string name="login_steps">You will get a link by email. It expires in 10 minutes. If opening it
         shows a verification code instead of signing you in, type that code here.</string>
     <string name="login_start">Sign in with email</string>
-    <string name="login_again">Sign in again</string>
+    <string name="login_again">Sign in with another account</string>
     <string name="probe_title">Test the connection</string>
     <string name="login_done">Done</string>
     <string name="login_checking">Checking…</string>
