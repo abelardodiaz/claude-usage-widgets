@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Code signing policy · claude-usage-widgets</title>
+<meta name="description" content="Política de firma de código de claude-usage-widgets: quién firma, cómo se construyen los binarios y qué datos salen del equipo.">
+<style>
+  :root { --ink: #111; --muted: #444; --rule: #111; --soft: #f2f2f2; }
+  * { box-sizing: border-box; }
+  body { font-family: Arial, "Liberation Sans", Helvetica, sans-serif; background: #fff; color: var(--ink);
+         margin: 0; line-height: 1.45; font-size: 15px; }
+  main { max-width: 860px; margin: 0 auto; padding: 28px 16px 40px; }
+  h1 { font-size: 28px; margin: 0 0 6px; }
+  h2 { font-size: 19px; margin: 30px 0 10px; padding-top: 10px; border-top: 3px solid var(--rule); }
+  p { margin: 0 0 10px; }
+  a { color: var(--ink); }
+  code { font-family: Consolas, "Liberation Mono", monospace; font-size: 13px; background: var(--soft); padding: 1px 4px; overflow-wrap: anywhere; }
+  .aviso { border: 3px solid var(--rule); padding: 10px 14px; margin: 14px 0; }
+  .tabla { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { border: 2px solid var(--rule); padding: 6px 9px; text-align: left; vertical-align: top; }
+  th { background: var(--soft); }
+  ul { padding-left: 20px; } li { margin-bottom: 4px; }
+  footer { margin-top: 40px; padding-top: 12px; border-top: 3px solid var(--rule); font-size: 14px; color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+
+<p><a href="./">← claude-usage-widgets</a></p>
+<h1>Code signing policy</h1>
+<p>Política de firma de código de los instaladores de Windows de claude-usage-widgets. <a href="#english">English below.</a></p>
+
+<div class="aviso">
+Free code signing provided by <a href="https://about.signpath.io/">SignPath.io</a>,
+certificate by <a href="https://signpath.org/">SignPath Foundation</a>.<br>
+Estado: solicitud en trámite. Hasta que se active, los instaladores se publican sin firma de Windows; las actualizaciones automáticas sí van firmadas con la llave propia del proyecto.
+</div>
+
+<h2>Qué se firma</h2>
+<ul>
+  <li>Los instaladores de Windows de cada versión publicada en
+    <a href="https://github.com/abelardodiaz/claude-usage-widgets/releases">GitHub Releases</a>:
+    <code>claude-usage-widgets_&lt;versión&gt;_x64-setup.exe</code> y
+    <code>claude-usage-widgets_&lt;versión&gt;_x64_en-US.msi</code>.</li>
+  <li>Solo se firman binarios construidos a partir del código de este repositorio. No se firma software de terceros.</li>
+</ul>
+
+<h2>Cómo se construyen</h2>
+<ul>
+  <li>Cada versión sale de un tag <code>vX.Y.Z</code> sobre la rama <code>main</code>, que está protegida: nada entra sin pull request y sin los cinco controles del CI en verde.</li>
+  <li>El workflow <a href="https://github.com/abelardodiaz/claude-usage-widgets/blob/main/.github/workflows/release.yml"><code>.github/workflows/release.yml</code></a> compila los instaladores en GitHub Actions, los firma y crea el release como borrador. Nadie compila en su equipo lo que se publica.</li>
+  <li>Cada firma requiere aprobación manual del responsable del proyecto, y el release solo se publica después de verificar los SHA-256 de <code>SHA256SUMS.txt</code>.</li>
+</ul>
+
+<h2>Equipo y roles</h2>
+<div class="tabla"><table>
+  <tr><th>Rol</th><th>Quién</th></tr>
+  <tr><td>Committers y reviewers</td><td><a href="https://github.com/abelardodiaz">abelardodiaz</a> (único colaborador del <a href="https://github.com/abelardodiaz/claude-usage-widgets">repositorio</a>)</td></tr>
+  <tr><td>Approvers</td><td><a href="https://github.com/abelardodiaz">abelardodiaz</a></td></tr>
+</table></div>
+<p>Las cuentas usan autenticación de dos factores en GitHub y en SignPath. Parte del código lo escriben sesiones de Claude Code
+que trabajan con la cuenta del responsable; todo cambio pasa por pull request, revisión y CI antes de entrar a <code>main</code>.</p>
+
+<h2>Privacidad</h2>
+<p>El programa no tiene telemetría ni servidores propios. Solo se conecta a otros sistemas para hacer lo que el usuario le pide al instalarlo y usarlo:</p>
+<ul>
+  <li><code>api.anthropic.com</code> (Windows) o <code>claude.ai</code> (Android), para leer el uso del plan de Claude de la propia cuenta del usuario, con la credencial que ya tiene en su equipo. La credencial no sale del dispositivo hacia ningún otro sitio.</li>
+  <li><code>github.com</code>, solo cuando el usuario pulsa <em>Buscar actualizaciones</em>.</li>
+</ul>
+<p>Fuera de eso, este programa no transfiere información a otros sistemas de red, salvo que lo pida expresamente el usuario o quien lo instala u opera.
+El uso de esos servicios se rige por las políticas de privacidad de <a href="https://www.anthropic.com/legal/privacy">Anthropic</a> y de <a href="https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement">GitHub</a>.</p>
+
+<h2 id="english">English</h2>
+<p>Free code signing provided by <a href="https://about.signpath.io/">SignPath.io</a>, certificate by <a href="https://signpath.org/">SignPath Foundation</a>.</p>
+<ul>
+  <li><strong>What is signed:</strong> the Windows installers (<code>-setup.exe</code> and <code>.msi</code>) attached to each release on <a href="https://github.com/abelardodiaz/claude-usage-widgets/releases">GitHub Releases</a>. Only binaries built from this repository's source are signed.</li>
+  <li><strong>How they are built:</strong> from a <code>vX.Y.Z</code> tag on the protected <code>main</code> branch, by the <a href="https://github.com/abelardodiaz/claude-usage-widgets/blob/main/.github/workflows/release.yml">release workflow</a> on GitHub Actions. Every signing request is manually approved, and releases are published as drafts first and checked against <code>SHA256SUMS.txt</code>.</li>
+  <li><strong>Committers and reviewers:</strong> <a href="https://github.com/abelardodiaz">abelardodiaz</a>. <strong>Approvers:</strong> <a href="https://github.com/abelardodiaz">abelardodiaz</a>. Multi-factor authentication is enabled on GitHub and SignPath.</li>
+  <li><strong>Privacy:</strong> no telemetry and no project servers. The program only contacts <code>api.anthropic.com</code> / <code>claude.ai</code> to read the user's own Claude plan usage, and <code>github.com</code> when the user clicks <em>Check for updates</em>. Otherwise, this program will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it.</li>
+</ul>
+
+<footer>
+  Repositorio: <a href="https://github.com/abelardodiaz/claude-usage-widgets">github.com/abelardodiaz/claude-usage-widgets</a> · Licencia MIT · Proyecto no oficial, no afiliado a Anthropic.
+</footer>
+
+</main>
+</body>
+</html>

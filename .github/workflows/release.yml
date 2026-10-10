@@ -56,7 +56,7 @@ jobs:
           tauriScript: pnpm tauri
           tagName: ${{ github.ref_name }}
           releaseName: claude-usage-widgets ${{ github.ref_name }}
-          releaseBody: "Instaladores para Windows (.msi y -setup.exe). Verifica el SHA-256 con SHA256SUMS.txt. Proyecto no oficial, no afiliado a Anthropic."
+          releaseBody: "Instaladores para Windows (.msi y -setup.exe). Verifica el SHA-256 con SHA256SUMS.txt. Proyecto no oficial, no afiliado a Anthropic. Code signing policy: https://abelardodiaz.github.io/claude-usage-widgets/code-signing.html"
           releaseDraft: true
           prerelease: false
           updaterJsonPreferNsis: true
