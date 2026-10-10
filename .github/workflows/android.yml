@@ -83,3 +83,11 @@ jobs:
             --classpath android/app/build/classes \
             --libraries "$ANDROID_HOME/platforms/android-34/android.jar" \
             android/app
+      # Las pruebas de la cascara no pueden CORRER en el CI (necesitan el Keystore y un
+      # dispositivo), pero si se COMPILAN: asi una prueba rota se nota aqui y no solo en el
+      # telefono. Va al final porque reescribe build/ con el APK de prueba (que no se publica).
+      - name: Compilar las pruebas (TEST=1, sin publicar)
+        run: |
+          set -euo pipefail
+          TEST=1 ANDROID_JAR="$ANDROID_HOME/platforms/android-34/android.jar" bash android/app/build.sh
+          test -f android/app/build/claude-usage.apk

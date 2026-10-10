@@ -21,6 +21,7 @@ public final class CoreTest {
         farFuture(a);
         yearOutOfRange(a);
         strictFormat(a);
+        parseWithoutCause(a);
     }
 
     /**
@@ -95,5 +96,35 @@ public final class CoreTest {
         a.eq("el anio 9999 (centinela de sin limite) es nulo, R1", null, Parser.instant(LEJANO));
         a.isTrue("el anio 9998 si se acepta", Parser.instant("9998-12-31T23:59:59Z") != null);
         a.isTrue("un anio normal se acepta", Parser.instant("2026-10-03T00:00:00Z") != null);
+    }
+
+    /**
+     * Parser.parse no encadena la causa del fallo de parseo: el mensaje de JsonException lleva un
+     * fragmento de la entrada y los cuerpos de respuesta no se registran nunca.
+     */
+    private static void parseWithoutCause(Assert a) {
+        // Control: Json.parse por su cuenta SI mete el literal en su mensaje. Si esto dejara de
+        // cumplirse, la comprobacion de getCause() == null pasaria por el motivo equivocado.
+        String jsonMsg = "<<no lanzo>>";
+        try {
+            Json.parse("[1e999]");
+        } catch (Json.JsonException e) {
+            jsonMsg = String.valueOf(e.getMessage());
+        }
+        a.isTrue("control: JsonException lleva 1e999 en su mensaje", jsonMsg.contains("1e999"));
+
+        for (Source src : Source.values()) {
+            Throwable t = null;
+            try {
+                Parser.parse("[1e999]", src);
+            } catch (Exception e) {
+                t = e;
+            }
+            a.isTrue("[1e999] " + src + ": lanza UnrecognizedFormatException",
+                    t instanceof UnrecognizedFormatException);
+            a.isTrue("[1e999] " + src + ": getCause() es null", t != null && t.getCause() == null);
+            a.isTrue("[1e999] " + src + ": el mensaje no lleva el literal",
+                    t != null && !String.valueOf(t.getMessage()).contains("1e999"));
+        }
     }
 }
