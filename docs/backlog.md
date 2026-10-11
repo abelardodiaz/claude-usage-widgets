@@ -26,3 +26,13 @@ Salen de la re-revisión del PR #43 (2026-10-10). Menores: ninguno impidió publ
    esto copiando a una ruta fija. Arreglo: al arrancar, si el autoarranque está activo y apunta a
    otro exe, actualizar el valor de `Run` a la ruta actual; o publicar el exe sin versión en el
    nombre.
+
+## Escritorio, normal y lite (núcleo compartido)
+
+5. **Tras renovar el token, el aviso de "Token vencido" sigue hasta la siguiente consulta.** Visto
+   el 2026-10-11 en el lite: Claude Code renovó la credencial (`~/.claude/.credentials.json`
+   cambió y su `expiresAt` quedó 8 h adelante), pero el widget siguió mostrando el error porque
+   solo relee el archivo en la siguiente consulta, cada 3 o 5 minutos. Hoy se resuelve con
+   "Actualizar" en la bandeja o esperando. Arreglo: mientras el último error sea de credencial,
+   vigilar el archivo (fecha de modificación en cada tick corto, o `ReadDirectoryChangesW` sobre
+   `~/.claude/`) y consultar en cuanto cambie. Sin leer el token fuera del módulo de credenciales.
