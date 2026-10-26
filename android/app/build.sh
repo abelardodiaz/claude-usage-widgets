@@ -115,6 +115,8 @@ javac -encoding UTF-8 -source 17 -target 17 \
 # en el telefono. De `android/core/test` solo entra `Assert`: el resto (FixtureRunner, TestRunner,
 # AndroidSmoke) es para la JVM, usa APIs que Android no tiene y no tiene por que compilar aqui.
 if [ "${TEST:-0}" = "1" ]; then
+  echo "== extra: guarda estatica de las pruebas (N2) =="
+  bash "$HERE/guard-tests.sh" "$HERE/test"
   echo "== extra: javac (pruebas) =="
   { echo "$CORE/test/com/claudewidgets/core/Assert.java"; find test -name '*.java'; } \
     | sort | sed 's/.*/"&"/' > "$OUT/tests.txt"

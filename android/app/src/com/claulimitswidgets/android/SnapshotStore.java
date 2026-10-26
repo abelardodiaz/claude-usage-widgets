@@ -150,6 +150,11 @@ public final class SnapshotStore {
         prefs.edit().putBoolean(KEY_CHOOSING, choosing).apply();
     }
 
+    /** Deshace `setChoosingOrg(true)`: BORRA la clave, no escribe `false` (en un logout no debe quedar nada). */
+    public boolean forgetChoosingOrg() {
+        return prefs.edit().remove(KEY_CHOOSING).commit();
+    }
+
     public boolean choosingOrg() {
         try {
             return prefs.getBoolean(KEY_CHOOSING, false);

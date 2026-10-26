@@ -191,10 +191,12 @@ public class LoginActivity extends Activity {
                 out1.setEnabled(true);
                 out2.setEnabled(true);
                 // Si la pantalla se cerro mientras se guardaba, onDestroy ya limpio el WebView.
-                if (isFinishing() || isDestroyed()) {
-                    if (ok) scheduleAfterLogin();
-                    return;
-                }
+                if (closeOrFail(ok, isFinishing() || isDestroyed(), () -> {
+                    // Tambien aqui el UA: sin el, las consultas nativas irian con uno vacio hasta el
+                    // siguiente login. Es una escritura barata y sin vista.
+                    if (ok) saveUserAgent(ua);
+                    scheduleAfterLogin();
+                })) return;
                 if (!ok) {
                     // Entro bien pero la sesion se perdio al guardarla. El mensaje promete que no
                     // quedo sesion: el WebView tampoco debe conservar la cookie.
@@ -213,6 +215,16 @@ public class LoginActivity extends Activity {
     /** En el hilo principal y SOLO con la sesion ya guardada: ahora si se limpia el WebView. */
     private void afterSaved(String ua) {
         // Con la sesion ya guardada, un fallo aqui NO es un fallo del login.
+        saveUserAgent(ua);
+        wipeWebView();
+        status.setText(R.string.login_ok);   // ya no se queda en "Comprobando..."
+        showIntro();
+        paintIntro();      // ahora hay sesion: aparecen Ajustes y cerrar sesion
+        scheduleAfterLogin();
+    }
+
+    /** Guarda el UA; nunca lanza (ni una sesion ya guardada se tumba por esto). */
+    private void saveUserAgent(String ua) {
         try {
             // El UA del WebView es el que usaran las consultas nativas: una sola huella hacia
             // claude.ai. Se guarda aqui porque un JobService no puede crear un WebView.
@@ -221,26 +233,50 @@ public class LoginActivity extends Activity {
         } catch (RuntimeException ignored) {
             // Sin UA guardado las consultas llevan uno vacio: no hay respaldo a proposito (ver userAgent).
         }
-        // Volver a entrar arregla el problema: la espera acumulada ya no aplica.
-        UsageRefresher.clearBackoff(this);
-        wipeWebView();
-        status.setText(R.string.login_ok);   // ya no se queda en "Comprobando..."
-        showIntro();
-        paintIntro();      // ahora hay sesion: aparecen Ajustes y cerrar sesion
-        scheduleAfterLogin();
     }
 
+    /**
+     * Con la sesion ya guardada, por las dos ramas (pantalla abierta o cerrandose). Volver a
+     * entrar arregla el problema: la espera acumulada ya no aplica y ningun refresco en vuelo con
+     * la cookie vieja puede contestar por el de ahora (clearBackoff invalida el unificador).
+     */
     private void scheduleAfterLogin() {
-        // Los dos solo encolan (programan el periodico y lanzan el primer refresco en un hilo).
-        WidgetUpdateJob.schedule(this);
-        WidgetUpdateJob.runNow(this);
+        scheduleAfterLogin(() -> UsageRefresher.clearBackoff(this),
+                () -> WidgetUpdateJob.schedule(this), () -> WidgetUpdateJob.runNow(this));
     }
+
+    /** El orden importa: primero se borra la espera, luego se programa y se lanza el refresco. */
+    static void scheduleAfterLogin(Runnable clearBackoff, Runnable schedule, Runnable runNow) {
+        clearBackoff.run();
+        // Los dos solo encolan (programan el periodico y lanzan el primer refresco en un hilo).
+        schedule.run();
+        runNow.run();
+    }
+
+    /**
+     * Si la pantalla se cerro mientras se guardaba, onDestroy ya limpio el WebView y solo queda
+     * dejar el widget funcionando (si se guardo). Devuelve true si no hay mas que hacer en pantalla.
+     */
+    static boolean closeOrFail(boolean saved, boolean closing, Runnable scheduleAfterLogin) {
+        if (!closing) return false;
+        if (saved) scheduleAfterLogin.run();
+        return true;
+    }
+
+    /** true mientras un cierre de sesion esta en curso (solo se toca en el hilo principal). */
+    private final java.util.concurrent.atomic.AtomicBoolean loggingOut =
+            new java.util.concurrent.atomic.AtomicBoolean();
 
     private void logout() {
         // El borrado (Keystore, commit, barrido de la cache, widgets) va a un hilo: en el
         // principal, con una cache de WebView grande, "Cerrar sesion" daba ANR. Aqui, en el
         // principal, solo queda lo que exige la instancia del WebView.
-        Session.logoutAsync(this, ok -> {
+        // Mientras dura, los botones quedan inactivos: un doble toque lanzaba dos cierres y el
+        // segundo (sin nada que borrar) podia decir "no se pudo cerrar" cuando SI se cerro; y un
+        // login guardado a mitad de un cierre se quedaba sin job.
+        View[] buttons = {findViewById(R.id.btn_logout), findViewById(R.id.btn_logout_intro),
+                findViewById(R.id.btn_start), findViewById(R.id.btn_done)};
+        guardedLogout(loggingOut, buttons, cb -> Session.logoutAsync(this, cb), ok -> {
             if (isFinishing() || isDestroyed()) return;
             wipeWebView();        // el WebView pudo quedar con cookies de un login anterior
             showIntro();
@@ -250,6 +286,33 @@ public class LoginActivity extends Activity {
                 ((TextView) findViewById(R.id.intro_status)).setText(R.string.logout_failed);
             }
         });
+    }
+
+    /**
+     * El cierre de sesion de un solo toque. Devuelve false (y no hace nada) si ya hay uno en
+     * curso. Los botones se reactivan ANTES de `after`, y tambien si el cierre ni arranca: nunca
+     * quedan muertos. Aparte de la pantalla para poder probarlo sin cerrar ninguna sesion.
+     */
+    static boolean guardedLogout(java.util.concurrent.atomic.AtomicBoolean busy, View[] buttons,
+                                 java.util.function.Consumer<java.util.function.Consumer<Boolean>> start,
+                                 java.util.function.Consumer<Boolean> after) {
+        if (!busy.compareAndSet(false, true)) return false;
+        setEnabled(buttons, false);
+        try {
+            start.accept(ok -> {
+                setEnabled(buttons, true);
+                busy.set(false);
+                after.accept(ok);
+            });
+        } catch (RuntimeException | Error e) {
+            setEnabled(buttons, true);
+            busy.set(false);
+        }
+        return true;
+    }
+
+    private static void setEnabled(View[] views, boolean enabled) {
+        for (View v : views) v.setEnabled(enabled);
     }
 
     /**

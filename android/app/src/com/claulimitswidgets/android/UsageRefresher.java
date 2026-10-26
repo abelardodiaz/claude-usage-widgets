@@ -64,23 +64,33 @@ public final class UsageRefresher {
      * ejecutaria su deshacer sobre los almacenes de PRODUCCION (borrando el historico del dueno).
      */
     private final java.util.concurrent.atomic.AtomicLong epochSource;
+    /** Une los refrescos que coinciden (job periodico, de arranque, toque). null = no unir. */
+    private final Coalescer coalescer;
+    /** Corte desde fuera (`onStopJob`): aborta la red en curso. */
+    private final Cancel cancel;
 
     /** Epoca de sesion al empezar el refresco en curso (ver Session.EPOCH). Bajo LOCK. */
     private long epoch;
 
     public UsageRefresher(Context ctx) {
-        this(new SessionStore(app(ctx)), openSamples(app(ctx)), Session.snapshotFor(app(ctx)),
+        this(ctx, Cancel.NONE);
+    }
+
+    /** Con aviso de corte: lo usa el servicio del job para que `onStopJob` pueda parar la red. */
+    UsageRefresher(Context ctx, Cancel cancel) {
+        this(new SessionStore(app(ctx)), null,
+                openSamples(app(ctx)), Session.snapshotFor(app(ctx)),
                 app(ctx).getSharedPreferences(SettingsActivity.PREFS, Context.MODE_PRIVATE),
-                cookies -> productionRemote(app(ctx), cookies),
-                Instant::now, Session.EPOCH);
+                cookies -> productionRemote(app(ctx), cookies, cancel),
+                Instant::now, Session.EPOCH, Coalescer.SHARED, cancel);
     }
 
     private static Context app(Context ctx) {
         return ctx.getApplicationContext() != null ? ctx.getApplicationContext() : ctx;
     }
 
-    private static Remote productionRemote(Context app, String cookies) {
-        UsageClient c = new UsageClient(cookies, userAgent(app));
+    private static Remote productionRemote(Context app, String cookies, Cancel cancel) {
+        UsageClient c = new UsageClient(cookies, userAgent(app), cancel);
         return new Remote() {
             @Override public List<UsageClient.Org> organizations()
                     throws IOException, AuthExpiredException, BlockedException,
@@ -105,9 +115,20 @@ public final class UsageRefresher {
     UsageRefresher(SessionStore session, Cookies cookieSource, SampleStore samples,
                    SnapshotStore meta, SharedPreferences prefs, RemoteFactory remoteFactory,
                    Clock clock, java.util.concurrent.atomic.AtomicLong epochSource) {
+        this(session, cookieSource, samples, meta, prefs, remoteFactory, clock, epochSource,
+                null, Cancel.NONE);
+    }
+
+    /** Todo inyectado, incluidos el unificador de refrescos y el aviso de corte. */
+    UsageRefresher(SessionStore session, Cookies cookieSource, SampleStore samples,
+                   SnapshotStore meta, SharedPreferences prefs, RemoteFactory remoteFactory,
+                   Clock clock, java.util.concurrent.atomic.AtomicLong epochSource,
+                   Coalescer coalescer, Cancel cancel) {
+        this.coalescer = coalescer;
+        this.cancel = cancel;
         this.epochSource = epochSource;
         this.session = session;
-        this.cookieSource = cookieSource;
+        this.cookieSource = cookieSource != null ? cookieSource : session::load;
         this.samples = samples;
         this.meta = meta;
         this.prefs = prefs;
@@ -137,21 +158,40 @@ public final class UsageRefresher {
     static final Object LOCK = new Object();
 
     public Snapshot refresh() {
+        // Se anota AL LLEGAR, antes de esperar el candado: un refresco que EMPIECE despues de esto
+        // ya ve todo lo que el usuario cambio hasta ahora, y por eso puede contestar por nosotros.
+        final long arrivedEpoch = epochSource.get();
+        final long arrivedVersion = coalescer == null ? 0L : coalescer.version();
         synchronized (LOCK) {
+            if (coalescer != null) {
+                Snapshot shared = coalescer.reusable(arrivedEpoch, arrivedVersion);
+                if (shared != null) return shared;
+            }
             epoch = epochSource.get();
+            final long startVersion = coalescer == null ? 0L : coalescer.version();
+            Snapshot out;
             try {
-                return refreshLocked();
+                out = refreshLocked();
             } catch (RuntimeException e) {
                 // Algo inesperado (p. ej. del analizador). No se cita el mensaje: podria llevar
                 // un trozo de la respuesta. Cuenta para el backoff, para no insistir en bucle.
-                return safeKeepOld(Snapshot.Problem.BAD_FORMAT);
+                out = safeKeepOld(Snapshot.Problem.BAD_FORMAT);
+            } finally {
+                usedCookies = null;   // la cookie no se queda en el objeto
             }
+            // Un refresco cortado a media red no es una respuesta que otros puedan reutilizar.
+            if (coalescer != null && !cancel.isCancelled()) {
+                coalescer.record(epoch, startVersion, out);
+            }
+            return out;
         }
     }
 
+    /** La cookie con la que va la peticion en curso. Bajo LOCK; se borra al terminar. */
+    private String usedCookies;
+
     /** Tras un 401 la cookie esta muerta: no se manda cada 15 min para siempre. El login lo borra. */
     static final long AUTH_WAIT_SECONDS = 6 * 3600L;
-    static final long MAX_WAIT_SECONDS = Math.max(AUTH_WAIT_SECONDS, 1800L);
     static final long WAIT_MARGIN_SECONDS = 3600L;
 
     private static final String KEY_ATTEMPT = "backoff_attempt";
@@ -201,6 +241,7 @@ public final class UsageRefresher {
         if (cookies == null || !UsageClient.minimalCookies(cookies).contains("sessionKey=")) {
             return Snapshot.of(Snapshot.Problem.NO_SESSION);
         }
+        usedCookies = cookies;
 
         // Backoff: si el ultimo intento fallo, no se vuelve a la red hasta que toque.
         // Aqui NO se llama a keepOld: incrementaria el contador sin haber hecho una sola
@@ -208,12 +249,14 @@ public final class UsageRefresher {
         long notBefore = prefs.getLong(KEY_NEXT_ALLOWED, 0L);
         long nowSec = clock.now().getEpochSecond();
         // Un reloj que retrocedio (o se ajusto a mano) puede dejar la espera DIAS en el futuro y
-        // al widget mudo para siempre: una espera nunca puede pasar de la mayor que ponemos.
-        if (notBefore > nowSec + MAX_WAIT_SECONDS + WAIT_MARGIN_SECONDS) notBefore = 0L;
+        // al widget mudo para siempre: una espera nunca puede pasar de la mayor que ponemos PARA
+        // ESE problema (6 h tras un 401; el tope de Backoff para los demas), mas un margen.
+        Snapshot.Problem waiting = problemFromName(prefs.getString(KEY_LAST_PROBLEM, null));
+        long cap = waiting == Snapshot.Problem.AUTH_EXPIRED ? AUTH_WAIT_SECONDS : Backoff.MAX;
+        if (notBefore > nowSec + cap + WAIT_MARGIN_SECONDS) notBefore = 0L;
         if (nowSec < notBefore) {
             Snapshot old = last();
-            Snapshot.Problem p = problemFromName(prefs.getString(KEY_LAST_PROBLEM, null));
-            return old.hasData() ? old.withProblem(p) : Snapshot.of(p);
+            return old.hasData() ? old.withProblem(waiting) : Snapshot.of(waiting);
         }
 
         Remote remote = remoteFactory.create(cookies);
@@ -247,7 +290,7 @@ public final class UsageRefresher {
                 // Ajustes muestra la ayuda y deja sin marcar "Automatica" SOLO en este estado.
                 if (alive()) {
                     meta.setChoosingOrg(true);
-                    committed(() -> meta.setChoosingOrg(false));
+                    committed(meta::forgetChoosingOrg);   // BORRA la clave, no escribe false
                 }
                 return keepOld(Snapshot.Problem.CHOOSE_ORG);
             }
@@ -269,6 +312,8 @@ public final class UsageRefresher {
         } catch (BlockedException e) {
             return keepOld(Snapshot.Problem.BLOCKED);
         } catch (UsageClient.RetryLaterException | IOException e) {
+            // El sistema corto el trabajo: no es un fallo de la red y no cuenta para la espera.
+            if (cancel.isCancelled()) return oldWith(Snapshot.Problem.OFFLINE);
             // Sin red, DNS caido, 429 o 5xx: el ultimo dato sigue valiendo, con su hora.
             return keepOld(Snapshot.Problem.OFFLINE);
         } catch (UnrecognizedFormatException e) {
@@ -360,8 +405,15 @@ public final class UsageRefresher {
      * la espera acumulada ya no tiene sentido.
      */
     public static void clearBackoff(Context ctx) {
-        wipeBackoff(app(ctx).getSharedPreferences(SettingsActivity.PREFS, Context.MODE_PRIVATE)
-                .edit()).apply();
+        clearBackoff(app(ctx).getSharedPreferences(SettingsActivity.PREFS, Context.MODE_PRIVATE));
+    }
+
+    /** Lo mismo con las preferencias a la vista: las pruebas pasan las suyas (N2). */
+    static void clearBackoff(SharedPreferences prefs) {
+        // Login y eleccion de organizacion cambian lo que un refresco debe consultar: ninguno que
+        // empezara antes puede contestar por quien llegue despues.
+        Coalescer.SHARED.invalidate();
+        wipeBackoff(prefs.edit()).apply();
     }
 
     private static Snapshot.Problem problemFromName(String name) {
@@ -403,7 +455,10 @@ public final class UsageRefresher {
                     .apply();
             committed(() -> wipeBackoff(prefs.edit()).commit());   // autocuracion, como en compute
         }
-        if (p == Snapshot.Problem.AUTH_EXPIRED && alive()) {
+        // Y solo si la cookie guardada SIGUE siendo la que dio el 401: un login nuevo mientras esta
+        // peticion volaba ya borro la espera (clearBackoff), y escribirla despues dejaria al
+        // dueno que acaba de entrar seis horas sin refrescar.
+        if (p == Snapshot.Problem.AUTH_EXPIRED && alive() && Boolean.TRUE.equals(cookieUnchanged())) {
             // 401: la cookie esta muerta y reintentar cada 15 min solo la reenvia a claude.ai. Espera
             // larga, SIN contar intentos; volver a entrar (o elegir organizacion) la borra con
             // clearBackoff. Mientras tanto el widget sigue diciendo AUTH_EXPIRED y su toque va al login.
@@ -412,8 +467,26 @@ public final class UsageRefresher {
                     .putString(KEY_LAST_PROBLEM, p.name())
                     .apply();
             committed(() -> wipeBackoff(prefs.edit()).commit());
+            // El login pudo llegar entre la comprobacion y la escritura: el orden (guardar cookie,
+            // LUEGO clearBackoff) hace que, si ya hay otra cookie, se deshaga lo escrito; si aun no,
+            // el clearBackoff del login llega despues y gana.
+            if (Boolean.FALSE.equals(cookieUnchanged())) wipeBackoff(prefs.edit()).commit();
         }
         return oldWith(p);
+    }
+
+    /**
+     * TRUE = la cookie guardada es la de esta peticion; FALSE = otra (hubo un login nuevo);
+     * null = no se pudo leer (Keystore ocupado), sin saber. Cada lectura descifra: solo se usa
+     * en el camino del 401, que ocurre una vez cada seis horas.
+     */
+    private Boolean cookieUnchanged() {
+        try {
+            String now = cookieSource.load();
+            return usedCookies != null && usedCookies.equals(now);
+        } catch (GeneralSecurityException | IOException e) {
+            return null;
+        }
     }
 
     /** El ultimo dato conocido marcado con `p`, sin tocar el backoff. */
@@ -439,17 +512,22 @@ public final class UsageRefresher {
     }
 
     private Snapshot lastUnsafe() {
-        if (!session.hasSession()) return Snapshot.of(Snapshot.Problem.NO_SESSION);
+        // Llave perdida: el archivo esta pero no se puede leer. Es lo mismo que una sesion vencida
+        // (el toque lleva al login) y NO es "sin sesion": eso apagaria el job por un hipo.
+        boolean lost = session.isKeyLost();
+        if (!lost && !session.hasSession()) return Snapshot.of(Snapshot.Problem.NO_SESSION);
         UsageModel model = meta.lastModel();
         Instant fetchedAt = meta.lastFetchInstant();
         // Hay sesion pero todavia no se ha consultado nunca. No es "sin conexion": es que
         // acaba de empezar. Decir OFFLINE aqui seria mentir en el caso mas comun del primer uso.
-        if (model == null || fetchedAt == null) return Snapshot.of(Snapshot.Problem.LOADING);
+        if (model == null || fetchedAt == null) {
+            return Snapshot.of(lost ? Snapshot.Problem.AUTH_EXPIRED : Snapshot.Problem.LOADING);
+        }
         Instant now = clock.now();
         List<Sample> all = loadSamples(now);
         // `problem` va en null: `last()` describe lo que se sabe, no un fallo. La edad ya la
         // muestra `fetchedAt`.
-        return build(model, all, now, fetchedAt, null);
+        return build(model, all, now, fetchedAt, lost ? Snapshot.Problem.AUTH_EXPIRED : null);
     }
 
     private Snapshot compute(UsageModel model, Instant now) {

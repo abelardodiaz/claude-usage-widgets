@@ -207,7 +207,8 @@ public final class WidgetRenderer {
         if (f == null) return ctx.getString(R.string.w_no_forecast);
         // `hitsAt` solo vale si ocurre ANTES del reinicio de la ventana: si no, la ventana se
         // reinicia antes y decir "se llena el domingo" seria decirle que se queda sin cuota
-        // cuando no es verdad. (Los tres campos van nulos juntos cuando no se puede proyectar.)
+        // cuando no es verdad. (`hitsAt` y `beforeReset` van nulos juntos, pero `basis` puede traer
+        // valor: el paso 4 de R6, sin consumo, no proyecta y aun asi conserva la base "24h".)
         if (Boolean.FALSE.equals(f.beforeReset)) return ctx.getString(R.string.w_no_hit_before_reset);
         if (f.hitsAt == null || f.beforeReset == null) return ctx.getString(R.string.w_no_forecast);
         Locale loc = locale(ctx);

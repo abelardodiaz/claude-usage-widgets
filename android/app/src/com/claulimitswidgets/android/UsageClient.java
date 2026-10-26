@@ -49,13 +49,31 @@ public final class UsageClient {
         RetryLaterException(String message) { super(message); }
     }
 
+    /** Como se abre la conexion. Las pruebas ponen una falsa: nada de red en la suite. */
+    interface Opener { HttpURLConnection open(String url) throws IOException; }
+
     private final String cookieHeader;
     private final String userAgent;
+    private final Cancel cancel;
+    private final Opener opener;
 
     /** `cookieHeader` ya viene reducido al minimo: lo arma {@link #minimalCookies}. */
     public UsageClient(String cookieHeader, String userAgent) {
+        this(cookieHeader, userAgent, Cancel.NONE);
+    }
+
+    /** Con aviso de corte: `onStopJob` aborta la conexion en curso en vez de esperar su timeout. */
+    UsageClient(String cookieHeader, String userAgent, Cancel cancel) {
+        this(cookieHeader, userAgent, cancel,
+                url -> (HttpURLConnection) java.net.URI.create(url).toURL().openConnection());
+    }
+
+    /** Para las pruebas: la conexion inyectada. */
+    UsageClient(String cookieHeader, String userAgent, Cancel cancel, Opener opener) {
         this.cookieHeader = cookieHeader;
         this.userAgent = userAgent;
+        this.cancel = cancel;
+        this.opener = opener;
     }
 
     /**
@@ -164,7 +182,12 @@ public final class UsageClient {
 
     private String get(String url) throws IOException, AuthExpiredException, BlockedException,
             RetryLaterException, UnrecognizedFormatException {
-        HttpURLConnection c = (HttpURLConnection) java.net.URI.create(url).toURL().openConnection();
+        // Cortado antes de empezar: ni se abre la conexion.
+        if (cancel.isCancelled()) throw new IOException("cancelado");
+        HttpURLConnection c = opener.open(url);
+        // Si el corte llega mientras espera la red, `disconnect` desde otro hilo la aborta (un
+        // `read` bloqueado de un socket no responde a `interrupt`).
+        cancel.setHook(c::disconnect);
         try {
             c.setRequestMethod("GET");
             c.setInstanceFollowRedirects(false);
@@ -186,6 +209,7 @@ public final class UsageClient {
             // se conserva el tipo de fallo.
             throw new IOException("fallo de red: " + e.getClass().getSimpleName());
         } finally {
+            cancel.setHook(null);
             c.disconnect();
         }
     }
